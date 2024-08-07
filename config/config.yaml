@@ -43,6 +43,7 @@ broker:
     - name: 'logger'
       createQueueIfNotExists: true
       exchange: logger
+      routingKey: logger
       options:
         durable: true
         autoDelete: false
