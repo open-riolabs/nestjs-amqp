@@ -70,7 +70,7 @@ export class HttpHandlerService implements OnModuleInit {
           res.status(202).end();
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
-          const resp = await this.broker.requestData(path.topic, data);
+          const resp = await this.broker.requestData(path.topic, path.action, data);
           res.status(200).json(resp);
           this.logger.debug(`RPC response received for topic ${path.topic}`);
         }
