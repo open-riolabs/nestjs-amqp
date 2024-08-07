@@ -1,0 +1,69 @@
+app:
+  port: 8000
+  host: 0.0.0.0
+  environment: 'development'
+
+auth:
+  issuer: https://login.transfeero.com/realms/transfeero
+  tokenUrl: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/token
+  jwksUri: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/certs
+  algorithms:
+    - 'RS256'
+  clientId: 'admin'
+  #clientSecret:
+  #audience:
+  scopes:
+    - 'openid'
+    - 'profile'
+
+broker:
+  name: 'rabbitmq'
+  uri: 'amqp://amqp.transfeero-staging.com:5672'
+  defaultSubscribeErrorBehavior: 'ack'
+  defaultPublishErrorBehavior: 'reject'
+  connectionManagerOptions:
+    heartbeatIntervalInSeconds: 60
+    reconnectTimeInSeconds: 60
+    connectionOptions:
+      credentials:
+        mechanism: PLAIN
+        username: guest
+        password: guest
+
+  exchanges:
+    - name: "logger"
+      type: "direct"
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        internal: false
+
+  queues:
+    - name: 'logger'
+      createQueueIfNotExists: true
+      exchange: logger
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
+
+microservices:
+  topics:
+    - name: logger
+      queue: logger
+      rpc: true
+
+gateway:
+  mode: gateway
+  paths:
+    - name: get-log
+      auth: false
+      # roles:
+      #   - "admin"
+      method: GET
+      dataSource: query
+      path: /logger/log/:id
+      topic: logger
+      action: get-one
+      mode: "rpc"

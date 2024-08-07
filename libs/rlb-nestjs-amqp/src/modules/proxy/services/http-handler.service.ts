@@ -6,7 +6,7 @@ import { Request, Response } from "express";
 import { JwtService } from "./jwt.service";
 import { AppConfig } from "@rlb/nestjs-core";
 import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
-import { BrokerService } from "src/modules/broker";
+import { BrokerService } from "../../broker";
 
 const ROLES_CLAIM = "roles";
 

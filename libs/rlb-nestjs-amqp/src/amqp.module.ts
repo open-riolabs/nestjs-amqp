@@ -14,4 +14,4 @@ import { RemoteConfigModule } from './modules/remote-config/remote-config.module
     BrokerModule,
   ]
 })
-export class AppModule { }
+export class AmqpModule { }
