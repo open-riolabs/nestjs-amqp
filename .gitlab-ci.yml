@@ -1,0 +1,148 @@
+image: node:latest
+
+stages:
+  - versioning
+  - dependencies
+  - build-core
+  - build-amqp
+  # - test
+  - deploy-core
+  - deploy-amqp
+
+versioning:
+  stage: versioning
+  image: mcr.microsoft.com/dotnet/sdk:6.0
+  script:
+    - |
+      dotnet tool install --global GitVersion.Tool --version 5.*
+      export PATH="\$PATH:/root/.dotnet/tools"
+      dotnet-gitversion /config ./GitVersion.yml /nocache /verbosity Diagnostic /output buildserver
+  artifacts:
+    reports:
+      dotenv: gitversion.properties
+  tags:
+    - riolabs
+  only:
+    - master
+
+dependencies:
+  stage: dependencies
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules
+    policy: pull-push
+  script:
+    - npm config set "@rlb:registry=https://gitlab.com/api/v4/groups/11765017/-/packages/npm/"
+    - npm config set '//gitlab.com/api/v4/groups/11765017/-/packages/npm/:_authToken' '${CI_TOKEN}'
+    - npm install
+  tags:
+    - riolabs
+  only:
+    - master
+
+build-core:
+  stage: build-core
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules
+    policy: pull
+  script:
+    - npm link husky
+    - npm link @nestjs/cli
+    - npm run core:build
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR/dist
+      - $CI_PROJECT_DIR/node_modules
+  tags:
+    - riolabs
+  only:
+    - master
+
+build-amqp:
+  stage: build-amqp
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules
+    policy: pull
+  script:
+    - npm link husky
+    - npm link @nestjs/cli
+    - npm run amqp:build
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR/dist
+      - $CI_PROJECT_DIR/node_modules
+  tags:
+    - riolabs
+  only:
+    - master
+
+#test:
+# stage: test
+# cache:
+#   paths:
+#     - node_modules
+#   policy: pull
+# script:
+#   - wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+#   - echo "deb http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list
+#   - apt-get update
+#   - apt-get install -y google-chrome-stable xvfb
+#   - npm run core:test-ci
+#   #- npm run components:test-ci
+# only:
+#   - master
+
+deploy-core:
+  stage: deploy-core
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules
+    policy: pull
+  script:
+    - cd dist/libs/core
+    - echo "@rlb:registry=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
+    - echo "//gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
+    - git tag --force ${GitVersion_SemVer}
+    - git remote add tag-origin https://oauth2:${CI_TOKEN}@gitlab.com/${CI_PROJECT_PATH}
+    - git push --force tag-origin ${GitVersion_SemVer}
+    - git remote rm tag-origin
+    - npm version ${GitVersion_SemVer} --git-tag-version false
+    - npm publish
+  tags:
+    - riolabs
+  only:
+    - master
+
+deploy-amqp:
+  stage: deploy-amqp
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules
+    policy: pull
+  script:
+    - cd dist/libs/amqp
+    - echo "@rlb:registry=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
+    - echo "//gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
+    - npm version ${GitVersion_SemVer} --git-tag-version false
+    - npm publish
+  tags:
+    - riolabs
+  only:
+    - master
