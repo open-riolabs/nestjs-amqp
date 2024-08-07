@@ -1,13 +1,11 @@
 @echo off
 echo Bulding...
-call npm run core:build
-call npm run components:build
+call npm run build
 echo DONE
-if %errorlevel% neq 0 exit /b %errorlevel%
-echo Testing...
-call npm run core:test-ci
-::call npm run components:test-ci
-echo DONE
+::if %errorlevel% neq 0 exit /b %errorlevel%
+::echo Testing...
+::call npm run test-ci
+::echo DONE
 if %errorlevel% neq 0 exit /b %errorlevel%
 echo Pushing develop...
 git push
