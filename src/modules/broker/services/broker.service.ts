@@ -2,7 +2,7 @@ import { AmqpConnection, Nack } from "@golevelup/nestjs-rabbitmq";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, Observable, Subject } from "rxjs";
-import { BrokerEvent, BrokerEventHandler } from "../data/events/messages";
+import { BrokerEvent, BrokerEventHandler, RpcEventHandler } from "../data/events/messages";
 import { ConfigService } from "@nestjs/config";
 import { BrokerConfig } from "../config/broker.config";
 import { MicroserviceConfig } from "../config/microservices.config";
@@ -70,7 +70,7 @@ export class BrokerService implements OnModuleInit {
               this.logger.error(`Error subscribing to queue ${queue.name}: ${err.message}`);
             })
             .then((o) => {
-              console.log(o);
+              this.logger.debug(o);
               this.logger.log(`Subscribed to queue ${queue.name}`);
             })
         }
@@ -78,7 +78,7 @@ export class BrokerService implements OnModuleInit {
           this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
             const func = this.handlerRegistryService.getHandlers(topic.name);
             try {
-              const result = await this.executeFunction<BrokerEventHandler, any>(func, msg, rawMessage, headers)
+              const result = await this.executeFunction<RpcEventHandler, any>(func, msg, rawMessage, headers)
               return result;
             }
             catch (err) {
@@ -113,7 +113,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async requestData<Request = any, Response = any>(topic: string, payload: Request, headers?: any): Promise<Response> {
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
     const correlationId = randomUUID();
     const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
@@ -127,7 +127,7 @@ export class BrokerService implements OnModuleInit {
       return await this.amqpConnection.request<Response>({
         exchange: queue.exchange,
         routingKey,
-        payload,
+        payload: { action, payload },
         correlationId,
         headers
       });

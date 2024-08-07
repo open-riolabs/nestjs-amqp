@@ -13,7 +13,7 @@ export class HandlerRegistryService {
     this.logger = new Logger(HandlerRegistryService.name);
   }
 
-  public registerHandler<Payload = any, Response = any>(topic: string, handler: BrokerEventHandler): void {
+  public registerHandler<Payload = any, Response = any>(topic: string, handler: BrokerEventHandler<Payload, Response>): void {
     const dasherizedTopic = this.dasherizeString(topic);
     if (this.registry.has(dasherizedTopic)) {
       this.logger.error(`Handler for topic ${dasherizedTopic} already exists`);
