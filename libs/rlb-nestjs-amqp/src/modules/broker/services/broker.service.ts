@@ -40,26 +40,27 @@ export class BrokerService implements OnModuleInit {
       try {
         if (!topic.rpc) {
           this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+            const _msg = {
+              topic: topic.name,
+              payload: msg,
+              source: {
+                exchange: rawMessage.fields.exchange,
+                routingKey: rawMessage.fields.routingKey,
+                tag: rawMessage.fields.consumerTag,
+              },
+              headers,
+              raw: rawMessage.content,
+            }
             if (topic.handle) {
               const func = this.handlerRegistryService.getHandlers('fun', topic.name);
-              const result = await this.executeFunction<BrokerEventHandler, boolean>(func, msg, rawMessage, headers)
+              const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers)
               if (!result) {
                 this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
                 return new Nack(true);
               }
             }
             else {
-              this.events.next({
-                topic: topic.name,
-                payload: msg,
-                source: {
-                  exchange: rawMessage.fields.exchange,
-                  routingKey: rawMessage.fields.routingKey,
-                  tag: rawMessage.fields.consumerTag,
-                },
-                headers,
-                raw: rawMessage.content,
-              });
+              this.events.next(_msg);
             }
           }, {
             queue: queue.name,
@@ -76,9 +77,20 @@ export class BrokerService implements OnModuleInit {
         }
         if (topic.rpc) {
           this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+            const _msg = {
+              topic: topic.name,
+              payload: msg,
+              source: {
+                exchange: rawMessage.fields.exchange,
+                routingKey: rawMessage.fields.routingKey,
+                tag: rawMessage.fields.consumerTag,
+              },
+              headers,
+              raw: rawMessage.content,
+            }
             const func = this.handlerRegistryService.getHandlers('rpc', topic.name);
             try {
-              const result = await this.executeFunction<RpcEventHandler, any>(func, msg, rawMessage, headers)
+              const result = await this.executeFunction<RpcEventHandler, any>(func, _msg, rawMessage, headers)
               return result;
             }
             catch (err) {
