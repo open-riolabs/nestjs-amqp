@@ -3,11 +3,9 @@ image: node:latest
 stages:
   - versioning
   - dependencies
-  - build-core
-  - build-amqp
+  - build
   # - test
-  - deploy-core
-  - deploy-amqp
+  - deploy
 
 versioning:
   stage: versioning
@@ -43,8 +41,8 @@ dependencies:
   only:
     - master
 
-build-core:
-  stage: build-core
+build:
+  stage: build
   cache:
     key:
       files:
@@ -55,29 +53,7 @@ build-core:
   script:
     - npm link husky
     - npm link @nestjs/cli
-    - npm run core:build
-  artifacts:
-    paths:
-      - $CI_PROJECT_DIR/dist
-      - $CI_PROJECT_DIR/node_modules
-  tags:
-    - riolabs
-  only:
-    - master
-
-build-amqp:
-  stage: build-amqp
-  cache:
-    key:
-      files:
-        - package-lock.json
-    paths:
-      - node_modules
-    policy: pull
-  script:
-    - npm link husky
-    - npm link @nestjs/cli
-    - npm run amqp:build
+    - npm run build
   artifacts:
     paths:
       - $CI_PROJECT_DIR/dist
@@ -103,8 +79,8 @@ build-amqp:
 # only:
 #   - master
 
-deploy-core:
-  stage: deploy-core
+deploy:
+  stage: deploy
   cache:
     key:
       files:
@@ -113,33 +89,14 @@ deploy-core:
       - node_modules
     policy: pull
   script:
-    - cd dist/libs/core
+    - cd dist
     - echo "@rlb:registry=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
     - echo "//gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
     - git tag --force ${GitVersion_SemVer}
     - git remote add tag-origin https://oauth2:${CI_TOKEN}@gitlab.com/${CI_PROJECT_PATH}
     - git push --force tag-origin ${GitVersion_SemVer}
     - git remote rm tag-origin
-    - npm version ${GitVersion_SemVer} --git-tag-version false
-    - npm publish
-  tags:
-    - riolabs
-  only:
-    - master
-
-deploy-amqp:
-  stage: deploy-amqp
-  cache:
-    key:
-      files:
-        - package-lock.json
-    paths:
-      - node_modules
-    policy: pull
-  script:
-    - cd dist/libs/amqp
-    - echo "@rlb:registry=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
-    - echo "//gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
+    - cp ../package.json ./
     - npm version ${GitVersion_SemVer} --git-tag-version false
     - npm publish
   tags:
