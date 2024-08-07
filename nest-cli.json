@@ -1,8 +1,32 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
+  "sourceRoot": "apps/rlb-nestjs-amqp/src",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "webpack": true,
+    "tsConfigPath": "apps/rlb-nestjs-amqp/tsconfig.app.json"
+  },
+  "monorepo": true,
+  "root": "apps/rlb-nestjs-amqp",
+  "projects": {
+    "gateway": {
+      "type": "application",
+      "root": "apps/gateway",
+      "entryFile": "main",
+      "sourceRoot": "apps/gateway/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/gateway/tsconfig.app.json"
+      }
+    },
+    "rlb-nestjs-amqp": {
+      "type": "library",
+      "root": "libs/rlb-nestjs-amqp",
+      "entryFile": "index",
+      "sourceRoot": "libs/rlb-nestjs-amqp/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/rlb-nestjs-amqp/tsconfig.lib.json"
+      }
+    }
   }
 }

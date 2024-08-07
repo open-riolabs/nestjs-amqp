@@ -41,7 +41,7 @@ export class BrokerService implements OnModuleInit {
         if (!topic.rpc) {
           this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
             if (topic.handle) {
-              const func = this.handlerRegistryService.getHandlers(topic.name);
+              const func = this.handlerRegistryService.getHandlers('fun', topic.name);
               const result = await this.executeFunction<BrokerEventHandler, boolean>(func, msg, rawMessage, headers)
               if (!result) {
                 this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
@@ -76,7 +76,7 @@ export class BrokerService implements OnModuleInit {
         }
         if (topic.rpc) {
           this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
-            const func = this.handlerRegistryService.getHandlers(topic.name);
+            const func = this.handlerRegistryService.getHandlers('rpc', topic.name);
             try {
               const result = await this.executeFunction<RpcEventHandler, any>(func, msg, rawMessage, headers)
               return result;
@@ -154,7 +154,10 @@ export class BrokerService implements OnModuleInit {
   }
 
   registerHandler<Request = any, Response = any>(topic: string, handler: BrokerEventHandler<Request, Response>) {
-    this.handlerRegistryService.registerHandler<Request, Response>(topic, handler);
+    this.handlerRegistryService.registerHandler<Request, Response>('fun', topic, handler);
   }
 
+  registerRpc<Request = any, Response = any>(topic: string, handler: RpcEventHandler<Request, Response>) {
+    this.handlerRegistryService.registerHandler<Request, Response>('rpc', topic, handler);
+  }
 }
