@@ -172,4 +172,12 @@ export class BrokerService implements OnModuleInit {
   registerRpc<Request = any, Response = any>(topic: string, handler: RpcEventHandler<Request, Response>) {
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', topic, handler);
   }
+
+  getHandler<Request = any, Response = any>(topic: string): BrokerEventHandler<Request, Response> {
+    return this.handlerRegistryService.getHandlers('fun', topic);
+  }
+
+  getRpc<Request = any, Response = any>(topic: string): RpcEventHandler<Request, Response> {
+    return this.handlerRegistryService.getHandlers('rpc', topic);
+  }
 }
