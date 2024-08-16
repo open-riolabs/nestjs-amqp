@@ -31,7 +31,7 @@ export class HttpHandlerService implements OnModuleInit {
 
   onModuleInit() {
     this.server = this.httpAdapterHost.httpAdapter.getInstance<ExpressAdapter>();
-    for (const path of this.gatewayConfig.paths) {
+    for (const path of this.gatewayConfig?.paths || []) {
       this.registerPath(path);
     }
   }
