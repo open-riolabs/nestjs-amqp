@@ -117,7 +117,7 @@ export class BrokerService implements OnModuleInit {
     return ret;
   }
 
-  registerHandler<Request = any, Response = any>(_topic: string, handler: BrokerEventHandler<Request, Response>) {
+  async registerHandler<Request = any, Response = any>(_topic: string, handler: BrokerEventHandler<Request, Response>) {
     const _q = this.handlersPool.get(_topic);
     if (!_q) {
       this.logger.warn(`Queue for topic ${_topic} not found`);
@@ -127,7 +127,7 @@ export class BrokerService implements OnModuleInit {
       const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
-      this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+      await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg = {
           topic: topic.name,
           payload: msg,
@@ -167,7 +167,7 @@ export class BrokerService implements OnModuleInit {
     this.handlerRegistryService.registerHandler<Request, Response>('fun', _topic, handler);
   }
 
-  registerRpc<Request = any, Response = any>(_topic: string, handler: RpcEventHandler<Request, Response>) {
+  async registerRpc<Request = any, Response = any>(_topic: string, handler: RpcEventHandler<Request, Response>) {
     const _q = this.rpcsPool.get(_topic);
     if (!_q) {
       this.logger.warn(`Queue for topic ${_topic} not found`);
@@ -177,7 +177,7 @@ export class BrokerService implements OnModuleInit {
       const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
-      this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+      await this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg = {
           topic: topic.name,
           payload: msg,
