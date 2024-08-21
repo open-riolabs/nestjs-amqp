@@ -34,6 +34,7 @@ export class BrokerService implements OnModuleInit {
   }
 
   onModuleInit() {
+    this.logger.debug('Initializing broker service');
     for (const topic of this.microserviceConfig?.topics || []) {
       const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
       if (!queue) {
