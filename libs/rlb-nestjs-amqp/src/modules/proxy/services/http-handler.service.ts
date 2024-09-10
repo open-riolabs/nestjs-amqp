@@ -70,9 +70,25 @@ export class HttpHandlerService implements OnModuleInit {
           res.status(202).end();
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
-          const resp = await this.broker.requestData(path.topic, path.action, data);
-          res.status(200).json(resp);
-          this.logger.debug(`RPC response received for topic ${path.topic}`);
+          try {
+            const resp = await this.broker.requestData(path.topic, path.action, data);
+            if (resp.payload) {
+              res.status(200).json(resp.payload);
+            } else {
+              res.status(204).end();
+            }
+            this.logger.debug(`RPC response processed for topic ${path.topic}`);
+          } catch (error) {
+            switch (error.name) {
+              case "BadRequestError": res.status(400).json(error); break;
+              case "ForbiddenError": res.status(403).json(error); break;
+              case "InvalidParamsErrror": res.status(400).json(error); break;
+              case "NotFoundError": res.status(404).json(error); break;
+              case "UnauthorizedError": res.status(401).json(error); break;
+              default: res.status(500).json({ message: "Internal server error", name: error }); break;
+            }
+            this.logger.debug(`RPC error for topic ${path.topic}`);
+          }
         }
         else {
           throw new Error(`Invalid mode '${path.mode}' for path definition`);
