@@ -1,12 +1,13 @@
 import { AmqpConnection, Nack } from "@golevelup/nestjs-rabbitmq";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { AppConfig } from "@rlb/nestjs-core";
+import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, Observable, Subject } from "rxjs";
-import { BrokerEvent, BrokerEventHandler, RpcEventHandler } from "../data/events/messages";
-import { ConfigService } from "@nestjs/config";
+import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEventHandler } from "../data/events/messages";
+import { randomUUID } from "crypto";
 import { BrokerConfig } from "../config/broker.config";
 import { MicroserviceConfig } from "../config/microservices.config";
-import { randomUUID } from "crypto";
 import { HandlerRegistryService } from "./handler-registry.service";
 
 @Injectable()
@@ -15,6 +16,7 @@ export class BrokerService implements OnModuleInit {
   private readonly events: Subject<BrokerEvent>;
   private readonly brokerConfig: BrokerConfig;
   private readonly microserviceConfig: MicroserviceConfig;
+  private readonly appConfig: AppConfig;
   private readonly handlersPool: Map<string, { queue: string, subscribed: boolean }> = new Map();
   private readonly rpcsPool: Map<string, { queue: string, subscribed: boolean }> = new Map();
   private readonly logger: Logger;
@@ -26,6 +28,7 @@ export class BrokerService implements OnModuleInit {
     this.events = new Subject<BrokerEvent>();
     this.brokerConfig = this.config.get<BrokerConfig>("broker");
     this.microserviceConfig = this.config.get<MicroserviceConfig>("microservices");
+    this.appConfig = this.config.get<AppConfig>("app");
     this.logger = new Logger(BrokerService.name);
   }
 
@@ -88,33 +91,20 @@ export class BrokerService implements OnModuleInit {
       throw new Error(`Topic ${topic} not found in configuration`);
     }
     try {
-      return await this.amqpConnection.request<Response>({
+      const result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
         exchange: queue.exchange,
         routingKey,
         payload: { action, payload },
         correlationId,
         headers
       });
+      if (!result.success) {
+        throw result.error;
+      }
+      return result.payload;
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
     }
-  }
-
-  private async executeFunction<Func, Ret>(fn: Func, ...params: any[]): Promise<Ret> {
-    let ret: Promise<Ret>;
-    if (typeof fn === 'function') {
-      const _ret: Ret | Observable<Ret> | Promise<Ret> = fn(...params);
-      if (isObservable(_ret)) {
-        ret = lastValueFrom(_ret);
-      } else if (_ret instanceof Promise && typeof _ret.then === 'function') {
-        ret = _ret;
-      } else {
-        ret = new Promise((r) => { r(_ret as Ret) })
-      }
-    } else {
-      ret = new Promise(r => r(undefined));
-    }
-    return ret;
   }
 
   async registerHandler<Request = any, Response = any>(_topic: string, handler: BrokerEventHandler<Request, Response>) {
@@ -142,8 +132,9 @@ export class BrokerService implements OnModuleInit {
         if (topic.handle) {
           const func = this.handlerRegistryService.getHandlers('fun', topic.name);
           const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers)
-          if (!result) {
+          if (!result.success) {
             this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
+            this.logger.error(result.error);
             return new Nack(true);
           }
         }
@@ -214,5 +205,30 @@ export class BrokerService implements OnModuleInit {
 
   getRpc<Request = any, Response = any>(topic: string): RpcEventHandler<Request, Response> {
     return this.handlerRegistryService.getHandlers('rpc', topic);
+  }
+
+  private async executeFunction<Func, Ret>(fn: Func, ...params: any[]): Promise<MangedFunctionExecutor<Ret>> {
+    const devEnv = this.appConfig.environment !== 'production';
+    try {
+      let ret: Promise<Ret>;
+      if (typeof fn === 'function') {
+        const _ret: Ret | Observable<Ret> | Promise<Ret> = fn(...params);
+        if (isObservable(_ret)) {
+          ret = lastValueFrom(_ret);
+        } else if (_ret instanceof Promise && typeof _ret.then === 'function') {
+          ret = _ret;
+        } else {
+          ret = new Promise((r) => { r(_ret as Ret) })
+        }
+      } else {
+        ret = new Promise(r => r(undefined));
+      }
+      return { success: true, payload: await ret };
+    } catch (error) {
+      if (!devEnv) {
+        delete error.stack;
+      }
+      return { success: false, error };
+    }
   }
 }
