@@ -8,19 +8,19 @@ auth:
   tokenUrl: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/token
   jwksUri: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/certs
   algorithms:
-    - 'RS256'
-  clientId: 'admin'
+    - "RS256"
+  clientId: "admin"
   #clientSecret:
   #audience:
   scopes:
-    - 'openid'
-    - 'profile'
+    - "openid"
+    - "profile"
 
 broker:
-  name: 'rabbitmq'
-  uri: 'amqp://amqp.transfeero-staging.com:5672'
-  defaultSubscribeErrorBehavior: 'ack'
-  defaultPublishErrorBehavior: 'reject'
+  name: "rabbitmq"
+  uri: "amqp://amqp.transfeero-staging.com:5672"
+  defaultSubscribeErrorBehavior: "ack"
+  defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
@@ -31,7 +31,7 @@ broker:
         password: guest
 
   exchanges:
-    - name: "logger"
+    - name: "local-test"
       type: "direct"
       createExchangeIfNotExists: true
       options:
@@ -40,10 +40,10 @@ broker:
         internal: false
 
   queues:
-    - name: 'logger'
+    - name: "local-test"
       createQueueIfNotExists: true
-      exchange: logger
-      routingKey: logger
+      exchange: local-test
+      routingKey: local-test
       options:
         durable: true
         autoDelete: false
@@ -51,20 +51,20 @@ broker:
 
 microservices:
   topics:
-    - name: logger
-      queue: logger
+    - name: local-test
+      queue: local-test
       rpc: true
 
 gateway:
   mode: gateway
   paths:
-    - name: get-log
+    - name: local-test
       auth: false
       # roles:
       #   - "admin"
-      method: GET
-      dataSource: query
-      path: /logger/log/:id
-      topic: logger
-      action: get-one
+      method: POST
+      dataSource: body
+      path: /local-test/test-01
+      topic: booking
+      action: test-01
       mode: "rpc"

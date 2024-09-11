@@ -223,7 +223,8 @@ export class BrokerService implements OnModuleInit {
       } else {
         ret = new Promise(r => r(undefined));
       }
-      return { success: true, payload: await ret };
+      const _ret = await ret;
+      return { success: true, payload: _ret };
     } catch (error) {
       if (!devEnv) {
         delete error.stack;
