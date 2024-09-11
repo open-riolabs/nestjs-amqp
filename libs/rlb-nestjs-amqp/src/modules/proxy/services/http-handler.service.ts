@@ -72,20 +72,20 @@ export class HttpHandlerService implements OnModuleInit {
         } else if (path.mode === "rpc") {
           try {
             const resp = await this.broker.requestData(path.topic, path.action, data);
-            if (resp.payload) {
-              res.status(200).json(resp.payload);
+            if (resp) {
+              res.status(200).json(resp);
             } else {
               res.status(204).end();
             }
             this.logger.debug(`RPC response processed for topic ${path.topic}`);
           } catch (error) {
             switch (error.name) {
-              case "BadRequestError": res.status(400).json(error); break;
-              case "ForbiddenError": res.status(403).json(error); break;
-              case "InvalidParamsErrror": res.status(400).json(error); break;
-              case "NotFoundError": res.status(404).json(error); break;
-              case "UnauthorizedError": res.status(401).json(error); break;
-              default: res.status(500).json({ message: "Internal server error", name: error }); break;
+              case "BadRequestError": res.status(400).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              case "ForbiddenError": res.status(403).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              case "InvalidParamsErrror": res.status(400).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              case "NotFoundError": res.status(404).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              case "UnauthorizedError": res.status(401).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              default: res.status(500).json({ message: error.message, name: error.name, stack: error.stack }); break;
             }
             this.logger.debug(`RPC error for topic ${path.topic}`);
           }
