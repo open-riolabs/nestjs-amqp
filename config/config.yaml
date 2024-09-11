@@ -65,6 +65,16 @@ gateway:
       method: POST
       dataSource: body
       path: /local-test/test-01
-      topic: booking
+      topic: local-test
       action: test-01
+      mode: "rpc"
+    - name: local-test
+      auth: false
+      # roles:
+      #   - "admin"
+      method: POST
+      dataSource: body
+      path: /local-test/test-02
+      topic: local-test
+      action: test-02
       mode: "rpc"

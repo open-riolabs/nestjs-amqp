@@ -4,7 +4,7 @@ import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { Request, Response } from "express";
 import { JwtService } from "./jwt.service";
-import { AppConfig } from "@rlb/nestjs-core";
+import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
 import { BrokerService } from "../../broker";
 
@@ -22,7 +22,8 @@ export class HttpHandlerService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly broker: BrokerService,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    private readonly utils: UtilsService
   ) {
     this.gatewayConfig = this.configService.get<GatewayConfig>("gateway");
     this.appConfig = this.configService.get<AppConfig>("app");
@@ -80,12 +81,12 @@ export class HttpHandlerService implements OnModuleInit {
             this.logger.debug(`RPC response processed for topic ${path.topic}`);
           } catch (error) {
             switch (error.name) {
-              case "BadRequestError": res.status(400).json({ message: error.message, name: error.name, stack: error.stack }); break;
-              case "ForbiddenError": res.status(403).json({ message: error.message, name: error.name, stack: error.stack }); break;
-              case "InvalidParamsErrror": res.status(400).json({ message: error.message, name: error.name, stack: error.stack }); break;
-              case "NotFoundError": res.status(404).json({ message: error.message, name: error.name, stack: error.stack }); break;
-              case "UnauthorizedError": res.status(401).json({ message: error.message, name: error.name, stack: error.stack }); break;
-              default: res.status(500).json({ message: error.message, name: error.name, stack: error.stack }); break;
+              case "BadRequestError": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              case "ForbiddenError": res.status(403).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              case "InvalidParamsErrror": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              case "NotFoundError": res.status(404).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              case "UnauthorizedError": res.status(401).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              default: res.status(500).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
             }
             this.logger.debug(`RPC error for topic ${path.topic}`);
           }
