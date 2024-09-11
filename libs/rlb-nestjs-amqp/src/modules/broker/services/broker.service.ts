@@ -1,6 +1,6 @@
 import { AmqpConnection, Nack } from "@golevelup/nestjs-rabbitmq";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { AppConfig } from "@rlb/nestjs-core";
+import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, Observable, Subject } from "rxjs";
@@ -24,7 +24,8 @@ export class BrokerService implements OnModuleInit {
   constructor(
     private readonly amqpConnection: AmqpConnection,
     private readonly handlerRegistryService: HandlerRegistryService,
-    private readonly config: ConfigService) {
+    private readonly config: ConfigService,
+    private readonly utils: UtilsService) {
     this.events = new Subject<BrokerEvent>();
     this.brokerConfig = this.config.get<BrokerConfig>("broker");
     this.microserviceConfig = this.config.get<MicroserviceConfig>("microservices");
@@ -104,6 +105,7 @@ export class BrokerService implements OnModuleInit {
       return result.payload;
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
+      throw err;
     }
   }
 
@@ -226,10 +228,7 @@ export class BrokerService implements OnModuleInit {
       const _ret = await ret;
       return { success: true, payload: _ret };
     } catch (error) {
-      if (!devEnv) {
-        delete error.stack;
-      }
-      return { success: false, error };
+      return { success: false, error: this.utils.error2Object(error, this.appConfig.environment !== 'production') };
     }
   }
 }
