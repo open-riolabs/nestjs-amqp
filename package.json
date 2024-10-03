@@ -19,9 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand"
   },
   "peerDependencies": {
+    "@golevelup/nestjs-rabbitmq": "^5.4.1",
     "@nestjs/common": "^10.4.1",
     "@nestjs/core": "^10.4.1",
-    "@golevelup/nestjs-rabbitmq": "^5.4.1",
     "@nestjs/platform-express": "^10.0.0",
     "amqp-connection-manager": "^4.1.14",
     "amqplib": "^0.10.4",
@@ -31,9 +31,10 @@
     "@golevelup/nestjs-rabbitmq": "^5.4.1",
     "@nestjs/common": "^10.4.1",
     "@nestjs/core": "^10.4.1",
-    "@nestjs/platform-express": "^10.4.1",
+    "@nestjs/platform-express": "^10.0.0",
     "@nestjs/terminus": "^10.2.3",
-    "@rlb/nestjs-core": "^1.1.17",
+    "@rlb/nestjs-auth": "^1.0.1",
+    "@rlb/nestjs-core": "^1.2.0",
     "amqp-connection-manager": "^4.1.14",
     "amqplib": "^0.10.4",
     "jwks-rsa": "^3.1.0",
