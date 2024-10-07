@@ -3,7 +3,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
-import { isObservable, lastValueFrom, Observable, Subject } from "rxjs";
+import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
 import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEventHandler } from "../data/events/messages";
 import { randomUUID } from "crypto";
 import { BrokerConfig } from "../config/broker.config";
@@ -35,6 +35,10 @@ export class BrokerService implements OnModuleInit {
 
   public get events$() {
     return this.events.asObservable();
+  }
+
+  public getEvents$<T>() {
+    return this.events$.pipe(map(e => e as BrokerEvent<T>));
   }
 
   onModuleInit() {
@@ -109,7 +113,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async registerHandler<Request = any, Response = any>(_topic: string, handler: BrokerEventHandler<Request, Response>) {
+  async registerHandler<Request = any, Response = any>(_topic: string, handler?: BrokerEventHandler<Request, Response>) {
     const _q = this.handlersPool.get(_topic);
     if (!_q) {
       this.logger.warn(`Queue for topic ${_topic} not found`);
@@ -119,45 +123,47 @@ export class BrokerService implements OnModuleInit {
       const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
-      await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
-        const _msg = {
-          topic: topic.name,
-          payload: msg,
-          source: {
-            exchange: rawMessage.fields.exchange,
-            routingKey: rawMessage.fields.routingKey,
-            tag: rawMessage.fields.consumerTag,
-          },
-          headers,
-          raw: rawMessage.content,
-        }
-        if (topic.handle) {
-          const func = this.handlerRegistryService.getHandlers('fun', topic.name);
-          const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers)
-          if (!result.success) {
-            this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
-            this.logger.error(result.error);
-            return new Nack(true);
+      try {
+        const o = await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+          const _msg: BrokerEvent = {
+            topic: topic.name,
+            payload: msg,
+            source: {
+              exchange: rawMessage.fields.exchange,
+              routingKey: rawMessage.fields.routingKey,
+              tag: rawMessage.fields.consumerTag,
+            },
+            headers,
+            raw: rawMessage.content,
           }
-        }
-        else {
-          this.events.next(_msg);
-        }
-      }, {
-        queue: queue.name,
-        exchange: queue.exchange,
-        routingKey: queue.routingKey,
-      }, '', {})
-        .catch(err => {
-          this.logger.error(`Error subscribing to queue ${queue.name}: ${err.message}`);
-        })
-        .then((o) => {
-          this.logger.debug(o);
-          this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
-          this.logger.log(`Subscribed to queue ${queue.name}`);
-        });
+          if (topic.handle) {
+            const func = this.handlerRegistryService.getHandlers('fun', topic.name);
+            const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers)
+            if (!result.success) {
+              this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
+              this.logger.error(result.error);
+              return new Nack(true);
+            }
+          }
+          else {
+            this.events.next(_msg);
+          }
+        }, {
+          queue: queue.name,
+          exchange: queue.exchange,
+          routingKey: queue.routingKey,
+        }, '', {})
+        this.logger.debug(`Subscribed to queue ${queue.name} with consumer tag ${o.consumerTag}`);
+        this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
+        this.logger.log(`Subscribed to queue ${queue.name}`);
+      } catch (error) {
+        this.logger.error(`Error subscribing to queue ${queue.name}: ${error.message}`);
+      }
+      if (topic.handle) {
+        if (!handler) throw new Error(`Topic ${_topic} requires a handler function becouse it has handle property set to true`);
+        this.handlerRegistryService.registerHandler<Request, Response>('fun', _topic, handler);
+      }
     }
-    this.handlerRegistryService.registerHandler<Request, Response>('fun', _topic, handler);
   }
 
   async registerRpc<Request = any, Response = any>(_topic: string, handler: RpcEventHandler<Request, Response>) {
