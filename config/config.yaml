@@ -38,6 +38,12 @@ broker:
         durable: true
         autoDelete: false
         internal: false
+    - name: broadcast-payment
+      type: "fanout"
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
 
   queues:
     - name: "local-test"
@@ -48,12 +54,22 @@ broker:
         durable: true
         autoDelete: false
         exclusive: false
+    - name: broadcast-payment
+      createQueueIfNotExists: true
+      exchange: broadcast-payment
+      routingKey: broadcast-payment
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
 
 microservices:
   topics:
     - name: local-test
       queue: local-test
       rpc: true
+    - name: broadcast-payment
+      queue: broadcast-payment
 
 gateway:
   mode: gateway
