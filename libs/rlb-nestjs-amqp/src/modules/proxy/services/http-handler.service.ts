@@ -7,6 +7,7 @@ import { JwtService } from "./jwt.service";
 import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
 import { BrokerService } from "../../broker";
+import * as multer from 'multer';
 
 const ROLES_CLAIM = "roles";
 
@@ -17,6 +18,7 @@ export class HttpHandlerService implements OnModuleInit {
   private readonly gatewayConfig: GatewayConfig
   private readonly appConfig: AppConfig
   private readonly logger: Logger
+  private readonly multer: multer.Multer;
 
   constructor(
     private readonly configService: ConfigService,
@@ -28,6 +30,9 @@ export class HttpHandlerService implements OnModuleInit {
     this.gatewayConfig = this.configService.get<GatewayConfig>("gateway");
     this.appConfig = this.configService.get<AppConfig>("app");
     this.logger = new Logger(HttpHandlerService.name);
+    this.multer = multer({
+      storage: multer.memoryStorage(), // Or you can configure diskStorage
+    });
   }
 
   onModuleInit() {
@@ -43,7 +48,7 @@ export class HttpHandlerService implements OnModuleInit {
     if (!path.topic) throw new Error("Topic is required for path definition");
     if (!path.mode) throw new Error("Mode is required for path definition");
 
-    this.server[path.method.toLowerCase()](path.path, async (req: Request, res: Response) => {
+    this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const data = req[path.dataSource];
 
@@ -64,7 +69,13 @@ export class HttpHandlerService implements OnModuleInit {
           }
         }
       }
-      Object.assign(data, req.params, { _method: req.method, _path: path.path });
+      Object.assign(data, req.params, { _method: req.method, _path: path.path, $files: req.files });
+      if (data['$files']) {
+        for (const file of data['$files']) {
+          const o: Buffer = file.buffer
+          file.buffer = o.toString('binary');
+        }
+      }
       try {
         if (path.mode === "event") {
           this.broker.publishMessage(path.topic, data);
