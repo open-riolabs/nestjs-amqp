@@ -50,8 +50,10 @@ export class HttpHandlerService implements OnModuleInit {
 
     this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
       res.header("Access-Control-Allow-Origin", "*");
+      res.header("Access-Control-Allow-Credentials", "true");
       res.header("Access-Control-Allow-Methods", "*");
       res.header("Access-Control-Allow-Headers", "*");
+      res.header("Access-Control-Expose-Headers", "*");
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const data = req[path.dataSource];
 
