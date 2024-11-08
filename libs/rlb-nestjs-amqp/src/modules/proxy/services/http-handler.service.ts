@@ -15,9 +15,9 @@ const ROLES_CLAIM = "roles";
 export class HttpHandlerService implements OnModuleInit {
 
   private server: ExpressAdapter;
-  private readonly gatewayConfig: GatewayConfig
-  private readonly appConfig: AppConfig
-  private readonly logger: Logger
+  private readonly gatewayConfig: GatewayConfig;
+  private readonly appConfig: AppConfig;
+  private readonly logger: Logger;
   private readonly multer: multer.Multer;
 
   constructor(
@@ -50,8 +50,8 @@ export class HttpHandlerService implements OnModuleInit {
 
     this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
       res.header("Access-Control-Allow-Origin", "*");
-      res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT,DELETE");
-      res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+      res.header("Access-Control-Allow-Methods", "*");
+      res.header("Access-Control-Allow-Headers", "*");
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const data = req[path.dataSource];
 
@@ -75,7 +75,7 @@ export class HttpHandlerService implements OnModuleInit {
       Object.assign(data, req.params, { _method: req.method, _path: path.path, $files: req.files });
       if (data['$files']) {
         for (const file of data['$files']) {
-          const o: Buffer = file.buffer
+          const o: Buffer = file.buffer;
           file.buffer = o.toString('binary');
         }
       }
@@ -111,7 +111,7 @@ export class HttpHandlerService implements OnModuleInit {
       } catch (error) {
         if (this.appConfig.environment === "development") {
           this.logger.error(error.message);
-          res.status(500).json(error)
+          res.status(500).json(error);
         }
         else {
           res.status(500).json({ message: "Internal server error", name: error.name });
