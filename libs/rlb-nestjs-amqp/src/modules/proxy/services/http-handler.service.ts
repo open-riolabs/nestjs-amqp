@@ -49,6 +49,9 @@ export class HttpHandlerService implements OnModuleInit {
     if (!path.mode) throw new Error("Mode is required for path definition");
 
     this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
+      res.header("Access-Control-Allow-Origin", "*");
+      res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT,DELETE");
+      res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const data = req[path.dataSource];
 
