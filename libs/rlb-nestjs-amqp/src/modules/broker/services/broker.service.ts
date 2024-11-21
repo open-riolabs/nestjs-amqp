@@ -17,8 +17,8 @@ export class BrokerService implements OnModuleInit {
   private readonly brokerConfig: BrokerConfig;
   private readonly microserviceConfig: MicroserviceConfig;
   private readonly appConfig: AppConfig;
-  private readonly handlersPool: Map<string, { queue: string, subscribed: boolean }> = new Map();
-  private readonly rpcsPool: Map<string, { queue: string, subscribed: boolean }> = new Map();
+  private readonly handlersPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
+  private readonly rpcsPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
   private readonly logger: Logger;
 
   constructor(
@@ -70,7 +70,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  publishMessage(topic: string, message: any) {
+  publishMessage(topic: string, message: any, headers: any) {
     const msTopic = (this.microserviceConfig?.topics || []).find(t => t.name === topic);
     const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
     const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
@@ -78,14 +78,14 @@ export class BrokerService implements OnModuleInit {
       throw new Error(`Topic ${topic} not found in configuration`);
     }
     try {
-      this.amqpConnection.publish(queue.exchange, routingKey, message);
+      this.amqpConnection.publish(queue.exchange, routingKey, message, { headers });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
     }
   }
 
-  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers: any): Promise<Response> {
     const correlationId = randomUUID();
     const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
@@ -135,10 +135,10 @@ export class BrokerService implements OnModuleInit {
             },
             headers,
             raw: rawMessage.content,
-          }
+          };
           if (topic.handle) {
             const func = this.handlerRegistryService.getHandlers('fun', topic.name);
-            const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers)
+            const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers);
             if (!result.success) {
               this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
               this.logger.error(result.error);
@@ -152,7 +152,7 @@ export class BrokerService implements OnModuleInit {
           queue: queue.name,
           exchange: queue.exchange,
           routingKey: queue.routingKey,
-        }, '', {})
+        }, '', {});
         this.logger.debug(`Subscribed to queue ${queue.name} with consumer tag ${o.consumerTag}`);
         this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
         this.logger.log(`Subscribed to queue ${queue.name}`);
@@ -187,10 +187,10 @@ export class BrokerService implements OnModuleInit {
           },
           headers,
           raw: rawMessage.content,
-        }
+        };
         const func = this.handlerRegistryService.getHandlers('rpc', topic.name);
         try {
-          const result = await this.executeFunction<RpcEventHandler, any>(func, _msg, rawMessage, headers)
+          const result = await this.executeFunction<RpcEventHandler, any>(func, _msg, rawMessage, headers);
           return result;
         }
         catch (err) {
@@ -201,7 +201,7 @@ export class BrokerService implements OnModuleInit {
         queue: queue.name,
         exchange: queue.exchange,
         routingKey: queue.routingKey,
-      })
+      });
       this.rpcsPool.set(_topic, { queue: _q.queue, subscribed: true });
     }
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
@@ -226,7 +226,7 @@ export class BrokerService implements OnModuleInit {
         } else if (_ret instanceof Promise && typeof _ret.then === 'function') {
           ret = _ret;
         } else {
-          ret = new Promise((r) => { r(_ret as Ret) })
+          ret = new Promise((r) => { r(_ret as Ret); });
         }
       } else {
         ret = new Promise(r => r(undefined));
