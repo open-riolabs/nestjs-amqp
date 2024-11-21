@@ -8,6 +8,7 @@ import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
 import { BrokerService } from "../../broker";
 import * as multer from 'multer';
+import { HttpAuthHandlerService } from "./http-auth-handler.service";
 
 const ROLES_CLAIM = "roles";
 
@@ -24,8 +25,8 @@ export class HttpHandlerService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly broker: BrokerService,
-    private readonly jwtService: JwtService,
-    private readonly utils: UtilsService
+    private readonly utils: UtilsService,
+    private readonly httpAuthHandlerService: HttpAuthHandlerService
   ) {
     this.gatewayConfig = this.configService.get<GatewayConfig>("gateway");
     this.appConfig = this.configService.get<AppConfig>("app");
@@ -52,23 +53,16 @@ export class HttpHandlerService implements OnModuleInit {
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const data = req[path.dataSource];
 
-      if (path.auth) {
-        const jwt = req.headers.authorization?.split(" ")[1];
-        const decoded = await this.jwtService.verifyToken(jwt);
-        if (!decoded) {
-          res.status(401).json({ message: "Unauthorized" });
-          return;
-        } else {
-          if (path.roles && path.roles.length > 0) {
-            const userRoles = decoded[ROLES_CLAIM] || [];
-            const hasRole = path.roles.some(role => userRoles.includes(role));
-            if (!hasRole) {
-              res.status(403).json({ message: "Forbidden" });
-              return;
-            }
-          }
-        }
+      const authData = await this.httpAuthHandlerService.processAuthData(req, path);
+      if (!authData) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
       }
+      if (!this.httpAuthHandlerService.checkRoles(authData, path)) {
+        res.status(403).json({ message: "Forbidden" });
+        return;
+      }
+
       Object.assign(data, req.params, { _method: req.method, _path: path.path, $files: req.files });
       if (data['$files']) {
         for (const file of data['$files']) {
@@ -78,12 +72,12 @@ export class HttpHandlerService implements OnModuleInit {
       }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, data);
+          this.broker.publishMessage(path.topic, data, authData);
           res.status(202).end();
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
           try {
-            const resp = await this.broker.requestData(path.topic, path.action, data);
+            const resp = await this.broker.requestData(path.topic, path.action, data, authData);
             if (resp) {
               res.status(200).json(resp);
             } else {

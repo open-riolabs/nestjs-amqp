@@ -4,10 +4,11 @@ import { HttpHandlerService } from './services/http-handler.service';
 import { JwtService } from './services/jwt.service';
 import { CoreModule } from '@rlb/nestjs-core';
 import { BrokerModule } from '../broker';
+import { HttpAuthHandlerService } from './services/http-auth-handler.service';
 
 @Module({
   imports: [CoreModule, ConfigModule, BrokerModule],
-  providers: [HttpHandlerService, JwtService],
+  providers: [HttpHandlerService, JwtService, HttpAuthHandlerService],
   exports: [HttpHandlerService]
 })
 export class ProxyModule { }
