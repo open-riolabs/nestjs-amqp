@@ -63,7 +63,7 @@ export class HttpHandlerService implements OnModuleInit {
         return;
       }
 
-      Object.assign(data, req.params, { _method: req.method, _path: path.path, $files: req.files });
+      Object.assign(data, req.params, { $files: req.files });
       if (data['$files']) {
         for (const file of data['$files']) {
           const o: Buffer = file.buffer;
@@ -77,7 +77,7 @@ export class HttpHandlerService implements OnModuleInit {
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
           try {
-            const resp = await this.broker.requestData(path.topic, path.action, data, authData);
+            const resp = await this.broker.requestData(path.topic, path.action, data, {...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path});
             if (resp) {
               res.status(200).json(resp);
             } else {
