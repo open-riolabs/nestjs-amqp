@@ -70,7 +70,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  publishMessage(topic: string, message: any, headers: any) {
+  publishMessage(topic: string, message: any, headers?: any) {
     const msTopic = (this.microserviceConfig?.topics || []).find(t => t.name === topic);
     const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
     const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
@@ -85,7 +85,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers: any): Promise<Response> {
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
     const correlationId = randomUUID();
     const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
