@@ -22,10 +22,24 @@ import { CoreModule } from '@rlb/nestjs-core';
 export class BrokerModule { }
 
 async function brokerFactory(config: ConfigService): Promise<RabbitMQConfig> {
-  const cfg = config.get<BrokerConfig>('broker');
+  const _cfg = config.get<BrokerConfig>('broker');
+  const cfg = structuredClone(_cfg);
   const clietProps = cfg.connectionManagerOptions.connectionOptions.clientProperties;
+  const cname = clietProps?.connection_name;
   if (clietProps && clietProps.connection_name) {
     clietProps.connection_name += '-' + process.pid;
+  }
+  for (const queue of _cfg.queues) {
+    const ex = cfg.exchanges.find(e => e.name === queue.exchange);
+    if (ex && ex.type === 'topic') {
+      if (!queue.routingKey) {
+        throw new Error(`Queue ${queue.name} has no routing key`);
+      }
+      if (!cname) {
+        throw new Error(`Client name is required for topic exchange`);
+      }
+      queue.name = `${queue.name}-${cname}`;
+    }
   }
   const cred = cfg.connectionManagerOptions.connectionOptions.credentials as {
     mechanism: string; username: string; password: string; response: () => Buffer;

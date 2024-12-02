@@ -43,29 +43,38 @@ export class BrokerService implements OnModuleInit {
 
   onModuleInit() {
     this.logger.debug('Initializing broker service');
+
     for (const topic of this.microserviceConfig?.topics || []) {
-      const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
-      if (!queue) {
-        this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
-      }
-      try {
-        if (!topic.rpc) {
-          if (this.handlersPool.has(topic.name)) {
-            this.logger.warn(`Queue ${queue.name} already subscribed`);
-            continue;
-          }
-          this.handlersPool.set(topic.name, { queue: queue.name, subscribed: false });
+      if (topic.rpc) {
+        const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
+        if (!queue) {
+          this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
         }
-        if (topic.rpc) {
-          if (this.rpcsPool.has(topic.name)) {
-            this.logger.warn(`RPC ${topic.name} already registered`);
-            continue;
-          }
-          this.rpcsPool.set(topic.name, { queue: queue.name, subscribed: false });
+        if (this.rpcsPool.has(topic.name)) {
+          this.logger.warn(`RPC ${topic.name} already registered`);
+          continue;
         }
-      } catch (err) {
-        this.logger.error(`Error creating subscriber for queue ${queue.name}: ${err.message}`);
-        throw err;
+        this.rpcsPool.set(topic.name, { queue: queue.name, subscribed: false });
+      } else {
+        const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
+        const queue = this.brokerConfig.queues.find(q => q.name === topic.queue || q.name === `${topic.queue}-${cname}`);
+        const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
+        if (!queue) {
+          this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
+        }
+        if (exchange.type === 'topic') {
+          if (!queue.routingKey) {
+            throw new Error(`Queue ${queue.name} has no routing key`);
+          }
+          if (!cname) {
+            throw new Error(`Client name is required for topic exchange`);
+          }
+        }
+        if (this.handlersPool.has(topic.name)) {
+          this.logger.warn(`Handler ${queue.name} already subscribed`);
+          continue;
+        }
+        this.handlersPool.set(topic.name, { queue: queue.name, subscribed: false });
       }
     }
   }
@@ -85,34 +94,6 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
-    const correlationId = randomUUID();
-    const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
-    const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
-    const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
-    headers = headers || {};
-    headers['X-Request-ID'] = randomUUID();
-    if (!queue || !routingKey) {
-      throw new Error(`Topic ${topic} not found in configuration`);
-    }
-    try {
-      const result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
-        exchange: queue.exchange,
-        routingKey,
-        payload: { action, payload },
-        correlationId,
-        headers
-      });
-      if (!result.success) {
-        throw result.error;
-      }
-      return result.payload;
-    } catch (err) {
-      this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
-      throw err;
-    }
-  }
-
   async registerHandler<Request = any, Response = any>(_topic: string, handler?: BrokerEventHandler<Request, Response>) {
     const _q = this.handlersPool.get(_topic);
     if (!_q) {
@@ -122,6 +103,13 @@ export class BrokerService implements OnModuleInit {
     if (!_q.subscribed) {
       const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
+      const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
+      if (!topic) throw new Error(`Topic ${_topic} not found in configuration`);
+      if (!queue) throw new Error(`Queue ${_q.queue} not found in configuration for topic ${_topic}`);
+      if (!exchange) throw new Error(`Exchange ${queue.exchange} not found in configuration for queue ${queue.name}`);
+      if (exchange.type === 'topic') {
+        if (!queue.routingKey) throw new Error(`Queue ${queue.name} has no routing key`);
+      }
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
       try {
         const o = await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
@@ -207,9 +195,37 @@ export class BrokerService implements OnModuleInit {
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
 
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
+    const correlationId = randomUUID();
+    const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
+    const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
+    const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
+    headers = headers || {};
+    headers['X-Request-ID'] = randomUUID();
+    if (!queue || !routingKey) {
+      throw new Error(`Topic ${topic} not found in configuration`);
+    }
+    try {
+      const result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
+        exchange: queue.exchange,
+        routingKey,
+        payload: { action, payload },
+        correlationId,
+        headers
+      });
+      if (!result.success) {
+        throw result.error;
+      }
+      return result.payload;
+    } catch (err) {
+      this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
+      throw err;
+    }
+  }
+
   getHandler<Request = any, Response = any>(topic: string): BrokerEventHandler<Request, Response> {
     return this.handlerRegistryService.getHandlers('fun', topic);
-  }
+  };
 
   getRpc<Request = any, Response = any>(topic: string): RpcEventHandler<Request, Response> {
     return this.handlerRegistryService.getHandlers('rpc', topic);
