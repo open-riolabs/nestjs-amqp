@@ -34,6 +34,8 @@ broker:
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
     connectionOptions:
+      clientProperties:
+        connection_name: "nestjs-amqp-sample"
       credentials:
         mechanism: PLAIN
         username: guest
@@ -47,8 +49,8 @@ broker:
         durable: true
         autoDelete: false
         internal: false
-    - name: broadcast-payment
-      type: "fanout"
+    - name: topic-payment
+      type: "direct"
       createExchangeIfNotExists: true
       options:
         durable: true
@@ -63,10 +65,10 @@ broker:
         durable: true
         autoDelete: false
         exclusive: false
-    - name: broadcast-payment
+    - name: topic-payment
       createQueueIfNotExists: true
-      exchange: broadcast-payment
-      routingKey: broadcast-payment
+      exchange: topic-payment
+      routingKey: payment/broadcast
       options:
         durable: true
         autoDelete: false
@@ -77,8 +79,8 @@ microservices:
     - name: local-test
       queue: local-test
       rpc: true
-    - name: broadcast-payment
-      queue: broadcast-payment
+    - name: topic-payment
+      queue: topic-payment
 
 gateway:
   mode: gateway
