@@ -34,6 +34,8 @@ broker:
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
     connectionOptions:
+      clientProperties:
+        connection_name: "nestjs-amqp-sample"
       credentials:
         mechanism: PLAIN
         username: guest

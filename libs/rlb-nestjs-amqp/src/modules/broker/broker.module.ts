@@ -23,6 +23,10 @@ export class BrokerModule { }
 
 async function brokerFactory(config: ConfigService): Promise<RabbitMQConfig> {
   const cfg = config.get<BrokerConfig>('broker');
+  const clietProps = cfg.connectionManagerOptions.connectionOptions.clientProperties;
+  if (clietProps && clietProps.connection_name) {
+    clietProps.connection_name += '-' + process.pid;
+  }
   const cred = cfg.connectionManagerOptions.connectionOptions.credentials as {
     mechanism: string; username: string; password: string; response: () => Buffer;
   };
