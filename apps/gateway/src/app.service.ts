@@ -7,7 +7,13 @@ import { writeFile } from 'fs/promises';
 export class AppService implements OnModuleInit {
   constructor(private readonly brokerService: BrokerService) { }
   async onModuleInit() {
-    setInterval(async () => { }, 1000);
+    setInterval(async () => {
+      this.brokerService.publishMessage('sample-bst', { fefe: 'ferf' });
+    }, 1000);
+
+    await this.brokerService.registerTopic('sample-bst', (o) => {
+      console.log(o);
+    });
 
     await
       this.brokerService.registerRpc('local-test', async (data) => {

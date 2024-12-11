@@ -4,7 +4,7 @@ import { AppConfig, UtilsService } from "@rlb/nestjs-core";
 import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
-import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEventHandler } from "../data/events/messages";
+import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
 import { randomUUID } from "crypto";
 import { BrokerConfig } from "../config/broker.config";
 import { MicroserviceConfig } from "../config/microservices.config";
@@ -19,6 +19,7 @@ export class BrokerService implements OnModuleInit {
   private readonly appConfig: AppConfig;
   private readonly handlersPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
   private readonly rpcsPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
+  private readonly topicPool: Map<string, { exchange: string, routingKey: string, subscribed: boolean; }> = new Map();
   private readonly logger: Logger;
 
   constructor(
@@ -55,9 +56,18 @@ export class BrokerService implements OnModuleInit {
           continue;
         }
         this.rpcsPool.set(topic.name, { queue: queue.name, subscribed: false });
-      } else {
+      } else if (topic.exchange && topic.routingKey) {
         const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
-        const queue = this.brokerConfig.queues.find(q => q.name === topic.queue || q.name === `${topic.queue}-${cname}`);
+        const exchange = this.brokerConfig.exchanges.find(e => e.name === topic.exchange);
+        if (!cname) {
+          throw new Error(`Client name is required for topic exchange`);
+        }
+        if (!exchange) {
+          this.logger.warn(`Queue ${exchange} not found in broker configuration for topic ${topic.name}`);
+        }
+        this.topicPool.set(topic.name, { exchange: topic.exchange, routingKey: topic.routingKey, subscribed: false });
+      } else {
+        const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
         const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
         if (!queue) {
           this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
@@ -65,9 +75,6 @@ export class BrokerService implements OnModuleInit {
         if (exchange.type === 'topic') {
           if (!queue.routingKey) {
             throw new Error(`Queue ${queue.name} has no routing key`);
-          }
-          if (!cname) {
-            throw new Error(`Client name is required for topic exchange`);
           }
         }
         if (this.handlersPool.has(topic.name)) {
@@ -91,7 +98,7 @@ export class BrokerService implements OnModuleInit {
       }
       exchange = queue.exchange;
     } else {
-      routingKey = msTopic.routingKey
+      routingKey = msTopic.routingKey;
       exchange = (this.brokerConfig?.exchanges || []).find(e => e.name === msTopic?.exchange)?.name;
       if (!exchange) {
         throw new Error(`Exchange not found for topic ${topic}`);
@@ -161,6 +168,68 @@ export class BrokerService implements OnModuleInit {
       if (topic.handle) {
         if (!handler) throw new Error(`Topic ${_topic} requires a handler function becouse it has handle property set to true`);
         this.handlerRegistryService.registerHandler<Request, Response>('fun', _topic, handler);
+      }
+    }
+  }
+
+  async registerTopic<Request = any, Response = any>(_topic: string, handler?: TopicEventHandler<Request>) {
+    const _q = this.topicPool.get(_topic);
+    if (!_q) {
+      this.logger.warn(`Queue for topic ${_topic} not found`);
+      return;
+    }
+    if (!_q.subscribed) {
+      const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
+      const exchange = this.brokerConfig.exchanges.find(e => e.name === topic.exchange);
+      const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
+      if (!topic) throw new Error(`Topic ${_topic} not found in configuration`);
+      if (!exchange) throw new Error(`Exchange ${topic.exchange} not found in configuration for topic ${topic.name}`);
+      if (exchange.type !== 'topic') {
+        throw new Error(`Invalid exchange type. Type for ${exchange.name} must by topic`);
+      }
+      if (!cname) {
+        throw new Error('Client name is required for topic exchange');
+      }
+      this.logger.debug(`Subscribing ${topic.name} to exchange ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
+      try {
+        const o = await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+          const _msg: BrokerEvent = {
+            topic: topic.name,
+            payload: msg,
+            source: {
+              exchange: rawMessage.fields.exchange,
+              routingKey: rawMessage.fields.routingKey,
+              tag: rawMessage.fields.consumerTag,
+            },
+            headers,
+            raw: rawMessage.content,
+          };
+          if (topic.handle) {
+            const func = this.handlerRegistryService.getHandlers('fun', topic.name);
+            const result = await this.executeFunction<BrokerEventHandler, boolean>(func, _msg, rawMessage, headers);
+            if (!result.success) {
+              this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
+              this.logger.error(result.error);
+              return new Nack(true);
+            }
+          }
+          else {
+            this.events.next(_msg);
+          }
+        }, {
+          queue: `${topic.name}-${cname}`,
+          exchange: topic.exchange,
+          routingKey: topic.routingKey,
+        }, '', {});
+        this.logger.debug(`Subscribed to ${topic.name} using ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
+        this.topicPool.set(_topic, { exchange: topic.exchange, routingKey: topic.routingKey, subscribed: true });
+        this.logger.log(`Subscribed to topic ${topic.name}`);
+      } catch (error) {
+        this.logger.error(`Error subscribing to topic ${topic.name}: ${error.message}`);
+      }
+      if (topic.handle) {
+        if (!handler) throw new Error(`Topic ${_topic} requires a handler function becouse it has handle property set to true`);
+        this.handlerRegistryService.registerHandler<Request, void>('fun', _topic, handler);
       }
     }
   }
