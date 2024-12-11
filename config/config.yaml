@@ -49,8 +49,8 @@ broker:
         durable: true
         autoDelete: false
         internal: false
-    - name: topic-payment
-      type: "direct"
+    - name: sample-bst
+      type: "topic"
       createExchangeIfNotExists: true
       options:
         durable: true
@@ -65,22 +65,15 @@ broker:
         durable: true
         autoDelete: false
         exclusive: false
-    - name: topic-payment
-      createQueueIfNotExists: true
-      exchange: topic-payment
-      routingKey: payment/broadcast
-      options:
-        durable: true
-        autoDelete: false
-        exclusive: false
 
 microservices:
   topics:
     - name: local-test
       queue: local-test
       rpc: true
-    - name: topic-payment
-      queue: topic-payment
+    - name: sample-bst
+      exchange: sample-bst
+      routingKey: broadcast/#
 
 gateway:
   mode: gateway

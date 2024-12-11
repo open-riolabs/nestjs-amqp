@@ -81,13 +81,24 @@ export class BrokerService implements OnModuleInit {
 
   publishMessage(topic: string, message: any, headers?: any) {
     const msTopic = (this.microserviceConfig?.topics || []).find(t => t.name === topic);
-    const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
-    const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
-    if (!queue || !routingKey) {
-      throw new Error(`Topic ${topic} not found in configuration`);
+    let exchange: string = '';
+    let routingKey: string = '';
+    if (!msTopic.routingKey) {
+      const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
+      routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
+      if (!queue || !routingKey) {
+        throw new Error(`Topic ${topic} not found in configuration`);
+      }
+      exchange = queue.exchange;
+    } else {
+      routingKey = msTopic.routingKey
+      exchange = (this.brokerConfig?.exchanges || []).find(e => e.name === msTopic?.exchange)?.name;
+      if (!exchange) {
+        throw new Error(`Exchange not found for topic ${topic}`);
+      }
     }
     try {
-      this.amqpConnection.publish(queue.exchange, routingKey, message, { headers });
+      this.amqpConnection.publish(exchange, routingKey, message, { headers });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
