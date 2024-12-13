@@ -220,6 +220,11 @@ export class BrokerService implements OnModuleInit {
           queue: `${topic.name}-${cname}`,
           exchange: topic.exchange,
           routingKey: topic.routingKey,
+          createQueueIfNotExists: true,
+          queueOptions: {
+            durable: true,
+            autoDelete: false,
+          }
         }, '', {});
         this.logger.debug(`Subscribed to ${topic.name} using ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
         this.topicPool.set(_topic, { exchange: topic.exchange, routingKey: topic.routingKey, subscribed: true });
