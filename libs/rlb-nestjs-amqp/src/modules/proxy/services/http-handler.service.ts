@@ -77,9 +77,17 @@ export class HttpHandlerService implements OnModuleInit {
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
           try {
-            const resp = await this.broker.requestData(path.topic, path.action, data, {...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path});
+            const headers = new Map<string, string | string[] | number>();
+            if (path.headers) {
+              for (const key in path.headers) {
+                headers.set(key, path.headers[key]);
+              }
+            }
+            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             if (resp) {
-              res.status(200).json(resp);
+              res.status(200)
+                .setHeaders(headers)
+                .json(resp);
             } else {
               res.status(204).end();
             }
