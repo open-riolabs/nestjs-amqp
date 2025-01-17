@@ -28,15 +28,15 @@
     "jwks-rsa": "^3.1.0"
   },
   "dependencies": {
-    "@golevelup/nestjs-rabbitmq": "^5.6.1",
-    "@nestjs/common": "^10.4.12",
-    "@nestjs/core": "^10.4.12",
-    "@nestjs/platform-express": "^10.4.12",
+    "@golevelup/nestjs-rabbitmq": "^5.4.1",
+    "@nestjs/common": "^10.4.1",
+    "@nestjs/core": "^10.4.1",
+    "@nestjs/platform-express": "^10.0.0",
     "@nestjs/terminus": "^10.2.3",
     "@rlb/nestjs-auth": "^1.0.2",
-    "@rlb/nestjs-core": "^1.2.17",
+    "@rlb/nestjs-core": "^1.2.20",
     "amqp-connection-manager": "^4.1.14",
-    "amqplib": "^0.10.5",
+    "amqplib": "^0.10.4",
     "jwks-rsa": "^3.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
