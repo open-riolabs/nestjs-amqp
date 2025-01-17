@@ -83,14 +83,14 @@ export class HttpHandlerService implements OnModuleInit {
                 headers.set(key, path.headers[key]);
               }
             }
-            if (!headers.has("Content-Type")) {
-              headers.set("Content-Type", "application/json");
-            }
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             if (resp) {
-              res.status(200)
-                .setHeaders(headers)
-                .end(resp);
+              if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+              if (headers.get("Content-Type").toString().includes('json')) {
+                res.status(200).setHeaders(headers).json(resp);
+              } else {
+                res.status(200).setHeaders(headers).end(resp);
+              }
             } else {
               res.status(204).end();
             }
