@@ -34,7 +34,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/terminus": "^10.2.3",
     "@rlb/nestjs-auth": "^1.0.2",
-    "@rlb/nestjs-core": "^1.2.20",
+    "@rlb/nestjs-core": "^1.2.21",
     "amqp-connection-manager": "^4.1.14",
     "amqplib": "^0.10.4",
     "jwks-rsa": "^3.1.0",
