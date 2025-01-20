@@ -85,16 +85,24 @@ export class HttpHandlerService implements OnModuleInit {
             }
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             if (resp) {
+              if (path.redirect) {
+                res.redirect(path.redirect, resp);
+                this.logger.debug(`RPC response processed for topic '${path.topic}': redirecting to '${path.redirect}'`);
+                return;
+              }
               if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
               if (headers.get("Content-Type").toString().includes('json')) {
                 res.status(200).setHeaders(headers).json(resp);
-              } else {
-                res.status(200).setHeaders(headers).end(resp);
+                this.logger.debug(`RPC response processed for topic '${path.topic}': JSON`);
+                return;
               }
-            } else {
-              res.status(204).end();
+              res.status(200).setHeaders(headers).end(resp);
+              this.logger.debug(`RPC response processed for topic '${path.topic}': RAW`);
+              return;
             }
-            this.logger.debug(`RPC response processed for topic ${path.topic}`);
+            res.status(204).end();
+            this.logger.debug(`RPC response processed for topic '${path.topic}': NO CONTENT`);
+            return;
           } catch (error) {
             switch (error.name) {
               case "BadRequestError": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
