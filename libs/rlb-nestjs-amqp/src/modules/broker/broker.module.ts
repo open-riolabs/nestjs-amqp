@@ -10,7 +10,7 @@ import { CoreModule } from '@sicilyaction/lib-nestjs-core';
 @Module({
   imports: [
     CoreModule,
-    RabbitMQModule.forRootAsync(RabbitMQModule, {
+    RabbitMQModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: brokerFactory,
       inject: [ConfigService]
