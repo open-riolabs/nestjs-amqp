@@ -18,10 +18,10 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@rlb/nestjs-amqp": [
+      "@sicilyaction/lib-nestjs-amqp": [
         "libs/rlb-nestjs-amqp/src"
       ],
-      "@rlb/nestjs-amqp/*": [
+      "@sicilyaction/lib-nestjs-amqp/*": [
         "libs/rlb-nestjs-amqp/src/*"
       ]
     }

@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { BrokerEvent, BrokerService } from '@rlb/nestjs-amqp';
-import { NotFoundError } from '@rlb/nestjs-core';
+import { BrokerEvent, BrokerService } from '@sicilyaction/lib-nestjs-amqp';
+import { NotFoundError } from '@sicilyaction/lib-nestjs-core';
 import { writeFile } from 'fs/promises';
 
 @Injectable()
@@ -33,3 +33,4 @@ export class AppService implements OnModuleInit {
     await this.brokerService.registerHandler<any, void>('broadcast-payment');
   }
 }
+

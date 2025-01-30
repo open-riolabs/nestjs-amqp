@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PathDefinition } from '@rlb/nestjs-core';
+import { PathDefinition } from '@sicilyaction/lib-nestjs-core';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
 import { Request, Response } from 'express';
 import { JwtService } from './jwt.service';

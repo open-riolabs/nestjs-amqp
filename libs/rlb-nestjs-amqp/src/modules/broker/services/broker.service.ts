@@ -1,6 +1,6 @@
 import { AmqpConnection, Nack } from "@golevelup/nestjs-rabbitmq";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { AppConfig, UtilsService } from "@rlb/nestjs-core";
+import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";

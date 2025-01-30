@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AmqpConnection, Nack } from '@golevelup/nestjs-rabbitmq';
 import { ConsumeMessage } from "amqplib";
-import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
+import { GatewayConfig, PathDefinition } from "@sicilyaction/lib-nestjs-core";
 
 import { HttpHandlerService } from "../proxy/services/http-handler.service";
 
