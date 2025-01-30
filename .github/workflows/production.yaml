@@ -1,0 +1,128 @@
+name: CI/CD Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:8.0
+    outputs:
+      GitVersion_SemVer: ${{ env.GitVersion_SemVer }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0 # 0 indica di ottenere tutta la cronologia
+      - name: Install GitVersion.Tool
+        id: gitversion
+        run: |
+          dotnet tool install --global GitVersion.Tool --version 5.12.0
+          export PATH="$PATH:/github/home/.dotnet/tools"
+          dotnet-gitversion /config ./GitVersion.yml /nocache /verbosity Diagnostic /output buildserver
+        env:
+          GIT_DEPTH: 10000
+      - name: Display Version
+        run: echo "Version> ${{ env.GitVersion_SemVer }}"
+
+  dependencies:
+    runs-on: ubuntu-latest
+    container:
+      image: node:alpine
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+      - name: Install dependencies
+        run: |
+          npm config set "@sicilyaction:registry=https://npm.pkg.github.com/sicilyaction/"
+          npm config set "//npm.pkg.github.com/sicilyaction/:_authToken" "${{ secrets.DEPLOY_PAT }}"
+          npm install
+      - name: Create node_modules TarGz
+        run: tar -czf node_modules.tar.gz node_modules
+      - name: Upload TarGz Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node_modules-tar # Artifact name
+          path: node_modules.tar.gz # Path to the created `.tar.gz`
+
+  build:
+    needs: dependencies
+    runs-on: ubuntu-latest
+    container:
+      image: node:lts-buster
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Download TarGz Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: node_modules-tar # The artifact name
+          path: ./ # Where to download the artifact
+      - name: Extract node_modules
+        run: tar -xzf node_modules.tar.gz
+      - name: Build
+        run: |
+          npm link husky
+          npm link @nestjs/cli
+          npm run build
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      deployments: write
+    needs:
+      - build
+      - versioning
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Download TarGz Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: node_modules-tar
+          path: ./
+      - name: Extract node_modules
+        run: tar -xzf node_modules.tar.gz
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: dist
+
+      - name: Set Version and Publish
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          registry-url: "https://npm.pkg.github.com/"
+          scope: "@sicilyaction"
+      - run: |
+          cp ./package.json ./dist
+          cd ./dist
+          npm version ${{ needs.versioning.outputs.GitVersion_SemVer }} --git-tag-version false
+          npm publish --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.DEPLOY_PAT }}
+
+      - name: Tag repo with new version
+        uses: cardinalby/git-tag-action@master
+        env:
+          TAG: ${{ needs.versioning.outputs.GitVersion_SemVer }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
