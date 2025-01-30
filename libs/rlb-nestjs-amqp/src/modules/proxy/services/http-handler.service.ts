@@ -4,8 +4,8 @@ import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { Request, Response } from "express";
 import { JwtService } from "./jwt.service";
-import { AppConfig, UtilsService } from "@rlb/nestjs-core";
-import { GatewayConfig, PathDefinition } from "@rlb/nestjs-core";
+import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
+import { GatewayConfig, PathDefinition } from "@sicilyaction/lib-nestjs-core";
 import { BrokerService } from "../../broker";
 import * as multer from 'multer';
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
@@ -130,3 +130,4 @@ export class HttpHandlerService implements OnModuleInit {
     });
   }
 }
+

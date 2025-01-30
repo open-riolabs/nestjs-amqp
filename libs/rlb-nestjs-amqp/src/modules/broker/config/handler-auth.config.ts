@@ -1,4 +1,4 @@
-import { AuthConfig } from "@rlb/nestjs-auth";
+import { AuthConfig } from "@sicilyaction/lib-nestjs-auth";
 
 export interface HandlerAuthConfig extends AuthConfig {
   jwtSignMode: 'secret' | 'jwks';

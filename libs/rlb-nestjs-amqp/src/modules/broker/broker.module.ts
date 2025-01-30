@@ -5,7 +5,7 @@ import { BrokerConfig } from './config/broker.config';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
 import * as amqp from 'amqplib';
-import { CoreModule } from '@rlb/nestjs-core';
+import { CoreModule } from '@sicilyaction/lib-nestjs-core';
 
 @Module({
   imports: [
@@ -55,3 +55,4 @@ async function brokerFactory(config: ConfigService): Promise<RabbitMQConfig> {
   }
   return cfg;
 }
+

@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { JwksClient } from "jwks-rsa";
 import { JwtHeader, JwtPayload, SigningKeyCallback, verify } from "jsonwebtoken";
 import { ConfigService } from "@nestjs/config";
-import { AuthConfig } from "@rlb/nestjs-auth";
+import { AuthConfig } from "@sicilyaction/lib-nestjs-auth";
 import { Agent } from "https";
 
 @Injectable()
