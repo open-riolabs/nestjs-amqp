@@ -1,23 +1,23 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { BrokerEventHandler, RpcEventHandler } from "../data/events/messages";
+import { RpcEventHandler } from "../data/events/messages";
 
 @Injectable()
 export class HandlerRegistryService {
 
   private readonly logger: Logger
 
-  private readonly registry: Map<string, BrokerEventHandler>
+  private readonly registry: Map<string, RpcEventHandler>
   private readonly rpcRegistry: Map<string, RpcEventHandler>
 
   constructor() {
-    this.registry = new Map<string, BrokerEventHandler>();
+    this.registry = new Map<string, RpcEventHandler>();
     this.rpcRegistry = new Map<string, RpcEventHandler>();
     this.logger = new Logger(HandlerRegistryService.name);
   }
 
-  public registerHandler<Payload = any, Response = any>(type: 'fun', topic: string, handler: BrokerEventHandler<Payload, Response>): void;
+  public registerHandler<Payload = any, Response = any>(type: 'fun', topic: string, handler: RpcEventHandler<Payload, Response>): void;
   public registerHandler<Payload = any, Response = any>(type: 'rpc', topic: string, handler: RpcEventHandler<Payload, Response>): void;
-  public registerHandler<Payload = any, Response = any>(type: 'fun' | 'rpc', topic: string, handler: BrokerEventHandler<Payload, Response> | RpcEventHandler<Payload, Response>): void {
+  public registerHandler<Payload = any, Response = any>(type: 'fun' | 'rpc', topic: string, handler: RpcEventHandler<Payload, Response> | RpcEventHandler<Payload, Response>): void {
     const dasherizedTopic = this.dasherizeString(topic);
     if (type as any === 'fun') {
       if (this.registry.has(dasherizedTopic)) {
@@ -35,9 +35,9 @@ export class HandlerRegistryService {
     }
   }
 
-  public getHandlers(type: 'fun', topic: string): BrokerEventHandler;
+  public getHandlers(type: 'fun', topic: string): RpcEventHandler;
   public getHandlers(type: 'rpc', topic: string): RpcEventHandler
-  public getHandlers(type: 'fun' | 'rpc', topic: string): BrokerEventHandler | RpcEventHandler {
+  public getHandlers(type: 'fun' | 'rpc', topic: string): RpcEventHandler | RpcEventHandler {
     if (type === 'fun') {
       return this.registry.get(topic);
     }
