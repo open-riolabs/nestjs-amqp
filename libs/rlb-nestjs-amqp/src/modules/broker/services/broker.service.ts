@@ -4,7 +4,7 @@ import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { ConfigService } from "@nestjs/config";
 import { ConsumeMessage } from "amqplib";
 import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
-import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
+import { BrokerEvent, BrokerEventHandler, MangedFunctionExecutor, RpcEvent, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
 import { randomUUID } from "crypto";
 import { BrokerConfig } from "../config/broker.config";
 import { MicroserviceConfig } from "../config/microservices.config";
@@ -86,7 +86,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  publishMessage(topic: string, message: any, headers?: any) {
+  publishMessage(topic: string, action: string, payload: any, headers?: any) {
     const msTopic = (this.microserviceConfig?.topics || []).find(t => t.name === topic);
     let exchange: string = '';
     let routingKey: string = '';
@@ -105,14 +105,14 @@ export class BrokerService implements OnModuleInit {
       }
     }
     try {
-      this.amqpConnection.publish(exchange, routingKey, message, { headers });
+      this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
     }
   }
 
-  async registerHandler<Request = any, Response = any>(_topic: string, handler?: BrokerEventHandler<Request, Response>) {
+  async registerHandler<Request = any>(_topic: string, handler?: BrokerEventHandler<Request, Response>) {
     const _q = this.handlersPool.get(_topic);
     if (!_q) {
       this.logger.warn(`Queue for topic ${_topic} not found`);
@@ -130,15 +130,16 @@ export class BrokerService implements OnModuleInit {
       }
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
       try {
-        const o = await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+        const o = await this.amqpConnection.createSubscriber<RpcEvent>(async (msg: RpcEvent, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent = {
             topic: topic.name,
-            payload: msg,
+            payload: msg.payload,
             source: {
               exchange: rawMessage.fields.exchange,
               routingKey: rawMessage.fields.routingKey,
               tag: rawMessage.fields.consumerTag,
             },
+            action: msg.action,
             headers,
             raw: rawMessage.content,
           };
@@ -172,7 +173,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async registerTopic<Request = any, Response = any>(_topic: string, handler?: TopicEventHandler<Request>) {
+  async registerTopic<Request = any>(_topic: string, handler?: TopicEventHandler<Request>) {
     const _q = this.topicPool.get(_topic);
     if (!_q) {
       this.logger.warn(`Queue for topic ${_topic} not found`);
@@ -192,7 +193,7 @@ export class BrokerService implements OnModuleInit {
       }
       this.logger.debug(`Subscribing ${topic.name} to exchange ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
       try {
-        const o = await this.amqpConnection.createSubscriber<any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
+        const o = await this.amqpConnection.createSubscriber<RpcEvent>(async (msg: RpcEvent, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent = {
             topic: topic.name,
             payload: msg,
@@ -201,6 +202,7 @@ export class BrokerService implements OnModuleInit {
               routingKey: rawMessage.fields.routingKey,
               tag: rawMessage.fields.consumerTag,
             },
+            action: msg.action,
             headers,
             raw: rawMessage.content,
           };
@@ -249,8 +251,8 @@ export class BrokerService implements OnModuleInit {
       const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
-      await this.amqpConnection.createRpc<any, any>(async (msg: any, rawMessage?: ConsumeMessage, headers?: any) => {
-        const _msg = {
+      await this.amqpConnection.createRpc<RpcEvent, MangedFunctionExecutor<Response>>(async (msg: RpcEvent, rawMessage?: ConsumeMessage, headers?: any) => {
+        const _msg: BrokerEvent<RpcEvent> = {
           topic: topic.name,
           payload: msg,
           source: {
@@ -259,11 +261,12 @@ export class BrokerService implements OnModuleInit {
             tag: rawMessage.fields.consumerTag,
           },
           headers,
+          action: msg.action,
           raw: rawMessage.content,
         };
         const func = this.handlerRegistryService.getHandlers('rpc', topic.name);
         try {
-          const result = await this.executeFunction<RpcEventHandler, any>(func, _msg, rawMessage, headers);
+          const result = await this.executeFunction<RpcEventHandler, Response>(func, _msg, rawMessage, headers);
           return result;
         }
         catch (err) {
