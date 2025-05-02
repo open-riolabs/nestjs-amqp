@@ -3,27 +3,27 @@ app:
   host: 0.0.0.0
   environment: 'development'
 
-auth:
-  jwtSignMode: jwks
-  jwtMap: 
-    - sid:userId
-    - email:email
-    - roles:roles
-  rolesClaim: "roles"
-  headerPrefix: "X-GTW-AUTH-"
-  
-  outProp: $auth
-  issuer: https://login.transfeero.com/realms/transfeero
-  tokenUrl: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/token
-  jwksUri: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/certs
-  algorithms:
-    - "RS256"
-  clientId: "admin"
-  #clientSecret:
-  #audience:
-  scopes:
-    - "openid"
-    - "profile"
+auth-providers:
+  - name: "transfeero-jwks"
+    jwtSignMode: jwks
+    jwtMap: 
+      - sub:userId
+      - email:email
+      - roles:roles
+    rolesClaim: "roles"
+    headerPrefix: "X-GTW-AUTH-"    
+    outProp: $auth
+    issuer: https://login.transfeero.com/realms/transfeero
+    tokenUrl: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/certs
+    algorithms:
+      - "RS256"
+    clientId: "admin"
+    #clientSecret:
+    #audience:
+    scopes:
+      - "openid"
+      - "profile"
 
 broker:
   name: "rabbitmq"
