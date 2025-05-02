@@ -3,7 +3,6 @@ import { ConfigService } from "@nestjs/config";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { Request, Response } from "express";
-import { JwtService } from "./jwt.service";
 import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { GatewayConfig, PathDefinition } from "@sicilyaction/lib-nestjs-core";
 import { BrokerService } from "../../broker";
@@ -54,7 +53,7 @@ export class HttpHandlerService implements OnModuleInit {
       const data = req[path.dataSource];
 
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
-      if (!authData) {
+      if (authData.success === false) {
         res.status(401).json({ message: "Unauthorized" });
         return;
       }

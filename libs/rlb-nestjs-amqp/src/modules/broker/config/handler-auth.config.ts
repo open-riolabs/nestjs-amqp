@@ -1,7 +1,8 @@
 import { AuthConfig } from "@sicilyaction/lib-nestjs-auth";
 
 export interface HandlerAuthConfig extends AuthConfig {
-  jwtSignMode: 'secret' | 'jwks';
+  name: string;
+  type: 'jwt' | 'jwks' | 'basic' | 'str-compare' | 'none';
   rolesClaim: any;
   jwtMap?: string[];
   outProp: string;

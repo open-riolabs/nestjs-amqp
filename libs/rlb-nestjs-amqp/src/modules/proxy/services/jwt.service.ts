@@ -4,27 +4,42 @@ import { JwtHeader, JwtPayload, SigningKeyCallback, verify } from "jsonwebtoken"
 import { ConfigService } from "@nestjs/config";
 import { AuthConfig } from "@sicilyaction/lib-nestjs-auth";
 import { Agent } from "https";
+import { HandlerAuthConfig } from "../../broker/config/handler-auth.config";
 
 @Injectable()
 export class JwtService {
 
-  private readonly jwksClient: JwksClient;
-  private readonly authConfig: AuthConfig;
+  private readonly jwksClients: { [name: string]: JwksClient };
+  private readonly authConfig: HandlerAuthConfig[];
   private readonly logger: Logger;
 
   constructor(private readonly configService: ConfigService) {
     this.logger = new Logger(JwtService.name);
-    this.authConfig = this.configService.get<AuthConfig>("auth");
-    this.jwksClient = new JwksClient({
-      jwksUri: this.authConfig.jwksUri,
-      cache: true,
-      rateLimit: true,
-      jwksRequestsPerMinute: 10,
-      requestAgent: new Agent({ rejectUnauthorized: false })
-    });
+    this.authConfig = this.configService.get<HandlerAuthConfig[]>("auth-providers");
+    this.jwksClients = {};
+    for (const authConfig of this.authConfig) {
+      if (authConfig.type === "jwks") {
+        this.jwksClients[authConfig.name] = new JwksClient({
+          jwksUri: authConfig.jwksUri,
+          cache: true,
+          rateLimit: true,
+          jwksRequestsPerMinute: 10,
+          requestAgent: new Agent({ rejectUnauthorized: false })
+        });
+      }
+    }
   }
 
-  verifyTokenJwks<T = JwtPayload>(token: string): Promise<T | undefined> {
+  verifyTokenJwks<T = JwtPayload>(authConfig: HandlerAuthConfig, token: string): Promise<T | undefined> {
+    if (!authConfig) {
+      this.logger.debug(`Auth config not found`);
+      return Promise.resolve(undefined);
+    }
+    if (!this.jwksClients[authConfig.name]) {
+      this.logger.debug(`No jwks client found for ${authConfig.name}`);
+      return Promise.resolve(undefined);
+    }
+
     return new Promise((resolve, reject) => {
       if (!token) {
         this.logger.debug("No token provided");
@@ -33,7 +48,7 @@ export class JwtService {
 
       verify(token,
         (header: JwtHeader, callback: SigningKeyCallback) => {
-          this.jwksClient.getSigningKey(header.kid, (err, key) => {
+          this.jwksClients[authConfig.name].getSigningKey(header.kid, (err, key) => {
             if (err) {
               this.logger.debug("Error getting signing key", err);
               callback(err);
@@ -44,9 +59,9 @@ export class JwtService {
           });
         },
         {
-          issuer: this.authConfig.issuer,
-          audience: this.authConfig.audience,
-          algorithms: this.authConfig.algorithms as any
+          issuer: authConfig.issuer,
+          audience: authConfig.audience,
+          algorithms: authConfig.algorithms as any
         },
         (err, decoded) => {
           if (err) {
@@ -59,7 +74,12 @@ export class JwtService {
     });
   }
 
-  verifyTokenSecret<T = JwtPayload>(token: string): Promise<T | undefined> {
+  verifyTokenSecret<T = JwtPayload>(authConfig: HandlerAuthConfig, token: string): Promise<T | undefined> {
+    if (!authConfig) {
+      this.logger.debug(`Auth config not found`);
+      return Promise.resolve(undefined);
+    }
+
     return new Promise((resolve, reject) => {
       if (!token) {
         this.logger.debug("No token provided");
@@ -67,15 +87,14 @@ export class JwtService {
       }
 
       verify(token,
-        this.authConfig.secret,
+        authConfig.secret,
         {
-          issuer: this.authConfig.issuer,
-          audience: this.authConfig.audience,
-          algorithms: this.authConfig.algorithms as any
+          issuer: authConfig.issuer,
+          audience: authConfig.audience,
+          algorithms: authConfig.algorithms as any
         },
         (err, decoded) => {
           if (err) {
-            this.logger.debug("Error verifying token", err);
             resolve(undefined);
             return;
           }
