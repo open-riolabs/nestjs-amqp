@@ -53,7 +53,8 @@ export class HttpHandlerService implements OnModuleInit {
       const data = req[path.dataSource];
 
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
-      if (authData.success === false) {
+
+      if (path.auth && !authData?.success && !path.allowAnonymous) {
         res.status(401).json({ message: "Unauthorized" });
         return;
       }
