@@ -2,9 +2,8 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AmqpConnection, Nack } from '@golevelup/nestjs-rabbitmq';
 import { ConsumeMessage } from "amqplib";
-import { GatewayConfig, PathDefinition } from "@sicilyaction/lib-nestjs-core";
-
 import { HttpHandlerService } from "../proxy/services/http-handler.service";
+import { GatewayConfig, PathDefinition } from "../proxy/config/path-definition.config";
 
 const CONFIG_EXCHANGE = "config.ms";
 const CONFIG_QUEUE = "config.ms";
@@ -27,12 +26,7 @@ export class RemoteConfigService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    if (this.gatewayConfig.mode === 'gateway') {
-      this.initGateway();
-    }
-    if (this.gatewayConfig.mode === 'service') {
-      this.initService(this.gatewayConfig.name);
-    }
+    
   }
 
   private async initConfigBroker() {
@@ -56,30 +50,6 @@ export class RemoteConfigService implements OnModuleInit {
         return new Nack(true);
       }
     }, { exchange: CONFIG_EXCHANGE, queue: CONFIG_QUEUE, routingKey: CONFIG_TOPIC_MS_PATTERN }, '')
-      .catch(err => {
-        this.logger.error(`Error subscribing to queue 'config': ${err.message}`);
-      })
-      .then((o) => {
-        console.log(o);
-        this.logger.log(`Subscribed to queue 'config'`);
-      })
-  }
-
-  private async initService(name: string) {
-    this.initConfigBroker();
-    await this.amqpConnection.publish(CONFIG_EXCHANGE, `${CONFIG_TOPIC_MS}.${name}`, this.gatewayConfig);
-    this.amqpConnection.createSubscriber<PathDefinition>(async (msg: PathDefinition, rawMessage?: ConsumeMessage, headers?: any) => {
-      try {
-        if (rawMessage.fields.routingKey === CONFIG_GATEWAY_TP) {
-          this.amqpConnection.publish(CONFIG_EXCHANGE, `${CONFIG_TOPIC_MS}.${name}`, this.gatewayConfig);
-          this.logger.debug(`Send configurarion of service '${msg.name}' to gateway`);
-        }
-      }
-      catch (err) {
-        this.logger.error(`Error sending configurarion of service '${msg.name}', path '${msg.path}': ${err.message}`);
-        return new Nack(true);
-      }
-    }, { exchange: CONFIG_EXCHANGE, queue: CONFIG_QUEUE, routingKey: CONFIG_GATEWAY_TP }, '')
       .catch(err => {
         this.logger.error(`Error subscribing to queue 'config': ${err.message}`);
       })

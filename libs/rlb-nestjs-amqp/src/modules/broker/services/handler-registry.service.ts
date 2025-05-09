@@ -36,7 +36,7 @@ export class HandlerRegistryService {
   }
 
   public getHandlers(type: 'fun', topic: string): RpcEventHandler;
-  public getHandlers(type: 'rpc', topic: string): RpcEventHandler
+  public getHandlers(type: 'rpc', topic: string): RpcEventHandler;
   public getHandlers(type: 'fun' | 'rpc', topic: string): RpcEventHandler | RpcEventHandler {
     if (type === 'fun') {
       return this.registry.get(topic);

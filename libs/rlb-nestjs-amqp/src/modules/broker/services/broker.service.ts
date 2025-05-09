@@ -7,15 +7,15 @@ import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
 import { ActionPayload, BrokerEvent, MangedFunctionExecutor, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
 import { randomUUID } from "crypto";
 import { BrokerConfig } from "../config/broker.config";
-import { MicroserviceConfig } from "../config/microservices.config";
 import { HandlerRegistryService } from "./handler-registry.service";
+import { BrokerTopic } from "../config/topics.config";
 
 @Injectable()
 export class BrokerService implements OnModuleInit {
 
   private readonly events: Subject<BrokerEvent>;
   private readonly brokerConfig: BrokerConfig;
-  private readonly microserviceConfig: MicroserviceConfig;
+  private readonly topicConfigurations: BrokerTopic[];
   private readonly appConfig: AppConfig;
   private readonly handlersPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
   private readonly rpcsPool: Map<string, { queue: string, subscribed: boolean; }> = new Map();
@@ -29,7 +29,7 @@ export class BrokerService implements OnModuleInit {
     private readonly utils: UtilsService) {
     this.events = new Subject<BrokerEvent>();
     this.brokerConfig = this.config.get<BrokerConfig>("broker");
-    this.microserviceConfig = this.config.get<MicroserviceConfig>("microservices");
+    this.topicConfigurations = this.config.get<BrokerTopic[]>("topics");
     this.appConfig = this.config.get<AppConfig>("app");
     this.logger = new Logger(BrokerService.name);
   }
@@ -43,9 +43,9 @@ export class BrokerService implements OnModuleInit {
   }
 
   onModuleInit() {
-    this.logger.debug('Initializing broker service');
+    this.logger.log('Initializing broker service');
 
-    for (const topic of this.microserviceConfig?.topics || []) {
+    for (const topic of this.topicConfigurations || []) {
       if (topic.rpc) {
         const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
         if (!queue) {
@@ -87,7 +87,7 @@ export class BrokerService implements OnModuleInit {
   }
 
   publishMessage(topic: string, action: string, payload: any, headers?: any) {
-    const msTopic = (this.microserviceConfig?.topics || []).find(t => t.name === topic);
+    const msTopic = (this.topicConfigurations || []).find(t => t.name === topic);
     let exchange: string = '';
     let routingKey: string = '';
     if (!msTopic.routingKey) {
@@ -119,7 +119,7 @@ export class BrokerService implements OnModuleInit {
       return;
     }
     if (!_q.subscribed) {
-      const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
+      const topic = this.topicConfigurations.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
       if (!topic) throw new Error(`Topic ${_topic} not found in configuration`);
@@ -128,7 +128,6 @@ export class BrokerService implements OnModuleInit {
       if (exchange.type === 'topic') {
         if (!queue.routingKey) throw new Error(`Queue ${queue.name} has no routing key`);
       }
-      this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
       try {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
@@ -160,9 +159,8 @@ export class BrokerService implements OnModuleInit {
           exchange: queue.exchange,
           routingKey: queue.routingKey,
         }, '', {});
-        this.logger.debug(`Subscribed to queue ${queue.name} with consumer tag ${o.consumerTag}`);
         this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
-        this.logger.log(`Subscribed to queue ${queue.name}`);
+        this.logger.log(`Subscribed to ${topic.name}. Exchange: '${exchange.name}' Queue: '${queue.name}'`);
       } catch (error) {
         this.logger.error(`Error subscribing to queue ${queue.name}: ${error.message}`);
       }
@@ -180,7 +178,7 @@ export class BrokerService implements OnModuleInit {
       return;
     }
     if (!_q.subscribed) {
-      const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
+      const topic = this.topicConfigurations.find(t => t.name === _topic);
       const exchange = this.brokerConfig.exchanges.find(e => e.name === topic.exchange);
       const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
       if (!topic) throw new Error(`Topic ${_topic} not found in configuration`);
@@ -191,7 +189,6 @@ export class BrokerService implements OnModuleInit {
       if (!cname) {
         throw new Error('Client name is required for topic exchange');
       }
-      this.logger.debug(`Subscribing ${topic.name} to exchange ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
       try {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
@@ -228,11 +225,10 @@ export class BrokerService implements OnModuleInit {
             autoDelete: false,
           }
         }, '', {});
-        this.logger.debug(`Subscribed to ${topic.name} using ${exchange.name}::${topic.name}-${cname}//${topic.routingKey}`);
         this.topicPool.set(_topic, { exchange: topic.exchange, routingKey: topic.routingKey, subscribed: true });
-        this.logger.log(`Subscribed to topic ${topic.name}`);
+        this.logger.log(`Subscribed to ${topic.name}. Exchange: '${exchange.name}' Queue: '${cname}'`);
       } catch (error) {
-        this.logger.error(`Error subscribing to topic ${topic.name}: ${error.message}`);
+        this.logger.error(`An error occured subscribing to topic: '${topic.name}' Details: ${error.message}`);
       }
       if (topic.handle) {
         if (!handler) throw new Error(`Topic ${_topic} requires a handler function becouse it has handle property set to true`);
@@ -248,9 +244,8 @@ export class BrokerService implements OnModuleInit {
       return;
     }
     if (!_q.subscribed) {
-      const topic = this.microserviceConfig.topics.find(t => t.name === _topic);
+      const topic = this.topicConfigurations.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
-      this.logger.debug(`Subscribing ${topic.name} to queue ${queue.exchange}::${queue.name}//${queue.routingKey}`);
       await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg: BrokerEvent<Request> = {
           topic: topic.name,
@@ -279,13 +274,14 @@ export class BrokerService implements OnModuleInit {
         routingKey: queue.routingKey,
       });
       this.rpcsPool.set(_topic, { queue: _q.queue, subscribed: true });
+      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${queue.exchange}' Queue: '${queue.name}'`);
     }
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
 
   async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any): Promise<Response> {
     const correlationId = randomUUID();
-    const msTopic = this.microserviceConfig.topics.find(t => t.name === topic);
+    const msTopic = this.topicConfigurations.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
     const routingKey = Array.isArray(queue.routingKey) ? queue.routingKey[0] : queue.routingKey;
     headers = headers || {};
