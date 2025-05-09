@@ -6,6 +6,7 @@ import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
 import * as amqp from 'amqplib';
 import { CoreModule } from '@sicilyaction/lib-nestjs-core';
+import { MetadataScannerService } from './services/reflect.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { CoreModule } from '@sicilyaction/lib-nestjs-core';
       inject: [ConfigService]
     }),
   ],
-  providers: [BrokerService, HandlerRegistryService],
+  providers: [BrokerService, HandlerRegistryService, MetadataScannerService],
   exports: [BrokerService, RabbitMQModule],
 })
 export class BrokerModule { }

@@ -2,14 +2,12 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
-import { Request, Response } from "express";
 import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
-import { GatewayConfig, PathDefinition } from "@sicilyaction/lib-nestjs-core";
-import { BrokerService } from "../../broker";
+import { Request, Response } from "express";
 import * as multer from 'multer';
+import { BrokerService } from "../../broker";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
-
-const ROLES_CLAIM = "roles";
+import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 
 @Injectable()
 export class HttpHandlerService implements OnModuleInit {
@@ -54,7 +52,7 @@ export class HttpHandlerService implements OnModuleInit {
 
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
-      if (path.auth && !authData?.success && !path.allowAnonymous) {
+      if (path.auth && !authData?.success && path.allowAnonymous !== true) {
         res.status(401).json({ message: "Unauthorized" });
         return;
       }
@@ -62,6 +60,7 @@ export class HttpHandlerService implements OnModuleInit {
         res.status(403).json({ message: "Forbidden" });
         return;
       }
+      const httpHeaders = this.httpHeaders(req, path);
 
       Object.assign(data, req.params, { $files: req.files });
       if (data['$files']) {
@@ -72,7 +71,7 @@ export class HttpHandlerService implements OnModuleInit {
       }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, data, authData);
+          this.broker.publishMessage(path.topic, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
           res.status(202).end();
           this.logger.debug(`Published event for topic ${path.topic}`);
         } else if (path.mode === "rpc") {
@@ -83,7 +82,7 @@ export class HttpHandlerService implements OnModuleInit {
                 headers.set(key, path.headers[key]);
               }
             }
-            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             if (resp) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);
@@ -128,6 +127,24 @@ export class HttpHandlerService implements OnModuleInit {
         }
       }
     });
+  }
+
+  private httpHeaders(req: Request, path: PathDefinition): { [k: string]: string | string[] | number; } {
+    const data: { [k: string]: string | string[] | number; } = {};
+    if (path.forwardHeaders) {
+      for (const key in path.forwardHeaders) {
+        const header = path.forwardHeaders[key]?.toLocaleLowerCase().trim();
+        const headerValue = Object.keys(req.headers).find(h => h.toLowerCase().trim() === header);
+        if (headerValue) {
+          if (this.gatewayConfig.headerPrefix) {
+            data[`${this.gatewayConfig.headerPrefix}${key}`] = req.headers[headerValue];
+          } else {
+            data[`${key}`] = req.headers[headerValue];
+          }
+        }
+      }
+    }
+    return data;
   }
 }
 

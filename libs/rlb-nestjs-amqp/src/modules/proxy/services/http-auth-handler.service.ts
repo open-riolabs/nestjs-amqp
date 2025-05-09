@@ -1,20 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PathDefinition } from '@sicilyaction/lib-nestjs-core';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
 import { Request, Response } from 'express';
 import { JwtService } from './jwt.service';
 import { ProcessedAuthData } from '..';
+import { PathDefinition } from '../config/path-definition.config';
 
 @Injectable()
-export class HttpAuthHandlerService {
+export class HttpAuthHandlerService implements OnModuleInit {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService) {
+  }
+
+  onModuleInit() {
     this.authProviders = this.configService.get<HandlerAuthConfig[]>("auth-providers");
   }
 
-  private readonly authProviders: HandlerAuthConfig[];
+  private authProviders: HandlerAuthConfig[];
 
   async processAuthData(req: Request, path: PathDefinition): Promise<ProcessedAuthData> {
 
@@ -37,7 +40,7 @@ export class HttpAuthHandlerService {
     let decoded: any;
     let out: ProcessedAuthData = { success: false };
     const jwt = req.headers.authorization?.split(" ")[1];
-    if (!jwt) return out; 
+    if (!jwt) return out;
     if (authConfig.type === 'jwt') {
       decoded = await this.jwtService.verifyTokenSecret(authConfig, jwt);
     }

@@ -1,7 +1,3 @@
-export interface MicroserviceConfig {
-  topics: BrokerTopic[];
-}
-
 /**
  * Represents the configuration for a microservice topic.
  */
