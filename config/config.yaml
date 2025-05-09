@@ -13,9 +13,9 @@ auth-providers:
     rolesClaim: "roles"
     headerPrefix: "X-GTW-AUTH-"    
     outProp: $auth
-    issuer: https://login.transfeero.com/realms/transfeero
-    tokenUrl: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/token
-    jwksUri: https://login.transfeero.com/realms/transfeero/protocol/openid-connect/certs
+    issuer: https://login.transfeero.com/realms/transfeero-customer
+    tokenUrl: https://login.transfeero.com/realms/transfeero-customer/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero-customer/protocol/openid-connect/certs
     algorithms:
       - "RS256"
     clientId: "admin"
@@ -66,20 +66,21 @@ broker:
         autoDelete: false
         exclusive: false
 
-microservices:
-  topics:
-    - name: local-test
-      queue: local-test
-      rpc: true
-    - name: sample-bst
-      exchange: sample-bst
-      routingKey: broadcast/#
+topics:
+  - name: local-test
+    queue: local-test
+    rpc: true
+  - name: sample-bst
+    exchange: sample-bst
+    routingKey: broadcast/#
 
 gateway:
+  events: []
   mode: gateway
   paths:
     - name: local-test
-      auth: false
+      auth: transfeero-jwks
+      allowAnonymous: true
       # roles:
       #   - "admin"
       method: POST
