@@ -34,6 +34,7 @@ export class HttpAuthHandlerService implements OnModuleInit {
       default:
         break;
     }
+    return out;
   }
 
   async checkJwt(req: Request, authConfig: HandlerAuthConfig) {
