@@ -92,7 +92,7 @@ export class HttpAuthHandlerService implements OnModuleInit {
       return out;
     }
 
-    const token = authHeader.substring(authConfig.headerPrefix.length).trim();
+    const token = authHeader.trim();
     if (token === authConfig.secret) {
       out[`${authConfig.headerPrefix}TOKEN`] = token;
       out.success = true;
