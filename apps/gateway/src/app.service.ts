@@ -8,7 +8,7 @@ export class AppService implements OnModuleInit {
   constructor(private readonly brokerService: BrokerService) { }
   async onModuleInit() {
     setInterval(async () => {
-      //this.brokerService.publishMessage('sample-bst', { fefe: 'ferf' });
+      this.brokerService.publishMessage('sample-bst', 'ooo', { fefe: 'ferf' });
     }, 1000);
 
     await this.brokerService.registerTopic('sample-bst', (o) => {
