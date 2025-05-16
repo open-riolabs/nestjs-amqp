@@ -132,7 +132,7 @@ export class BrokerService implements OnModuleInit {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
             topic: topic.name,
-            payload: msg.payload,
+            payload: msg.payload || (msg as Request),
             source: {
               exchange: rawMessage.fields.exchange,
               routingKey: rawMessage.fields.routingKey,
@@ -193,7 +193,7 @@ export class BrokerService implements OnModuleInit {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
             topic: topic.name,
-            payload: msg.payload,
+            payload: msg.payload || (msg as Request),
             source: {
               exchange: rawMessage.fields.exchange,
               routingKey: rawMessage.fields.routingKey,

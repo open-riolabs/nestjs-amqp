@@ -73,6 +73,7 @@ topics:
   - name: sample-bst
     exchange: sample-bst
     routingKey: broadcast/#
+    handle: true
 
 gateway:
   events: []
