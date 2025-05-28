@@ -4,6 +4,7 @@ export interface PathDefinition {
   path: string;
   topic: string;
   action: string;
+  timeout?: number;
   dataSource: 'body' | 'query' | 'params';
   mode: 'event' | 'rpc';
   auth?: string;
