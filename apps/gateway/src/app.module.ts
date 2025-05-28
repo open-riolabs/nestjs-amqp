@@ -3,6 +3,7 @@ import { TerminusModule } from '@nestjs/terminus';
 import { AppService } from './app.service';
 import { CoreModule } from '@sicilyaction/lib-nestjs-core';
 import { BrokerModule, RemoteConfigModule, ProxyModule } from '@sicilyaction/lib-nestjs-amqp';
+import { DemoService } from './demo.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { BrokerModule, RemoteConfigModule, ProxyModule } from '@sicilyaction/lib
     RemoteConfigModule,
   ],
   controllers: [],
-  providers: [AppService],
+  providers: [AppService, DemoService],
 })
 export class AppModule { }
 
