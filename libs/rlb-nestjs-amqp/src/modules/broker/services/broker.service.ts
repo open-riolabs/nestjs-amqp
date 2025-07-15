@@ -337,7 +337,6 @@ export class BrokerService implements OnModuleInit {
       const _ret = await ret;
       return { success: true, payload: _ret };
     } catch (error) {
-      this.logger.error(`Error executing function ${fn.name}: ${error.message}\nParams: ${JSON.stringify(params)}\nStack: ${error.stack}`);
       return { success: false, error: this.utils.error2Object(error, this.appConfig.environment !== 'production') };
     }
   }
