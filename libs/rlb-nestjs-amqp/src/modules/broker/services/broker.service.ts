@@ -1,14 +1,14 @@
 import { AmqpConnection, Nack } from "@golevelup/nestjs-rabbitmq";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { ConfigService } from "@nestjs/config";
+import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { ConsumeMessage } from "amqplib";
-import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
-import { ActionPayload, BrokerEvent, MangedFunctionExecutor, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
 import { randomUUID } from "crypto";
+import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
 import { BrokerConfig } from "../config/broker.config";
-import { HandlerRegistryService } from "./handler-registry.service";
 import { BrokerTopic } from "../config/topics.config";
+import { ActionPayload, BrokerEvent, MangedFunctionExecutor, RpcEventHandler, TopicEventHandler } from "../data/events/messages";
+import { HandlerRegistryService } from "./handler-registry.service";
 
 @Injectable()
 export class BrokerService implements OnModuleInit {
@@ -132,7 +132,7 @@ export class BrokerService implements OnModuleInit {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
             topic: topic.name,
-            payload: msg.payload || (msg as Request),
+            payload: msg.payload,
             source: {
               exchange: rawMessage.fields.exchange,
               routingKey: rawMessage.fields.routingKey,
@@ -193,7 +193,7 @@ export class BrokerService implements OnModuleInit {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
             topic: topic.name,
-            payload: msg.payload || (msg as Request),
+            payload: msg.payload,
             source: {
               exchange: rawMessage.fields.exchange,
               routingKey: rawMessage.fields.routingKey,
@@ -279,7 +279,7 @@ export class BrokerService implements OnModuleInit {
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
 
-  async requestData<Request = any, Response = any>(topic: string, action: string, payload: Request, headers?: any, timeout?: number): Promise<Response> {
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload?: Request, headers?: any): Promise<Response> {
     const correlationId = randomUUID();
     const msTopic = this.topicConfigurations.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
@@ -289,25 +289,22 @@ export class BrokerService implements OnModuleInit {
     if (!queue || !routingKey) {
       throw new Error(`Topic ${topic} not found in configuration`);
     }
-    let result: MangedFunctionExecutor<Response>;
     try {
-      result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
+      const result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
         exchange: queue.exchange,
         routingKey,
         payload: { action, payload },
         correlationId,
-        headers,
-        timeout: timeout || this.brokerConfig.defaultRpcTimeout || 10000,
+        headers
       });
+      if (!result.success) {
+        throw result.error;
+      }
+      return result.payload;
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
     }
-    if (!result.success) {
-      throw result.error;
-    }
-    return result.payload;
-
   }
 
   getHandler<Request = any, Response = any>(topic: string): RpcEventHandler<Request, Response> {

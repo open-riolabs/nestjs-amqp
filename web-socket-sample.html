@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>RxJS WebSocket Multiplexer</title>
+    <script src="https://unpkg.com/rxjs@7/dist/bundles/rxjs.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            margin: 20px;
+        }
+
+        input,
+        button {
+            margin: 5px;
+        }
+
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: calc(100vh - 170px);
+            overflow-y: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>WebSocket Multiplexer (RxJS)</h2>
+    <label>Topic: <input id="topicInput" value="chat" /></label>
+    <button onclick="subscribeTopic()">Subscribe</button>
+    <button onclick="unsubscribeTopic()">Unsubscribe</button>
+
+    <div>
+        <p id="messages">
+
+        </p>
+    </div>
+
+    <script>
+        const { webSocket } = rxjs.webSocket;
+        const { filter, map, share } = rxjs.operators;
+
+        // Change to your actual WebSocket server (ws://localhost:PORT, etc.)
+        const wsSubject = webSocket('ws://localhost:8000?id=1234');
+        const topics = {};
+        const sharedMessages$ = wsSubject.pipe(share());
+
+        // Handle incoming messages
+        function getTopicObservable(topic) {
+            return sharedMessages$.pipe(
+                filter(msg => msg.topic === `on${topic.charAt(0).toUpperCase() + topic.slice(1)}`),
+                map(msg => msg.data)
+            );
+        }
+
+        // Subscribe to a specific topic
+        function subscribeTopic() {
+            const topic = document.getElementById('topicInput').value;
+            if (topics[topic]) {
+                logMessage(`Already subscribed to '${topic}'`);
+                return;
+            }
+
+            const sub = getTopicObservable(topic).subscribe(data => {
+                const _msg = structuredClone(data);
+                delete _msg.raw;
+                logMessage(`[${topic}] ${JSON.stringify(_msg, null, 2)}`);
+            });
+
+            // Inform server about subscription (your server should handle this)
+            wsSubject.next({ action: 'subscribe', topic });
+
+            topics[topic] = sub;
+            logMessage(`Subscribed to '${topic}'`);
+        }
+
+        // Unsubscribe from a topic
+        function unsubscribeTopic() {
+            const topic = document.getElementById('topicInput').value;
+            if (!topics[topic]) {
+                logMessage(`Not subscribed to '${topic}'`);
+                return;
+            }
+
+            // Inform server
+            wsSubject.next({ action: 'unsubscribe', topic });
+
+            //topics[topic].unsubscribe();
+            delete topics[topic];
+            logMessage(`Unsubscribed from '${topic}'`);
+        }
+
+        // Utility to log messages
+        function logMessage(msg) {
+            const messagesDiv = document.getElementById('messages');
+            const p = document.createElement('p');
+            p.innerHTML = `<pre > ${msg}</pre>`;
+            messagesDiv.appendChild(p);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+        }
+    </script>
+</body>
+
+</html>

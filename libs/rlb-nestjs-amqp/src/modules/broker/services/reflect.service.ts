@@ -97,7 +97,7 @@ export class MetadataScannerService implements OnModuleInit {
         if (!queue.routingKey) throw new Error(`Queue ${queue.name} has no routing key`);
       }
       for (const [action, { method, service }] of Object.entries(actions)) {
-        this.logger.log(`Binded \`${service.constructor.name}.${method.name}\` to action \`${action}\`. Queue \`${queue.name}/${topic}\``);
+        this.logger.log(`Binded function \`${service.constructor.name}.${method.name}\` to action \`${action}\`. Queue \`${queue.name}/${topic}\``);
       }
 
       try {
