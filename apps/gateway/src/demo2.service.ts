@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { BrokerAction, BrokerParam } from '@sicilyaction/lib-nestjs-amqp';
 
 @Injectable()
-export class DemoService {
+export class Demo2Service {
 
-    @BrokerAction('local-test', 'test-01')
+    @BrokerAction('local-test', 'test-02')
     pippo(
         @BrokerParam("header", "X-GTW-AUTH-USERID") userId: string,
         @BrokerParam("body", "parametro") par2: string,
@@ -14,7 +14,7 @@ export class DemoService {
     }
 
 
-    // @BrokerAction('rlb-admin', 'user-acl-list')
+    // @BrokerAction('rlb-admin', 'user-acl-list-2')
     // async filterUsers(
     //     @BrokerParam('body-full') query: any,
     //     @BrokerParam('body', 'page') page: number = 1,

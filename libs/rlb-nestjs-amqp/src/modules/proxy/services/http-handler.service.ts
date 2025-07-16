@@ -6,8 +6,8 @@ import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { Request, Response } from "express";
 import * as multer from 'multer';
 import { BrokerService } from "../../broker";
-import { HttpAuthHandlerService } from "./http-auth-handler.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
+import { HttpAuthHandlerService } from "./http-auth-handler.service";
 
 @Injectable()
 export class HttpHandlerService implements OnModuleInit {
@@ -33,9 +33,15 @@ export class HttpHandlerService implements OnModuleInit {
     });
   }
 
-  onModuleInit() {
+  async onModuleInit() {
     this.server = this.httpAdapterHost.httpAdapter.getInstance<ExpressAdapter>();
-    for (const path of this.gatewayConfig?.paths || []) {
+    const extPath: PathDefinition[] = [];
+    if (this.gatewayConfig.loadConfig?.paths) {
+      const o = await this.broker.requestData(this.gatewayConfig.loadConfig.paths.topic, this.gatewayConfig.loadConfig.paths.action, {});
+      extPath.push(...o);
+    }
+    const paths = [...this.gatewayConfig?.paths || [], ...extPath];
+    for (const path of paths) {
       this.registerPath(path);
     }
   }
@@ -48,21 +54,26 @@ export class HttpHandlerService implements OnModuleInit {
 
     this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
       this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
-      const data = req[path.dataSource];
-
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
       if (path.auth && !authData?.success && path.allowAnonymous !== true) {
         res.status(401).json({ message: "Unauthorized" });
         return;
       }
-      if (!this.httpAuthHandlerService.checkRoles(authData, path)) {
+      if (!(await this.httpAuthHandlerService.checkRoles(authData, path))) {
         res.status(403).json({ message: "Forbidden" });
         return;
       }
       const httpHeaders = this.httpHeaders(req, path);
 
-      Object.assign(data, req.params, { $files: req.files });
+      const data = req[path.dataSource] || req.body || {};
+      if (path.parseRaw) {
+        Object.assign(data, { $raw: (req as any).rawBody });
+      }
+      if (req.files) {
+        Object.assign(data, { $files: req.files });
+      }
+      Object.assign(data, req.params);
       if (data['$files']) {
         for (const file of data['$files']) {
           const o: Buffer = file.buffer;
@@ -82,12 +93,7 @@ export class HttpHandlerService implements OnModuleInit {
                 headers.set(key, path.headers[key]);
               }
             }
-            const resp = await this.broker.requestData(
-              path.topic,
-              path.action,
-              data,
-              { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path },
-              path.timeout);
+            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             if (resp) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);
