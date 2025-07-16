@@ -54,7 +54,7 @@ export class RemoteConfigService implements OnModuleInit {
         this.logger.error(`Error subscribing to queue 'config': ${err.message}`);
       })
       .then((o) => {
-        console.log(o);
+        // console.log(o);
         this.logger.log(`Subscribed to queue 'config'`);
       })
   }
