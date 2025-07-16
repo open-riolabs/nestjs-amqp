@@ -59,7 +59,7 @@ jobs:
     needs: dependencies
     runs-on: ubuntu-latest
     container:
-      image: node:lts-buster
+      image: node:lts-bullseye
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
