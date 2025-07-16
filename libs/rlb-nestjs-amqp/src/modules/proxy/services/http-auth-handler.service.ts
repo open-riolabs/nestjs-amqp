@@ -1,14 +1,16 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
-import { Request, Response } from 'express';
-import { JwtService } from './jwt.service';
+import { Request } from 'express';
 import { ProcessedAuthData } from '..';
+import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
 import { PathDefinition } from '../config/path-definition.config';
+import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
+import { JwtService } from './jwt.service';
 
 @Injectable()
 export class HttpAuthHandlerService implements OnModuleInit {
   constructor(
+    @Optional() @Inject(RLB_GTW_ACL_ROLE_SERVICE) private readonly aclRoleService: IAclRoleService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService) {
   }
@@ -34,7 +36,6 @@ export class HttpAuthHandlerService implements OnModuleInit {
       default:
         break;
     }
-    return out;
   }
 
   async checkJwt(req: Request, authConfig: HandlerAuthConfig) {
@@ -92,7 +93,7 @@ export class HttpAuthHandlerService implements OnModuleInit {
       return out;
     }
 
-    const token = authHeader.trim();
+    const token = authHeader.substring(authConfig.headerPrefix.length).trim();
     if (token === authConfig.secret) {
       out[`${authConfig.headerPrefix}TOKEN`] = token;
       out.success = true;
@@ -102,16 +103,20 @@ export class HttpAuthHandlerService implements OnModuleInit {
     return out;
   }
 
-  checkRoles(data: { [key: string]: any; }, path: PathDefinition): boolean {
+  async checkRoles(data: { [key: string]: any; }, path: PathDefinition): Promise<boolean> {
     if (!path?.auth) return true;
     if (!path?.roles) return true;
-    if (!data) return false;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
     if (!authConfig) throw new Error(`Auth provider ${path.auth} not found`);
-    const roles: string[] = data[authConfig.rolesClaim];
-    if (!roles) return false;
-    if (path.roles.all && path.roles.some) throw new Error("Path definition can't have both 'all' and 'some' roles");
-    if (path.roles.all) return path.roles.all.every((role: string) => roles.includes(role));
-    if (path.roles.some) return path.roles.some.some((role: string) => roles.includes(role));
+    if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${path.auth} is not a JWT or JWKS provider`);
+    if (!authConfig.usernameClaim) throw new Error(`Auth provider ${path.auth} has no username claim defined`);
+    if (!authConfig.aclTopic) throw new Error(`Auth provider ${path.auth} has no ACL topic defined`);
+    if (!authConfig.aclAction) throw new Error(`Auth provider ${path.auth} has no ACL action defined`);
+    if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
+    if (!data) return false;
+    const userId = data[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
+    if (!userId) return false;
+    const canUserDo = await this.aclRoleService.canUserDo(authConfig.aclTopic, authConfig.aclAction, userId);
+    return canUserDo;
   }
 }
