@@ -34,6 +34,7 @@ export class JwtService implements OnModuleInit {
 
   verifyTokenJwks<T = JwtPayload>(authConfig: HandlerAuthConfig, token: string): Promise<T | undefined> {
     if (!authConfig) {
+      this.logger.warn("No auth config provided for JWT verification");
       return Promise.resolve(undefined);
     }
     if (!this.jwksClients[authConfig.name]) {
@@ -43,6 +44,7 @@ export class JwtService implements OnModuleInit {
 
     return new Promise((resolve, reject) => {
       if (!token) {
+        this.logger.warn("No token provided for JWT verification");
         resolve(undefined);
       }
 
