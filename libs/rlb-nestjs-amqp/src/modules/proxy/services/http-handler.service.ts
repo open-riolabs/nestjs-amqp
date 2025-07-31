@@ -53,7 +53,6 @@ export class HttpHandlerService implements OnModuleInit {
     if (!path.mode) throw new Error("Mode is required for path definition");
 
     this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
-      this.logger.debug(`Processing [${path.method.toUpperCase()}] '${path.path}' => [${path.mode.toUpperCase()}] ${path.topic}`);
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
       if (path.auth && !authData?.success && path.allowAnonymous !== true) {
@@ -84,7 +83,7 @@ export class HttpHandlerService implements OnModuleInit {
         if (path.mode === "event") {
           this.broker.publishMessage(path.topic, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
           res.status(202).end();
-          this.logger.debug(`Published event for topic ${path.topic}`);
+          this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
         } else if (path.mode === "rpc") {
           try {
             const headers = new Map<string, string | string[] | number>();
@@ -97,21 +96,21 @@ export class HttpHandlerService implements OnModuleInit {
             if (resp) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);
-                this.logger.debug(`RPC response processed for topic '${path.topic}': redirecting to '${path.redirect}'`);
+                this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | REDIRECT '${path.redirect}'`);
                 return;
               }
               if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
               if (headers.get("Content-Type").toString().includes('json')) {
                 res.status(200).setHeaders(headers).json(resp);
-                this.logger.debug(`RPC response processed for topic '${path.topic}': JSON`);
+                this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'JSON'`);
                 return;
               }
               res.status(200).setHeaders(headers).end(resp);
-              this.logger.debug(`RPC response processed for topic '${path.topic}': RAW`);
+              this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'RAW'`);
               return;
             }
             res.status(204).end();
-            this.logger.debug(`RPC response processed for topic '${path.topic}': NO CONTENT`);
+            this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'NO CONTENT'`);
             return;
           } catch (error) {
             switch (error.name) {
@@ -122,7 +121,7 @@ export class HttpHandlerService implements OnModuleInit {
               case "UnauthorizedError": res.status(401).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
               default: res.status(500).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
             }
-            this.logger.debug(`RPC error for topic ${path.topic}`);
+            this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
           }
         }
         else {

@@ -8,11 +8,11 @@ export class AppService implements OnModuleInit {
 
   async onModuleInit() {
 
-    setInterval(async () => {
-      this.brokerService.publishMessage('sample-bst', 'action', { fefe: 'ferf' });
-      const ret = await this.brokerService.requestData('local-test', 'test-01', { parametro: 'demo', par3: 'val3' });
-      console.log(ret);
-    }, 1000);
+    // setInterval(async () => {
+    //   this.brokerService.publishMessage('sample-bst', 'action', { fefe: 'ferf' });
+    //   const ret = await this.brokerService.requestData('local-test', 'test-01', { parametro: 'demo', par3: 'val3' });
+    //   console.log(ret);
+    // }, 1000);
 
     await this.brokerService.registerTopic('sample-bst', (o) => {
       // console.log(o);
