@@ -157,7 +157,8 @@ export class WebSocketService implements OnModuleInit {
               url,
               method: method.toUpperCase(),
               data: msg,
-              headers
+              headers,
+              timeout: event.timeout || this.brokerConfig.defaultRpcTimeout || 10000,
             }));
             this.logger.debug(`Event ${event.name} sent to ${url} with response ${response.status}`);
           }

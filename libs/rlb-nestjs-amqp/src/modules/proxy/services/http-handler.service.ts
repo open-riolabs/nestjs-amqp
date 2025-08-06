@@ -92,7 +92,7 @@ export class HttpHandlerService implements OnModuleInit {
                 headers.set(key, path.headers[key]);
               }
             }
-            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
             if (resp) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);
