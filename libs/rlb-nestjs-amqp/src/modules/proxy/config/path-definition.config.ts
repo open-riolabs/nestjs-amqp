@@ -10,6 +10,7 @@ export interface PathDefinition {
   auth?: string;
   allowAnonymous?: boolean;
   roles: string[];
+  timeout?: number;
   headers: {
     [k: string]: string | string[] | number;
   };
@@ -29,6 +30,7 @@ export interface WebSocketEvent {
   url?: string;
   method?: string;
   headers?: { [k: string]: string | string[] | number; };
+  timeout?: number;
 }
 
 export interface GatewayConfigLoader {

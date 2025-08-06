@@ -279,7 +279,7 @@ export class BrokerService implements OnModuleInit {
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
 
-  async requestData<Request = any, Response = any>(topic: string, action: string, payload?: Request, headers?: any): Promise<Response> {
+  async requestData<Request = any, Response = any>(topic: string, action: string, payload?: Request, headers?: any, timeout?: number): Promise<Response> {
     const correlationId = randomUUID();
     const msTopic = this.topicConfigurations.find(t => t.name === topic);
     const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
@@ -295,7 +295,8 @@ export class BrokerService implements OnModuleInit {
         routingKey,
         payload: { action, payload },
         correlationId,
-        headers
+        headers,
+        timeout: timeout || this.brokerConfig.defaultRpcTimeout || 10000,
       });
       if (!result.success) {
         throw result.error;
