@@ -1,17 +1,16 @@
-import { Injectable, Logger, OnModuleInit, Scope } from '@nestjs/common';
-import { ModuleRef, ModulesContainer } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
-import 'reflect-metadata';
-import { inspect } from 'util';
-import { RLB_BROKER_METHOD_METADATA_KEY, RLB_BROKER_PARAM_METADATA_KEY } from '../const';
-import { BrokerConfig } from '../config/broker.config';
 import { AmqpConnection, Nack } from '@golevelup/nestjs-rabbitmq';
-import { ActionPayload, MangedFunctionExecutor } from '../data/events/messages';
-import { ConsumeMessage } from 'amqplib';
-import { isObservable, lastValueFrom, Observable } from 'rxjs';
+import { Injectable, Logger, OnModuleInit, Scope } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ModuleRef, ModulesContainer } from '@nestjs/core';
 import { AppConfig, UtilsService } from '@sicilyaction/lib-nestjs-core';
-import { BrokerParamSource } from '../decorators';
+import { ConsumeMessage } from 'amqplib';
+import 'reflect-metadata';
+import { isObservable, lastValueFrom, Observable } from 'rxjs';
+import { BrokerConfig } from '../config/broker.config';
 import { BrokerTopic } from '../config/topics.config';
+import { RLB_BROKER_AUTH_METADATA_KEY, RLB_BROKER_HTTP_METADATA_KEY, RLB_BROKER_METHOD_METADATA_KEY, RLB_BROKER_PARAM_METADATA_KEY } from '../const';
+import { ActionPayload, MangedFunctionExecutor } from '../data/events/messages';
+import { BrokerHttpMethod, BrokerParamSource } from '../decorators';
 
 @Injectable()
 export class MetadataScannerService implements OnModuleInit {
@@ -38,9 +37,12 @@ export class MetadataScannerService implements OnModuleInit {
       [key: string]: {
         service?: any;
         method?: Function;
-        params?: { [key: string]: { source: BrokerParamSource, name?: string } };
-      }
-    }
+        type?: string;
+        auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, roles?: string[]; }[];
+        http?: { method: BrokerHttpMethod; path: string; dataSource?: BrokerParamSource; parseRaw?: boolean; timeout?: number; }[];
+        params?: { [key: string]: { source: BrokerParamSource, name?: string; }; };
+      };
+    };
   } = {};
 
   async onModuleInit() {
@@ -61,25 +63,35 @@ export class MetadataScannerService implements OnModuleInit {
             const metadata = Reflect.getMetadata(RLB_BROKER_METHOD_METADATA_KEY, instance.constructor) || [];
             if (metadata.length) {
               for (const method of metadata) {
-                const topic = this.metadata[method.topic]
+                const topic = this.metadata[method.topic];
                 if (!topic) {
                   this.metadata[method.topic] = {};
                 }
                 const action = this.metadata[method.topic][method.action];
                 if (!action) {
-                  this.metadata[method.topic][method.action] = {}
+                  this.metadata[method.topic][method.action] = {};
                 }
                 const paramMetadata = Reflect.getMetadata(RLB_BROKER_PARAM_METADATA_KEY, instance, method.methodName) || [];
+
+                const authMetadata = (Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, instance.constructor) || [])
+                  .filter((m: any) => m.methodName === method.methodName);
+                const httpMetadata = (Reflect.getMetadata(RLB_BROKER_HTTP_METADATA_KEY, instance.constructor) || [])
+                  .filter((m: any) => m.methodName === method.methodName);
+
+
                 this.metadata[method.topic][method.action] = {
                   service: instance,
                   method: instance[method.methodName],
+                  type: method.type,
+                  auth: [...authMetadata],
+                  http: [...httpMetadata],
                   params: this.removeDefaultsFromParams(method.params as string[] || []).reduce((acc, param, index) => {
                     const meta = Object.assign({}, paramMetadata.find((p: any) => p.index === index) || { source: 'body' });
                     delete meta.index;
                     acc[param] = meta;
                     return acc;
                   }, {})
-                }
+                };
               }
             }
           }
@@ -104,7 +116,7 @@ export class MetadataScannerService implements OnModuleInit {
         await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(
           async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
             const payload = msg.payload || {};
-            const method = actions[msg.action]
+            const method = actions[msg.action];
             const args = [];
             if (!method) {
               this.logger.error(`Action ${msg.action} not managed by any service`);
@@ -127,6 +139,14 @@ export class MetadataScannerService implements OnModuleInit {
                 args.push(rawMessage.fields.consumerTag);
                 continue;
               }
+              if (meta.source === 'action') {
+                args.push(msg.action);
+                continue;
+              }
+              if (meta.source === 'topic') {
+                args.push(topic);
+                continue;
+              }
             }
             try {
               const result = await this.executeFunction<Response>(method.service, method.method, args);
@@ -137,6 +157,7 @@ export class MetadataScannerService implements OnModuleInit {
               return new Nack(true);
             }
           }, {
+
           queue: queue.name,
           exchange: queue.exchange,
           routingKey: queue.routingKey,
@@ -169,7 +190,7 @@ export class MetadataScannerService implements OnModuleInit {
     }
   }
 
-  removeDefaultsFromParams(params: string[]): string[] {
+  private removeDefaultsFromParams(params: string[]): string[] {
     const cleaned: string[] = [];
     for (let i = 0; i < params.length; i++) {
       if (params[i] === '=') {
@@ -179,6 +200,25 @@ export class MetadataScannerService implements OnModuleInit {
       }
     }
     return cleaned;
+  }
+
+  get metaInfo() {
+    if (!this.metadata) {
+      return {};
+    }
+    const r = {};
+    for (const p of Object.keys(this.metadata)) {
+      for (const j of Object.keys(this.metadata[p])) {
+        if (!r[p]) r[p] = {};
+        r[p][j] = {
+          type: this.metadata[p][j].type,
+          auth: structuredClone(this.metadata[p][j].auth),
+          http: structuredClone(this.metadata[p][j].http),
+          params: structuredClone(this.metadata[p][j].params),
+        };
+      }
+    }
+    return r;
   }
 
 }
