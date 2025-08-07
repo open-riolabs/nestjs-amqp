@@ -65,7 +65,20 @@ export class HttpHandlerService implements OnModuleInit {
       }
       const httpHeaders = this.httpHeaders(req, path);
 
-      const data = req[path.dataSource] || req.body || {};
+      let data = req[path.dataSource] || req.body || {};
+      if (path.dataSource === 'body') {
+        data = { ...req.params, ...req.body || {} };
+      } else if (path.dataSource === 'query') {
+        data = { ...req.params, ...req.query || {} };
+      } else if (path.dataSource === 'params') {
+        data = req.params || {};
+      } else if (path.dataSource === 'body-query') {
+        data = { ...req.params, ...req.query || {}, ...req.body || {} };
+      } else if (path.dataSource === 'query-body') {
+        data = { ...req.params, ...req.body || {}, ...req.query || {} };
+      } else {
+        data = { ...req.params, ...req.body || {}, ...req.query || {} };
+      }
       if (path.parseRaw) {
         Object.assign(data, { $raw: (req as any).rawBody });
       }
