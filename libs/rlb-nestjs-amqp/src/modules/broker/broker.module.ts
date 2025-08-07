@@ -1,12 +1,13 @@
 import { RabbitMQConfig, RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CoreModule } from '@sicilyaction/lib-nestjs-core';
+import * as amqp from 'amqplib';
 import { BrokerConfig } from './config/broker.config';
+import { AutoDiscoveryService } from './services/auto-discovery.service';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
-import * as amqp from 'amqplib';
-import { CoreModule } from '@sicilyaction/lib-nestjs-core';
-import { MetadataScannerService } from './services/reflect.service';
+import { MetadataScannerService } from './services/metadata-scanner.service';
 
 @Module({
   imports: [
@@ -17,8 +18,8 @@ import { MetadataScannerService } from './services/reflect.service';
       inject: [ConfigService]
     }),
   ],
-  providers: [BrokerService, HandlerRegistryService, MetadataScannerService],
-  exports: [BrokerService, RabbitMQModule],
+  providers: [BrokerService, HandlerRegistryService, MetadataScannerService, AutoDiscoveryService],
+  exports: [BrokerService, RabbitMQModule, AutoDiscoveryService],
 })
 export class BrokerModule { }
 
