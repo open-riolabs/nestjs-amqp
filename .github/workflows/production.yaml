@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+
 jobs:
   versioning:
     runs-on: ubuntu-latest
@@ -44,8 +45,6 @@ jobs:
             ${{ runner.os }}-node-modules-
       - name: Install dependencies
         run: |
-          npm config set "@sicilyaction:registry=https://npm.pkg.github.com/sicilyaction/"
-          npm config set "//npm.pkg.github.com/sicilyaction/:_authToken" "${{ secrets.DEPLOY_PAT }}"
           npm install
       - name: Create node_modules TarGz
         run: tar -czf node_modules.tar.gz node_modules
@@ -59,7 +58,7 @@ jobs:
     needs: dependencies
     runs-on: ubuntu-latest
     container:
-      image: node:lts-bullseye
+      image: node:lts-buster
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,16 +109,20 @@ jobs:
       - name: Set Version and Publish
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
-          registry-url: "https://npm.pkg.github.com/"
-          scope: "@sicilyaction"
+          node-version: "22.x"
+          registry-url: "https://registry.npmjs.org/"
+          scope: "@open-rlb"
       - run: |
           cp ./package.json ./dist
+          cp ./package-lock.json ./dist
+          cp ./README.md ./dist
+          cp ./libs/rlb-nestjs-amqp/open-rlb-amqp.schema.json ./dist
+
           cd ./dist
           npm version ${{ needs.versioning.outputs.GitVersion_SemVer }} --git-tag-version false
-          npm publish --access restricted
+          npm publish --allow-same-version --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.DEPLOY_PAT }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_OPEN_RLB }}
 
       - name: Tag repo with new version
         uses: cardinalby/git-tag-action@master

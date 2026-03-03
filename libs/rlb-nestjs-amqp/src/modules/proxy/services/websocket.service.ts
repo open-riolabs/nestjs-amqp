@@ -1,14 +1,13 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { AppConfig } from '@sicilyaction/lib-nestjs-core';
 import { ConsumeMessage } from 'amqplib';
 import { IncomingMessage } from 'http';
 import { filter, lastValueFrom, Subject, Subscription } from 'rxjs';
 import { WebSocketServer as Server, WebSocket } from 'ws';
+import { AmqpConnection } from "../../../amqp-lib";
 import { ActionPayload, BrokerConfig, BrokerEvent, BrokerService } from '../../broker';
+import { RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from '../../broker/const';
 import { GatewayConfig, WebSocketEvent } from '../config/path-definition.config';
 
 type SubscribeEvent<T = void> = { action: 'subscribe' | 'unsubscribe'; data: T; };
@@ -22,20 +21,14 @@ export class WebSocketService implements OnModuleInit {
   private readonly logger = new Logger(WebSocketService.name);
   private readonly subjects: { [k: string]: Subject<any>; } = {};
   private readonly subscriptions: { [k: string]: { [k: string]: Subscription; }; } = {};
-  private readonly gatewayConfig: GatewayConfig;
-  private readonly brokerConfig: BrokerConfig;
-  private readonly appConfig: AppConfig;
 
   constructor(
     private readonly amqpConnection: AmqpConnection,
-    private readonly configService: ConfigService,
     private readonly httpClient: HttpService,
-    private readonly broker: BrokerService
-  ) {
-    this.brokerConfig = this.configService.get<BrokerConfig>("broker");
-    this.gatewayConfig = this.configService.get<GatewayConfig>("gateway");
-    this.appConfig = this.configService.get<AppConfig>("app");
-  }
+    private readonly broker: BrokerService,
+    @Inject(RLB_AMQP_GATEWAY_OPTIONS) private readonly gatewayConfig: GatewayConfig,
+    @Inject(RLB_AMQP_BROKER_OPTIONS) private readonly brokerConfig: BrokerConfig,
+  ) { }
 
   private handleDisconnect(client: NamedWebSocket) {
     if (this.subscriptions[client.id]) {

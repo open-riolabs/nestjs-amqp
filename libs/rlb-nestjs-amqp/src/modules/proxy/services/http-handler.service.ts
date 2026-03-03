@@ -1,11 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
-import { AppConfig, UtilsService } from "@sicilyaction/lib-nestjs-core";
 import { Request, Response } from "express";
 import * as multer from 'multer';
 import { BrokerService } from "../../broker";
+import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
+import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
 
@@ -13,23 +13,21 @@ import { HttpAuthHandlerService } from "./http-auth-handler.service";
 export class HttpHandlerService implements OnModuleInit {
 
   private server: ExpressAdapter;
-  private readonly gatewayConfig: GatewayConfig;
-  private readonly appConfig: AppConfig;
+
   private readonly logger: Logger;
   private readonly multer: multer.Multer;
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly broker: BrokerService,
     private readonly utils: UtilsService,
-    private readonly httpAuthHandlerService: HttpAuthHandlerService
+    private readonly httpAuthHandlerService: HttpAuthHandlerService,
+    @Inject(RLB_AMQP_APP_OPTIONS) private readonly appConfig: AppConfig,
+    @Inject(RLB_AMQP_GATEWAY_OPTIONS) private readonly gatewayConfig: GatewayConfig,
   ) {
-    this.gatewayConfig = this.configService.get<GatewayConfig>("gateway");
-    this.appConfig = this.configService.get<AppConfig>("app");
     this.logger = new Logger(HttpHandlerService.name);
     this.multer = multer({
-      storage: multer.memoryStorage(), // Or you can configure diskStorage
+      storage: multer.memoryStorage(),
     });
   }
 
@@ -67,17 +65,17 @@ export class HttpHandlerService implements OnModuleInit {
 
       let data = req[path.dataSource] || req.body || {};
       if (path.dataSource === 'body') {
-        data = { ...req.params, ...req.body || {} };
+        data = { ...req.params, ...(req.body || {}) };
       } else if (path.dataSource === 'query') {
-        data = { ...req.params, ...req.query || {} };
+        data = { ...req.params, ...(req.query || {}) };
       } else if (path.dataSource === 'params') {
         data = req.params || {};
       } else if (path.dataSource === 'body-query') {
-        data = { ...req.params, ...req.query || {}, ...req.body || {} };
+        data = { ...req.params, ...(req.query || {}), ...(req.body || {}) };
       } else if (path.dataSource === 'query-body') {
-        data = { ...req.params, ...req.body || {}, ...req.query || {} };
+        data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
       } else {
-        data = { ...req.params, ...req.body || {}, ...req.query || {} };
+        data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
       }
       if (path.parseRaw) {
         Object.assign(data, { $raw: (req as any).rawBody });
@@ -118,7 +116,11 @@ export class HttpHandlerService implements OnModuleInit {
                 this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'JSON'`);
                 return;
               }
-              res.status(200).setHeaders(headers).end(resp);
+              if (path.binary) {
+                res.status(200).setHeaders(headers).end(Buffer.from(resp.toString(), 'base64'));
+              } else {
+                res.status(200).setHeaders(headers).end(resp);
+              }
               this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'RAW'`);
               return;
             }

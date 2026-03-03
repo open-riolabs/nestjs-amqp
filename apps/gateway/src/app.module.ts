@@ -1,24 +1,34 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
-import { BrokerModule, ProxyModule, RLB_GTW_ACL_ROLE_SERVICE } from '@sicilyaction/lib-nestjs-amqp';
-import { CoreModule } from '@sicilyaction/lib-nestjs-core';
-import { AclService } from './acl.service';
-import { AppService } from './app.service';
-import { DemoService } from './demo.service';
-import { Demo2Service } from './demo2.service';
-import { HttpDemoService } from './http-demo.service';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, ProxyModule } from '@open-rlb/nestjs-amqp';
+import { RabbitMQConfig } from '@open-rlb/nestjs-amqp/amqp-lib/config/rabbitmq.config';
+import { HandlerAuthConfig } from '@open-rlb/nestjs-amqp/modules/broker/config/handler-auth.config';
+import { ActionService } from './action.service';
+import { HandlerService } from './handler.service';
+import { ProxyDemoService } from './proxy.service';
 
 @Module({
   imports: [
-    CoreModule,
-    BrokerModule,
+    BrokerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const options = configService.get<RabbitMQConfig>('broker');
+        const topics = configService.get<BrokerTopic[]>('topics');
+        const app = configService.get<AppConfig>('app');
+        const gateway = configService.get<GatewayConfig>('gateway');
+        const authConfig = configService.get<HandlerAuthConfig[]>('auth-providers');
+        return { options, topics, appOptions: app, authOptions: authConfig, gatewayOptions: gateway };
+      },
+    }),
     HttpModule,
     ProxyModule.forRoot([
-      { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
+      //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
     ]),
   ],
   controllers: [],
-  providers: [AppService, DemoService, Demo2Service, HttpDemoService],
+  providers: [ActionService, ProxyDemoService, HandlerService]
+  ,
 })
 export class AppModule { }
-
