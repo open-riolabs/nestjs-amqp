@@ -1,24 +1,22 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { Agent } from "https";
 import { JwtHeader, JwtPayload, SigningKeyCallback, verify } from "jsonwebtoken";
 import { JwksClient } from "jwks-rsa";
 import { HandlerAuthConfig } from "../../broker/config/handler-auth.config";
+import { RLB_AMQP_AUTH_OPTIONS } from "../../broker/const";
 
 @Injectable()
 export class JwtService implements OnModuleInit {
 
   private readonly jwksClients: { [name: string]: JwksClient; };
-  private authConfig: HandlerAuthConfig[];
   private readonly logger: Logger;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(@Inject(RLB_AMQP_AUTH_OPTIONS) private readonly authConfig: HandlerAuthConfig[]) {
     this.logger = new Logger(JwtService.name);
     this.jwksClients = {};
   }
 
   onModuleInit() {
-    this.authConfig = this.configService.get<HandlerAuthConfig[]>("auth-providers");
     for (const authConfig of this.authConfig) {
       if (authConfig.type === "jwks") {
         this.jwksClients[authConfig.name] = new JwksClient({

@@ -11,6 +11,7 @@ export interface PathDefinition {
   allowAnonymous?: boolean;
   roles: string[];
   timeout?: number;
+  binary?: boolean;
   headers: {
     [k: string]: string | string[] | number;
   };

@@ -2,7 +2,7 @@
  * Represents the configuration for a microservice topic.
  */
 export interface BrokerTopic {
-  
+
   /**
    * The name of the high-level topic (Microservice)
    */
@@ -12,18 +12,18 @@ export interface BrokerTopic {
    * Indicates if the topic is for RPC (Remote Procedure Call).
    * @default false
    */
-  rpc?: boolean;
+  mode: 'rpc' | 'event' | 'broadcast' | 'handle';
 
   /**
-   * Indicates if the topic should be handled (AKC management)
+   * Indicates if the topic should be converted to an observable.
    * @default false
    */
-  handle?: boolean;
+  toObservable?: boolean;
 
   /**
    * The name of the queue associated with the topic. (RPC/Handle, exchange direct)
    */
-  queue: string;
+  queue?: string;
 
   /**
    * The routing key for the topic. Topic mode (Exchange topic)

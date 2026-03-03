@@ -1,73 +1,300 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# @open-rlb/nestjs-amqp
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Quick guide for using the npm package.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Guide scope: `rpc`, `handle`, `broadcast`.
 
 ## Installation
 
 ```bash
-$ npm install
+npm i @open-rlb/nestjs-amqp
 ```
 
-## Running the app
+## Basic setup
 
-```bash
-# development
-$ npm run start
+### `AppModule`
 
-# watch mode
-$ npm run start:dev
+```ts
+import { HttpModule } from '@nestjs/axios';
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BrokerModule, ProxyModule } from '@open-rlb/nestjs-amqp';
 
-# production mode
-$ npm run start:prod
+@Module({
+  imports: [
+    BrokerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (config: ConfigService) => ({
+        options: config.get('broker'),
+        topics: config.get('topics'),
+        appOptions: config.get('app'),
+        authOptions: config.get('auth-providers'),
+        gatewayOptions: config.get('gateway'),
+      }),
+    }),
+    HttpModule,
+    ProxyModule.forRoot([]),
+  ],
+})
+export class AppModule {}
 ```
 
-## Test
+### Bootstrap
 
-```bash
-# unit tests
-$ npm run test
+If you use `parseRaw: true` in gateway routes:
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```ts
+const app = await NestFactory.create(AppModule, { rawBody: true });
 ```
 
-## Support
+## Minimal `config.yaml`
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```yaml
+# yaml-language-server: $schema=./schema.json
 
-## Stay in touch
+app:
+  environment: development
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+broker:
+  uri: "amqp://localhost/<vhost>"
+  defaultSubscribeErrorBehavior: "ack"
+  defaultPublishErrorBehavior: "reject"
+  connectionManagerOptions:
+    heartbeatIntervalInSeconds: 60
+    reconnectTimeInSeconds: 60
+    connectionOptions:
+      clientProperties:
+        connection_name: "connection-name"
+      credentials:
+        mechanism: PLAIN
+        username: guest
+        password: guest
 
-## License
+  exchanges:
+    - name: users-ex
+      type: direct
+      createExchangeIfNotExists: true
+      options:
+        durable: true
 
-Nest is [MIT licensed](LICENSE).
+  queues:
+    - name: users-rpc-q
+      exchange: users-ex
+      routingKey: users.rpc
+      createQueueIfNotExists: true
+      options:
+        durable: true
+
+  replyQueues:
+    users-ex: users-reply-q
+
+topics:
+  - name: users-rpc
+    mode: rpc
+    queue: users-rpc-q
+
+gateway:
+  mode: gateway
+  paths:
+    - name: users-create
+      method: POST
+      path: /users
+      dataSource: body
+      topic: users-rpc
+      action: user.create
+      mode: rpc
+  events: []
+```
+
+## Quick usage
+
+### RPC handler with decorators
+
+```ts
+import { Injectable } from '@nestjs/common';
+import { BrokerAction, BrokerParam } from '@open-rlb/nestjs-amqp';
+
+@Injectable()
+export class UsersActionService {
+  @BrokerAction('users-rpc', 'user.create', 'rpc')
+  async createUser(
+    @BrokerParam('body', 'email') email: string,
+    @BrokerParam('body', 'role') role: string,
+    @BrokerParam('header', 'X-GTW-AUTH-USERID') userId: string,
+  ) {
+    return { id: 'usr_1', email, role, createdBy: userId };
+  }
+}
+```
+
+### RPC call from code
+
+```ts
+import { Injectable } from '@nestjs/common';
+import { BrokerService } from '@open-rlb/nestjs-amqp';
+
+@Injectable()
+export class UsersClientService {
+  constructor(private readonly broker: BrokerService) {}
+
+  async createUser() {
+    return this.broker.requestData(
+      'users-rpc',
+      'user.create',
+      { email: 'john@example.com', role: 'admin' },
+      { 'X-Tenant': 'acme' },
+      5000,
+    );
+  }
+}
+```
+
+### Manual consumer (without decorators)
+
+```ts
+await broker.registerRpc<{ id: string }, { ok: boolean }>('health-rpc', async (event) => {
+  return { ok: !!event.payload?.id };
+});
+
+await broker.registerHandler<{ invoiceId: string }>('invoice-handle', async (event) => {
+  console.log(event.payload.invoiceId);
+});
+```
+
+## Quick reference
+
+### `BrokerService`
+
+| Method                                                     | Use                             |
+| ---------------------------------------------------------- | ------------------------------- |
+| `requestData(topic, action, payload?, headers?, timeout?)` | RPC request/response            |
+| `registerRpc(topic, handler)`                              | manual RPC consumer             |
+| `registerHandler(topic, handler)`                          | `handle` / `broadcast` consumer |
+
+### Topic types (`topics[].mode`)
+
+| Type        | Use it when                            | Minimal config                                          | Why                                  |
+| ----------- | -------------------------------------- | ------------------------------------------------------- | ------------------------------------ |
+| `rpc`       | you need request/response              | `name`, `mode: rpc`, `queue` (or `exchange+routingKey`) | immediate response + timeout control |
+| `handle`    | you need a worker on one queue         | `name`, `mode: handle`, `queue`                         | simple queue consumer                |
+| `broadcast` | you need one message to many consumers | `name`, `mode: broadcast`, `exchange`, `routingKey`     | fanout/topic pattern                 |
+| `event`     | you need publish without response      | `name`, `mode: event`, `queue` or `exchange+routingKey` | fire-and-forget (not covered here)   |
+
+Quick snippet:
+
+```yaml
+topics:
+  - name: users-rpc
+    mode: rpc
+    queue: users-rpc-q
+
+  - name: invoice-handle
+    mode: handle
+    queue: invoice-handle-q
+
+  - name: notify-broadcast
+    mode: broadcast
+    exchange: notify-ex
+    routingKey: notify.#
+```
+
+### Decorators
+
+| Decorator                                                     | Use                                  |
+| ------------------------------------------------------------- | ------------------------------------ |
+| `@BrokerAction(topic, action, type?)`                         | binds method to topic/action         |
+| `@BrokerParam(source, name?)`                                 | maps method params from message data |
+| `@BrokerAuth(authName, allowAnonymous?, roles?)`              | auth metadata                        |
+| `@BrokerHTTP(method, path, dataSource?, timeout?, parseRaw?)` | HTTP metadata                        |
+
+### `@BrokerParam` sources
+
+| Source      | Injected value                    |
+| ----------- | --------------------------------- |
+| `body`      | `payload[name or parameter name]` |
+| `body-full` | full payload                      |
+| `header`    | `headers[name or parameter name]` |
+| `tag`       | AMQP consumer tag                 |
+| `action`    | message action                    |
+| `topic`     | current topic                     |
+
+### `gateway.paths[].dataSource`
+
+| Value        | Payload                          |
+| ------------ | -------------------------------- |
+| `body`       | `{...params, ...body}`           |
+| `query`      | `{...params, ...query}`          |
+| `params`     | `params`                         |
+| `body-query` | `{...params, ...query, ...body}` |
+| `query-body` | `{...params, ...body, ...query}` |
+
+### Auth providers
+
+#### Type: `jwks`
+
+```yaml
+auth-providers:
+  - name: gateway-jwks
+    type: jwks
+    issuer: https://issuer.example.com/realms/main
+    jwksUri: https://issuer.example.com/certs
+    algorithms: [RS256]
+    jwtMap:
+      - sub:userId
+      - roles:roles
+    headerPrefix: X-GTW-AUTH-
+    uidClaim: USERID
+    usernameClaim: USERNAME
+    aclTopic: acl
+    aclAction: can-user-do
+```
+
+#### Type: `jwt`
+
+```yaml
+auth-providers:
+  - name: gateway-jwt
+    type: jwt
+    secret: your-jwt-secret
+    issuer: https://issuer.example.com/realms/main
+    audience: your-audience
+    algorithms: [HS256]
+    jwtMap:
+      - sub:userId
+      - roles:roles
+    headerPrefix: X-GTW-AUTH-
+    uidClaim: USERID
+    usernameClaim: USERNAME
+    aclTopic: acl
+    aclAction: can-user-do
+```
+
+#### Type: `str-compare`
+
+```yaml
+auth-providers:
+  - name: gateway-str
+    type: str-compare
+    secret: your-static-token
+    headerPrefix: Bearer
+```
+
+### Gateway path (RPC)
+
+```yaml
+- name: users-create
+  method: POST
+  path: /users
+  dataSource: body
+  topic: users-rpc
+  action: user.create
+  mode: rpc
+  timeout: 7000
+```
+
+## Common errors
+
+- `Topic <name> not found in configuration`: check `topics[].name`, `@BrokerAction`, `requestData`, `gateway.paths[].topic`.
+- `Queue <name> not found in configuration`: check that `topics[].queue` exists in `broker.queues[]`.
+- `401/403` from gateway: check `gateway.paths[].auth`, `auth-providers[]`, ACL service when using `roles`.

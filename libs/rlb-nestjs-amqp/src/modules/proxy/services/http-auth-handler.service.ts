@@ -1,25 +1,19 @@
-import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Request } from 'express';
 import { ProcessedAuthData } from '..';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
+import { RLB_AMQP_AUTH_OPTIONS } from '../../broker/const';
 import { PathDefinition } from '../config/path-definition.config';
 import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
 import { JwtService } from './jwt.service';
 
 @Injectable()
-export class HttpAuthHandlerService implements OnModuleInit {
+export class HttpAuthHandlerService {
   constructor(
     @Optional() @Inject(RLB_GTW_ACL_ROLE_SERVICE) private readonly aclRoleService: IAclRoleService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService) {
+    @Inject(RLB_AMQP_AUTH_OPTIONS) private readonly authProviders: HandlerAuthConfig[],
+    private readonly jwtService: JwtService) {
   }
-
-  onModuleInit() {
-    this.authProviders = this.configService.get<HandlerAuthConfig[]>("auth-providers");
-  }
-
-  private authProviders: HandlerAuthConfig[];
 
   async processAuthData(req: Request, path: PathDefinition): Promise<ProcessedAuthData> {
 

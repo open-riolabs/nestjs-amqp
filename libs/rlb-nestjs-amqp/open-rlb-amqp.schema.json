@@ -1,0 +1,1297 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "./schema.json",
+  "title": "RLB NestJS AMQP Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "$ref": "#/definitions/appConfig"
+    },
+    "auth-providers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/handlerAuthConfig"
+      }
+    },
+    "broker": {
+      "$ref": "#/definitions/rabbitMqConfig"
+    },
+    "topics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/brokerTopic"
+      }
+    },
+    "gateway": {
+      "$ref": "#/definitions/gatewayConfig"
+    }
+  },
+  "required": [
+    "broker",
+    "topics"
+  ],
+  "definitions": {
+    "appConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": [
+            "development",
+            "production",
+            "test"
+          ]
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "environment"
+      ]
+    },
+    "headerValue": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "messageHandlerErrorBehavior": {
+      "type": "string",
+      "description": "Prefer uppercase values from MessageHandlerErrorBehavior enum.",
+      "enum": [
+        "ACK",
+        "NACK",
+        "REQUEUE",
+        "ack",
+        "nack",
+        "requeue"
+      ]
+    },
+    "handlerAuthConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "jwt",
+            "jwks",
+            "basic",
+            "str-compare",
+            "none"
+          ]
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "audience": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "algorithms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "secret": {
+          "type": "string"
+        },
+        "jwksUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "httpsAllowUnauthorized": {
+          "type": "boolean"
+        },
+        "clientSecret": {
+          "type": "string"
+        },
+        "clientId": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tokenUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "jwtMap": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^:]+\\s*:\\s*[^:]+$"
+          }
+        },
+        "headerPrefix": {
+          "type": "string"
+        },
+        "usernameClaim": {
+          "type": "string"
+        },
+        "uidClaim": {
+          "type": "string"
+        },
+        "aclTopic": {
+          "type": "string"
+        },
+        "aclAction": {
+          "type": "string"
+        },
+        "rolesClaim": {
+          "type": "string",
+          "description": "Legacy/documentation field."
+        },
+        "outProp": {
+          "type": "string",
+          "description": "Legacy/documentation field."
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "jwt"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "headerPrefix",
+              "issuer",
+              "algorithms",
+              "secret",
+              "jwtMap"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "jwks"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "headerPrefix",
+              "issuer",
+              "algorithms",
+              "jwksUri",
+              "jwtMap"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "basic"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "headerPrefix",
+              "clientId",
+              "clientSecret"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "str-compare"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "headerPrefix",
+              "secret"
+            ]
+          }
+        }
+      ]
+    },
+    "rabbitMqConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Legacy field from previous interfaces and README examples."
+        },
+        "uri": {
+          "$ref": "#/definitions/rabbitMqUriConfig"
+        },
+        "prefetchCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exchanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/rabbitMqExchangeConfig"
+          }
+        },
+        "exchangeBindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/rabbitMqExchangeBindingConfig"
+          }
+        },
+        "queues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/rabbitMqQueueConfig"
+          }
+        },
+        "defaultRpcTimeout": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultExchangeType": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "fanout",
+            "topic",
+            "headers"
+          ]
+        },
+        "defaultSubscribeErrorBehavior": {
+          "$ref": "#/definitions/messageHandlerErrorBehavior"
+        },
+        "defaultPublishErrorBehavior": {
+          "description": "Legacy/documentation field.",
+          "type": "string",
+          "enum": [
+            "ACK",
+            "NACK",
+            "REQUEUE",
+            "REJECT",
+            "ack",
+            "nack",
+            "requeue",
+            "reject"
+          ]
+        },
+        "connectionInitOptions": {
+          "$ref": "#/definitions/connectionInitOptions"
+        },
+        "connectionManagerOptions": {
+          "$ref": "#/definitions/connectionManagerOptions"
+        },
+        "registerHandlers": {
+          "type": "boolean"
+        },
+        "enableDirectReplyTo": {
+          "type": "boolean"
+        },
+        "enableControllerDiscovery": {
+          "type": "boolean"
+        },
+        "channels": {
+          "$ref": "#/definitions/rabbitMqChannels"
+        },
+        "handlers": {
+          "$ref": "#/definitions/rabbitMqHandlers"
+        },
+        "defaultHandler": {
+          "type": "string"
+        },
+        "replyQueues": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "uri"
+      ]
+    },
+    "rabbitMqUriConfig": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "$ref": "#/definitions/rabbitMqUriObject"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/rabbitMqUriObject"
+          }
+        }
+      ]
+    },
+    "rabbitMqUriObject": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "locale": {
+          "type": "string"
+        },
+        "frameMax": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "heartbeat": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "vhost": {
+          "type": "string"
+        },
+        "clientProperties": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "rabbitMqExchangeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Defines the type of the exchange. If not specified, it will use the defaultExchangeType defined in the broker config, or 'direct' if that's also not specified.",
+          "oneOf": [
+            {
+              "const": "direct",
+              "description": "Direct exchange type. Routes messages with a specific routing key to the queues that are bound with that key."
+            },
+            {
+              "const": "fanout",
+              "description": "Fanout exchange type. Routes messages to all bound queues indiscriminately."
+            },
+            {
+              "const": "topic",
+              "description": "Topic exchange type. Routes messages to queues based on wildcard matches between the routing key and the queue binding pattern."
+            },
+            {
+              "const": "headers",
+              "description": "Headers exchange type. Routes messages based on message header values instead of the routing key."
+            }
+          ]
+        },
+        "createExchangeIfNotExists": {
+          "type": "boolean"
+        },
+        "options": {
+          "$ref": "#/definitions/assertExchangeOptions"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "assertExchangeOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "durable": {
+          "type": "boolean"
+        },
+        "internal": {
+          "type": "boolean"
+        },
+        "autoDelete": {
+          "type": "boolean"
+        },
+        "alternateExchange": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "rabbitMqExchangeBindingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "destination",
+        "source",
+        "pattern"
+      ]
+    },
+    "rabbitMqQueueConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createQueueIfNotExists": {
+          "type": "boolean"
+        },
+        "options": {
+          "$ref": "#/definitions/assertQueueOptions"
+        },
+        "exchange": {
+          "type": "string"
+        },
+        "routingKey": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "bindQueueArguments": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "consumerTag": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "assertQueueOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "durable": {
+          "type": "boolean"
+        },
+        "exclusive": {
+          "type": "boolean"
+        },
+        "autoDelete": {
+          "type": "boolean"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "messageTtl": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deadLetterExchange": {
+          "type": "string"
+        },
+        "deadLetterRoutingKey": {
+          "type": "string"
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxPriority": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bindQueueArguments": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "channel": {
+          "type": "string"
+        },
+        "consumerOptions": {
+          "$ref": "#/definitions/consumeOptions"
+        }
+      }
+    },
+    "consumeOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "noAck": {
+          "type": "boolean"
+        },
+        "exclusive": {
+          "type": "boolean"
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "consumerTag": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "connectionInitOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wait": {
+          "type": "boolean"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reject": {
+          "type": "boolean"
+        },
+        "skipConnectionFailedLogging": {
+          "type": "boolean"
+        },
+        "skipDisconnectFailedLogging": {
+          "type": "boolean"
+        }
+      }
+    },
+    "connectionManagerOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "heartbeatIntervalInSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reconnectTimeInSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "connectionOptions": {
+          "$ref": "#/definitions/amqpConnectionOptions"
+        }
+      }
+    },
+    "amqpConnectionOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "vhost": {
+          "type": "string"
+        },
+        "locale": {
+          "type": "string"
+        },
+        "frameMax": {
+          "type": "integer"
+        },
+        "heartbeat": {
+          "type": "integer"
+        },
+        "channelMax": {
+          "type": "integer"
+        },
+        "clientProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "credentials": {
+          "$ref": "#/definitions/amqpCredentials"
+        }
+      }
+    },
+    "amqpCredentials": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mechanism": {
+          "type": "string",
+          "enum": [
+            "PLAIN",
+            "plain",
+            "EXTERNAL",
+            "external",
+            "AMQPLAIN",
+            "amqplain"
+          ]
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "rabbitMqChannelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prefetchCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "default": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rabbitMqChannels": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/rabbitMqChannelConfig"
+      }
+    },
+    "rabbitMqHandlers": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/messageHandlerOptions"
+          },
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/definitions/messageHandlerOptions"
+            }
+          }
+        ]
+      }
+    },
+    "messageHandlerOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "connection": {
+          "type": "string"
+        },
+        "exchange": {
+          "type": "string"
+        },
+        "routingKey": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "queue": {
+          "type": "string"
+        },
+        "queueOptions": {
+          "$ref": "#/definitions/assertQueueOptions"
+        },
+        "errorBehavior": {
+          "$ref": "#/definitions/messageHandlerErrorBehavior"
+        },
+        "allowNonJsonMessages": {
+          "type": "boolean"
+        },
+        "createQueueIfNotExists": {
+          "type": "boolean"
+        },
+        "usePersistentReplyTo": {
+          "type": "boolean"
+        },
+        "batchOptions": {
+          "$ref": "#/definitions/batchOptions"
+        }
+      }
+    },
+    "batchOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "size"
+      ]
+    },
+    "brokerTopic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "markdownDescription": "Defines the communication pattern for this topic.",
+          "oneOf": [
+            {
+              "const": "rpc",
+              "description": "Request-response pattern. The sender expects a reply from the receiver. Messages are sent to a queue and consumed by a handler that processes the message and sends back a response."
+            },
+            {
+              "const": "event",
+              "description": "Event-driven pattern. The sender does not expect a reply. Messages are sent to an exchange and routed to one or more queues based on bindings. Handlers consume messages from these queues and process them without sending a response."
+            },
+            {
+              "const": "broadcast",
+              "description": "Broadcast pattern. Similar to event-driven, but specifically for fanout exchanges where messages are broadcast to all bound queues regardless of routing keys."
+            },
+            {
+              "const": "handle",
+              "description": "Simple handling pattern. Messages are sent to a specific queue and consumed by a handler. No response is expected, and routing is straightforward to a single queue."
+            }
+          ]
+        },
+        "toObservable": {
+          "type": "boolean"
+        },
+        "queue": {
+          "type": "string"
+        },
+        "routingKey": {
+          "type": "string"
+        },
+        "exchange": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "mode"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "rpc"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "queue"
+                ]
+              },
+              {
+                "required": [
+                  "exchange",
+                  "routingKey"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "handle"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "queue"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "broadcast"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "exchange",
+              "routingKey"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "event"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "queue"
+                ]
+              },
+              {
+                "required": [
+                  "exchange",
+                  "routingKey"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "gatewayConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "gateway"
+          ],
+          "description": "Legacy marker used in README examples."
+        },
+        "headerPrefix": {
+          "type": "string"
+        },
+        "loadConfig": {
+          "$ref": "#/definitions/gatewayConfigLoader"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/pathDefinition"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/webSocketEvent"
+          }
+        }
+      },
+      "required": [
+        "paths",
+        "events"
+      ]
+    },
+    "gatewayConfigLoader": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "$ref": "#/definitions/gatewayConfigSource"
+        },
+        "events": {
+          "$ref": "#/definitions/gatewayConfigSource"
+        }
+      }
+    },
+    "gatewayConfigSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "topic",
+        "action"
+      ]
+    },
+    "pathDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH",
+            "OPTIONS",
+            "HEAD"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "parseRaw": {
+          "type": "boolean"
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dataSource": {
+          "type": "string",
+          "markdownDescription": "Specifies the source of the data for the request.",
+          "oneOf": [
+            {
+              "const": "body",
+              "description": "Merge body + params."
+            },
+            {
+              "const": "query",
+              "description": "Merge query + params."
+            },
+            {
+              "const": "params",
+              "description": "Use params only."
+            },
+            {
+              "const": "body-query",
+              "description": "Merge params + query + body (body prevails)."
+            },
+            {
+              "const": "query-body",
+              "description": "Merge params + body + query (query prevails)."
+            }
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "event",
+            "rpc"
+          ]
+        },
+        "auth": {
+          "type": "string"
+        },
+        "allowAnonymous": {
+          "type": "boolean",
+          "description": "If true, allows access to this path even without authentication. If auth is also specified, it will attempt to authenticate but won't reject if authentication fails."
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binary": {
+          "type": "boolean"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/headerValue"
+          }
+        },
+        "forwardHeaders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "redirect": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 399
+        }
+      },
+      "required": [
+        "name",
+        "method",
+        "path",
+        "topic",
+        "dataSource",
+        "mode"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "rpc"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "action"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "roles"
+            ]
+          },
+          "then": {
+            "required": [
+              "auth"
+            ]
+          }
+        }
+      ]
+    },
+    "webSocketEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ws",
+            "mqtt",
+            "http"
+          ]
+        },
+        "exchange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "routingKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "auth": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH",
+            "OPTIONS",
+            "HEAD"
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/headerValue"
+          }
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "type",
+        "exchange",
+        "routingKey",
+        "name"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "http"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "url",
+              "method"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

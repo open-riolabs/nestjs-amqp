@@ -1,60 +1,155 @@
-import { RabbitMQConfig, RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { CoreModule } from '@sicilyaction/lib-nestjs-core';
-import * as amqp from 'amqplib';
-import { BrokerConfig } from './config/broker.config';
+import { ConfigurableModuleBuilder, DynamicModule, Global, Module, Provider, Type } from '@nestjs/common';
+import { AmqpConnection } from '@open-rlb/nestjs-amqp/amqp-lib';
+import { RabbitMQConfig } from '../../amqp-lib/config/rabbitmq.config';
+import { GatewayConfig } from '../proxy';
+import { HandlerAuthConfig } from './config/handler-auth.config';
+import { BrokerTopic } from './config/topics.config';
+import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_AUTH_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS, RLB_AMQP_TOPIC_CONNECTION } from './const';
 import { AutoDiscoveryService } from './services/auto-discovery.service';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
 import { MetadataScannerService } from './services/metadata-scanner.service';
+import { AppConfig, UtilsService } from './services/utils.service';
+export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
+  new ConfigurableModuleBuilder<RabbitMQConfig>().setClassMethodName('forRoot').build();
 
+@Global()
 @Module({
-  imports: [
-    CoreModule,
-    RabbitMQModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: brokerFactory,
-      inject: [ConfigService]
-    }),
+  providers: [
+    AmqpConnection,
+    BrokerService,
+    HandlerRegistryService,
+    MetadataScannerService,
+    AutoDiscoveryService,
+    UtilsService
   ],
-  providers: [BrokerService, HandlerRegistryService, MetadataScannerService, AutoDiscoveryService],
-  exports: [BrokerService, RabbitMQModule, AutoDiscoveryService],
+  exports: [
+    AmqpConnection,
+    UtilsService,
+    BrokerService,
+    AutoDiscoveryService,
+  ],
 })
-export class BrokerModule { }
+export class BrokerModule {
+  static forRoot(
+    options: RabbitMQConfig,
+    topics: BrokerTopic[],
+    appOptions?: AppConfig,
+    authOptions?: HandlerAuthConfig[],
+    gatewayOptions?: GatewayConfig
+  ): DynamicModule {
 
-async function brokerFactory(config: ConfigService): Promise<RabbitMQConfig> {
-  const _cfg = config.get<BrokerConfig>('broker');
-  const cfg = structuredClone(_cfg);
-  const clietProps = cfg.connectionManagerOptions.connectionOptions.clientProperties;
-  const cname = clietProps?.connection_name;
-  if (clietProps && clietProps.connection_name) {
-    clietProps.connection_name += '-' + process.pid;
-  }
-  for (const queue of _cfg.queues) {
-    const ex = cfg.exchanges.find(e => e.name === queue.exchange);
-    if (ex && ex.type === 'topic') {
-      if (!queue.routingKey) {
-        throw new Error(`Queue ${queue.name} has no routing key`);
-      }
-      if (!cname) {
-        throw new Error(`Client name is required for topic exchange`);
-      }
-      queue.name = `${queue.name}-${cname}`;
+    if (!options) {
+      throw new Error('RabbitMQConfig is required');
     }
-  }
-  const cred = cfg.connectionManagerOptions.connectionOptions.credentials as {
-    mechanism: string; username: string; password: string; response: () => Buffer;
-  };
-  if (cred && cred.mechanism?.toLowerCase() === 'plain') {
-    cred.response = amqp.credentials.plain(cred.username, cred.password).response;
-  }
-  if (cred && cred.mechanism?.toLowerCase() === 'external') {
-    cred.response = amqp.credentials.external().response;
-  }
-  if (cred && cred.mechanism?.toLowerCase() === 'amqplain') {
-    cred.response = amqp.credentials.amqplain(cred.username, cred.password).response;
-  }
-  return cfg;
-}
 
+    if (!topics) {
+      throw new Error('At least one topic is required');
+    }
+
+    const amqpOptionsProvider: Provider = { provide: RLB_AMQP_BROKER_OPTIONS, useValue: options };
+    const topicOptionsProvider: Provider = { provide: RLB_AMQP_TOPIC_CONNECTION, useValue: topics };
+    const appOptionsProvider: Provider = { provide: RLB_AMQP_APP_OPTIONS, useValue: appOptions };
+    const authOptionsProvider: Provider = { provide: RLB_AMQP_AUTH_OPTIONS, useValue: authOptions };
+    const gatewayOptionsProvider: Provider = { provide: RLB_AMQP_GATEWAY_OPTIONS, useValue: gatewayOptions };
+
+    return {
+      module: BrokerModule,
+      providers: [
+        amqpOptionsProvider,
+        topicOptionsProvider,
+        appOptionsProvider,
+        authOptionsProvider,
+        gatewayOptionsProvider
+      ],
+      exports: [
+        amqpOptionsProvider,
+        topicOptionsProvider,
+        appOptionsProvider,
+        authOptionsProvider,
+        gatewayOptionsProvider
+      ],
+    };
+  }
+
+  static forRootAsync(asyncOptions: {
+    useFactory: (...args: any[]) => Promise<{
+      options: RabbitMQConfig;
+      topics: BrokerTopic[];
+      appOptions?: AppConfig;
+      authOptions?: HandlerAuthConfig[];
+      gatewayOptions?: GatewayConfig;
+    }> | {
+      options: RabbitMQConfig;
+      topics: BrokerTopic[];
+      appOptions?: AppConfig;
+      authOptions?: HandlerAuthConfig[];
+      gatewayOptions?: GatewayConfig;
+    },
+    inject?: Type<any>[],
+    imports?: Type<any>[];
+  }): DynamicModule {
+    const amqpOptionsProvider: Provider = {
+      provide: RLB_AMQP_BROKER_OPTIONS,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.options;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
+    const topicOptionsProvider: Provider = {
+      provide: RLB_AMQP_TOPIC_CONNECTION,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.topics;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
+    const appOptionsProvider: Provider = {
+      provide: RLB_AMQP_APP_OPTIONS,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.appOptions;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
+    const authOptionsProvider: Provider = {
+      provide: RLB_AMQP_AUTH_OPTIONS,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.authOptions;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
+    const gatewayOptionsProvider: Provider = {
+      provide: RLB_AMQP_GATEWAY_OPTIONS,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.gatewayOptions;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
+    return {
+      module: BrokerModule,
+      providers: [
+        amqpOptionsProvider,
+        topicOptionsProvider,
+        appOptionsProvider,
+        authOptionsProvider,
+        gatewayOptionsProvider,
+      ],
+      exports: [
+        amqpOptionsProvider,
+        topicOptionsProvider,
+        appOptionsProvider,
+        authOptionsProvider,
+        gatewayOptionsProvider,
+      ],
+    };
+  }
+}
