@@ -5,11 +5,13 @@ import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, ProxyModule } from
 import { RabbitMQConfig } from '@open-rlb/nestjs-amqp/amqp-lib/config/rabbitmq.config';
 import { HandlerAuthConfig } from '@open-rlb/nestjs-amqp/modules/broker/config/handler-auth.config';
 import { ActionService } from './action.service';
+import yamlConfig from './config/config.loader';
 import { HandlerService } from './handler.service';
 import { ProxyDemoService } from './proxy.service';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true, load: [yamlConfig] }),
     BrokerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
