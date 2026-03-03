@@ -1,7 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AppConfig } from '@sicilyaction/lib-nestjs-core';
+import { AppConfig } from '@open-rlb/nestjs-amqp';
 
 @Injectable()
 export class HttpDemoService implements OnModuleInit {
@@ -13,7 +13,7 @@ export class HttpDemoService implements OnModuleInit {
   private readonly config: AppConfig = this.configService.get<AppConfig>('app');
 
   async getData() {
-    const url = `http://localhost:${this.config.port}/local-test/test-01`;
+    const url = `http://localhost:${3000}/local-test/test-01`;
     const response = await this.httpService.axiosRef.post(url, { parametro: 'ciao', par3: 'val3' });
     console.log(response.data);
   }
