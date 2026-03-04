@@ -7,7 +7,7 @@ auth-providers: []
 
 broker:
   name: "rabbitmq"
-  uri: "amqp://amqp.riolabs.net:5672/whatsapp"
+  uri: "<AMQP_URI>"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
@@ -18,8 +18,8 @@ broker:
         connection_name: "whatsapp-gateway"
       credentials:
         mechanism: PLAIN
-        username: kYY265zjyM
-        password: p98iko5aMIFCPf6z0REKQLgqtojbrej0
+        username: "<AMQP_USERNAME>"
+        password: "<AMQP_PASSWORD>"
 
   exchanges:
     - name: wa.fanout
@@ -76,7 +76,3 @@ gateway:
       topic: gtw.config
       action: whatsapp-webhook-verify
       mode: rpc
-
-services:
-  whatsapp:
-    hookVerifyToken: demo123

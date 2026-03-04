@@ -5,6 +5,7 @@ export interface PathDefinition {
   parseRaw?: boolean;
   topic: string;
   action: string;
+  successStatusCode?: number;
   dataSource: 'body' | 'query' | 'params' | 'body-query' | 'query-body';
   mode: 'event' | 'rpc';
   auth?: string;
