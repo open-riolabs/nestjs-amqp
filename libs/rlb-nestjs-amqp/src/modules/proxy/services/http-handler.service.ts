@@ -90,19 +90,19 @@ export class HttpHandlerService implements OnModuleInit {
           file.buffer = o.toString('binary');
         }
       }
+      const headers = new Map<string, string | string[] | number>();
+      if (path.headers) {
+        for (const key in path.headers) {
+          headers.set(key, path.headers[key]);
+        }
+      }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
-          res.status(202).end();
+          this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+          res.status(path.successStatusCode || 202).setHeaders(headers).end();
           this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
         } else if (path.mode === "rpc") {
           try {
-            const headers = new Map<string, string | string[] | number>();
-            if (path.headers) {
-              for (const key in path.headers) {
-                headers.set(key, path.headers[key]);
-              }
-            }
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
             if (resp) {
               if (path.redirect) {
@@ -112,19 +112,19 @@ export class HttpHandlerService implements OnModuleInit {
               }
               if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
               if (headers.get("Content-Type").toString().includes('json')) {
-                res.status(200).setHeaders(headers).json(resp);
+                res.status(path.successStatusCode || 200).setHeaders(headers).json(resp);
                 this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'JSON'`);
                 return;
               }
               if (path.binary) {
-                res.status(200).setHeaders(headers).end(Buffer.from(resp.toString(), 'base64'));
+                res.status(path.successStatusCode || 200).setHeaders(headers).end(Buffer.from(resp.toString(), 'base64'));
               } else {
-                res.status(200).setHeaders(headers).end(resp);
+                res.status(path.successStatusCode || 200).setHeaders(headers).end(resp);
               }
               this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'RAW'`);
               return;
             }
-            res.status(204).end();
+            res.status(path.successStatusCode || 204).end();
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'NO CONTENT'`);
             return;
           } catch (error) {
