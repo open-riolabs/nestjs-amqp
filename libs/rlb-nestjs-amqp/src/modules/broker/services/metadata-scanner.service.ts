@@ -111,7 +111,7 @@ export class MetadataScannerService implements OnModuleInit {
         if (!queue?.routingKey) throw new Error(`Queue ${queue?.name} has no routing key`);
       }
       for (const [action, { method, service }] of Object.entries(actions)) {
-        this.logger.log(`Binded function \`${service.constructor.name}.${method.name}\` to action \`${action}\`. Queue \`${queue.name}/${topic}\``);
+        this.logger.log(`Binded function \`${service.constructor.name}.${method.name}\` to action \`${action}\`. Queue \`${qName}/${topic}\``);
       }
       try {
         await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(
@@ -171,7 +171,7 @@ export class MetadataScannerService implements OnModuleInit {
           routingKey: kName,
         });
       } catch (error) {
-        this.logger.error(`Error subscribing to ${topic}::${qName}::${kName}`);
+        this.logger.error(`Error subscribing [${topic}] to ${eName}:${qName}:${kName}`);
       }
     }
   }
