@@ -4,10 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, ProxyModule } from '@open-rlb/nestjs-amqp';
 import { RabbitMQConfig } from '@open-rlb/nestjs-amqp/amqp-lib/config/rabbitmq.config';
 import { HandlerAuthConfig } from '@open-rlb/nestjs-amqp/modules/broker/config/handler-auth.config';
-import { ActionService } from './action.service';
 import yamlConfig from './config/config.loader';
-import { HandlerService } from './handler.service';
-import { ProxyDemoService } from './proxy.service';
 
 @Module({
   imports: [
@@ -29,8 +26,6 @@ import { ProxyDemoService } from './proxy.service';
       //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
     ]),
   ],
-  controllers: [],
-  providers: [ActionService, ProxyDemoService, HandlerService]
-  ,
+  //providers: [ActionService, ProxyDemoService, HandlerService],
 })
 export class AppModule { }
