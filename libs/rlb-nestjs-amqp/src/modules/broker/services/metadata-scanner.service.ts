@@ -103,7 +103,7 @@ export class MetadataScannerService implements OnModuleInit {
         continue;
       }
       const queue = this.brokerConfig.queues.find(q => q.name === cfgTopic.queue);
-      const exchange = this.brokerConfig.exchanges.find(e => e.name === queue?.exchange || cfgTopic.exchange);
+      const exchange = this.brokerConfig.exchanges.find(e => e.name === (queue?.exchange || cfgTopic.exchange));
       const eName = exchange?.name || cfgTopic.exchange;
       const qName = queue?.name || cfgTopic.queue;
       const kName = cfgTopic.routingKey || (Array.isArray(queue?.routingKey) ? queue.routingKey?.[0] : queue?.routingKey);
