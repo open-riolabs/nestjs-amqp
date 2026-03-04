@@ -90,19 +90,19 @@ export class HttpHandlerService implements OnModuleInit {
           file.buffer = o.toString('binary');
         }
       }
+      const headers = new Map<string, string | string[] | number>();
+      if (path.headers) {
+        for (const key in path.headers) {
+          headers.set(key, path.headers[key]);
+        }
+      }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
-          res.status(202).end();
+          this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+          res.status(202).setHeaders(headers).end();
           this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
         } else if (path.mode === "rpc") {
           try {
-            const headers = new Map<string, string | string[] | number>();
-            if (path.headers) {
-              for (const key in path.headers) {
-                headers.set(key, path.headers[key]);
-              }
-            }
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
             if (resp) {
               if (path.redirect) {
