@@ -1,33 +1,13 @@
 app:
-  port: 8000
+  port: 80
   host: 0.0.0.0
-  environment: 'development'
+  environment: "development"
 
-auth-providers:
-  - name: "transfeero-jwks"
-    type: jwks
-    jwtMap: 
-      - sub:userId
-      - email:email
-      - roles:roles
-    rolesClaim: "roles"
-    headerPrefix: "X-GTW-AUTH-"    
-    outProp: $auth
-    issuer: https://login.transfeero.com/realms/transfeero-customer
-    tokenUrl: https://login.transfeero.com/realms/transfeero-customer/protocol/openid-connect/token
-    jwksUri: https://login.transfeero.com/realms/transfeero-customer/protocol/openid-connect/certs
-    algorithms:
-      - "RS256"
-    clientId: "admin"
-    #clientSecret:
-    #audience:
-    scopes:
-      - "openid"
-      - "profile"
+auth-providers: []
 
 broker:
   name: "rabbitmq"
-  uri: "amqp://amqp.transfeero-staging.com:5672"
+  uri: "<AMQP_URI>"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
@@ -35,68 +15,64 @@ broker:
     reconnectTimeInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: "nestjs-amqp-sample"
+        connection_name: "whatsapp-gateway"
       credentials:
         mechanism: PLAIN
-        username: guest
-        password: guest
+        username: "<AMQP_USERNAME>"
+        password: "<AMQP_PASSWORD>"
 
   exchanges:
-    - name: "local-test"
+    - name: wa.fanout
+      type: "fanout"
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        internal: false
+    - name: gtw.config
       type: "direct"
       createExchangeIfNotExists: true
       options:
         durable: true
         autoDelete: false
         internal: false
-    - name: sample-bst
-      type: "topic"
-      createExchangeIfNotExists: true
-      options:
-        durable: true
-        autoDelete: false
 
   queues:
-    - name: "local-test"
+    - name: gtw.config
       createQueueIfNotExists: true
-      exchange: local-test
-      routingKey: local-test
+      exchange: gtw.config
+      routingKey: gtw.config
       options:
         durable: true
         autoDelete: false
         exclusive: false
 
 topics:
-  - name: local-test
-    queue: local-test
-    rpc: true
-  - name: sample-bst
-    exchange: sample-bst
-    routingKey: broadcast/#
-    handle: true
+  - name: wa.fanout
+    exchange: wa.fanout
+    routingKey: "wa.fanout"
+    mode: event
+  - name: gtw.config
+    exchange: gtw.config
+    queue: gtw.config
+    routingKey: gtw.config
+    mode: rpc
 
 gateway:
   events: []
   mode: gateway
   paths:
-    - name: local-test
-      auth: transfeero-jwks
-      allowAnonymous: true
-      # roles:
-      #   - "admin"
+    - name: whatsapp-message
       method: POST
       dataSource: body
-      path: /local-test/test-01
-      topic: local-test
-      action: test-01
-      mode: "rpc"
-    - name: local-test
-      auth: false
-      # roles:
-      #   - "admin"
-      method: POST
-      dataSource: body
-      path: /local-test/test-02
-      topic: local-test
-      action: test-02
-      mode: "rpc"
+      path: /whatsapp
+      topic: wa.fanout
+      action: whatsapp-webhook-message
+      mode: event
+    - name: whatsapp-config
+      method: GET
+      dataSource: query
+      path: /whatsapp
+      topic: gtw.config
+      action: whatsapp-webhook-verify
+      mode: rpc

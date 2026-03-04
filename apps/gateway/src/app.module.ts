@@ -26,6 +26,6 @@ import yamlConfig from './config/config.loader';
       //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
     ]),
   ],
-  //providers: [ActionService, ProxyDemoService, HandlerService],
+  providers: [],
 })
 export class AppModule { }
