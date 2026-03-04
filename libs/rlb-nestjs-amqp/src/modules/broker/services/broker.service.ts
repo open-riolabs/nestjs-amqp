@@ -76,7 +76,7 @@ export class BrokerService implements OnModuleInit {
         if (!exchange) {
           this.logger.warn(`Queue ${exchange} not found in broker configuration for topic ${topic.name}`);
         }
-        this.handlersPool.set(topic.name, { exchange: topic.exchange, queue: `${cname}-${topic.name}`, routingKey: topic.routingKey, subscribed: false });
+        this.handlersPool.set(topic.name, { exchange: topic.exchange, queue: `${topic.name}-${cname}`, routingKey: topic.routingKey, subscribed: false });
       } else if (topic.mode === 'handle') {
         const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
         const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
@@ -96,7 +96,7 @@ export class BrokerService implements OnModuleInit {
       } else if (topic.mode === 'event') {
       }
       else {
-        this.logger.warn(`Topic ${topic.name} has invalid mode ${topic.mode}. Valid modes are 'rpc', 'event', and 'broadcast'`);
+        this.logger.warn(`Topic ${topic.name} has invalid mode ${topic.mode}. Valid modes are 'rpc', 'event', 'broadcast' and 'handle'`);
       }
     }
   }
@@ -109,7 +109,7 @@ export class BrokerService implements OnModuleInit {
       throw new Error(`Topic ${topic} not found in configuration`);
     }
     if (msTopic.mode !== 'event' && msTopic.mode !== 'broadcast') {
-      throw new Error(`Topic ${topic} is not configured for publishing`);
+      throw new Error(`Mode for topic ${topic} is ${msTopic.mode}. Allowed modes for publishing messages are 'event' and 'broadcast'`);
     }
     if (!msTopic.routingKey) {
       const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
