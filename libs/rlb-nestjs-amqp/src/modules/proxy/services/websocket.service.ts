@@ -58,18 +58,28 @@ export class WebSocketService implements OnModuleInit {
       const o = await this.broker.requestData(this.gatewayConfig.loadConfig.events.topic, this.gatewayConfig.loadConfig.events.action, {});
       extEvents.push(...o);
     }
-    const events = [...this.gatewayConfig?.events || [], ...extEvents];
+    const events = [...this.gatewayConfig?.events || [], ...extEvents]; // load events from config and from broker
+    events.forEach(e => e.name = e.name.trim());
     for (const event of events) {
       if (!this.subjects[event.name]) {
         this.subjects[event.name] = new Subject();
       }
-      const exchange = this.brokerConfig.exchanges.find(e => e.name === event.exchange);
       const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
-      if (!exchange) throw new Error(`Exchange ${event.exchange} not found in configuration for event ${event.name}`);
+      const qName = `${event.name}-${cname}-ws`;
       if (!cname) {
         throw new Error('Client name is required for event push configuration');
       }
-
+      if (event.exchange && event.routingKey) {
+        const existingTopic = this.broker.topics.find(o => o.name === event.name);
+        if (existingTopic && (existingTopic.exchange !== event.exchange || existingTopic.routingKey !== event.routingKey)) {
+          this.logger.error(`Topic ${event.name} is already defined in broker configuration. This may lead to unexpected behavior.`);
+        } else if (existingTopic && existingTopic.exchange === event.exchange && existingTopic.routingKey === event.routingKey && existingTopic.name !== event.name) {
+          this.logger.warn(`Topic ${event.name} exists as ${existingTopic.name}. Added alias.`);
+          this.broker.topics.push({ mode: 'event', name: event.name, exchange: event.exchange, routingKey: event.routingKey });
+        } else if (!existingTopic) {
+          this.broker.topics.push({ mode: 'event', name: event.name, exchange: event.exchange, routingKey: event.routingKey });
+        }
+      }
       try {
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
           const _msg: BrokerEvent<Request> = {
@@ -86,7 +96,7 @@ export class WebSocketService implements OnModuleInit {
           };
           this.subjects[event.name].next(_msg);
         }, {
-          queue: `${event.name}-ws-${cname}`,
+          queue: qName,
           exchange: event.exchange,
           routingKey: event.routingKey,
           createQueueIfNotExists: true,
@@ -95,7 +105,7 @@ export class WebSocketService implements OnModuleInit {
             autoDelete: true,
           }
         }, '', {});
-        this.logger.log(`Binded event \`${event.name}\` to exchange \`${exchange.name}\`, Route: \`${event.routingKey}\``);
+        this.logger.log(`Binded ${event.name} event [${event.type}] to exchange ${event.exchange}:${qName}/${event.routingKey}. Tag: ${o.consumerTag}`);
       } catch (error) {
         this.logger.error(`Error subscribing to topic ${event.name}: ${error.message}`);
       }

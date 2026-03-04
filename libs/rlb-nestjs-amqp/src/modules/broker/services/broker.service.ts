@@ -287,6 +287,10 @@ export class BrokerService implements OnModuleInit {
     return this.handlerRegistryService.getHandlers('rpc', topic);
   }
 
+  public get topics() {
+    return this.topicConfigurations;
+  }
+
   private async executeFunction<Func, Ret>(fn: Function, ...params: any[]): Promise<MangedFunctionExecutor<Ret>> {
     try {
       let ret: Promise<Ret>;
