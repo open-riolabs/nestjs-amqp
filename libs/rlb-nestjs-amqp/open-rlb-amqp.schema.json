@@ -1094,6 +1094,11 @@
           "type": "string",
           "minLength": 1
         },
+        "successStatusCode": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 299
+        },
         "dataSource": {
           "type": "string",
           "markdownDescription": "Specifies the source of the data for the request.",
