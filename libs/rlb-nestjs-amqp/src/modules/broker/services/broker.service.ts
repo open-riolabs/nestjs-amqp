@@ -49,7 +49,7 @@ export class BrokerService implements OnModuleInit {
         if (topic.queue) {
           const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
           if (!queue) {
-            this.logger.warn(`RPC Topic ${topic.name} not added to pool.Queue ${topic.queue} not found in broker configuration`);
+            this.logger.warn(`RPC Topic ${topic.name} not added to pool. Queue ${topic.queue} not found in broker configuration`);
             continue;
           }
           queueName = topic.name;
@@ -68,23 +68,19 @@ export class BrokerService implements OnModuleInit {
           this.logger.warn(`Broadcast Topic ${topic.name} not added to pool. Exchange and routing key are required`);
           continue;
         }
-        const exchange = this.brokerConfig.exchanges.find(e => e.name === topic.exchange);
         const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
         if (!cname) {
           throw new Error(`Client name is required for topic exchange`);
-        }
-        if (!exchange) {
-          this.logger.warn(`Queue ${exchange} not found in broker configuration for topic ${topic.name}`);
         }
         this.handlersPool.set(topic.name, { exchange: topic.exchange, queue: `${topic.name}-${cname}`, routingKey: topic.routingKey, subscribed: false });
       } else if (topic.mode === 'handle') {
         const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
         const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
         if (!queue) {
-          this.logger.warn(`Event Topic ${topic.name} not added to pool. Queue ${topic.queue} not found in broker configuration`);
+          this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
         }
-        if (exchange.type === 'topic') {
-          if (!queue.routingKey) {
+        if (exchange?.type === 'topic') {
+          if (!queue?.routingKey) {
             throw new Error(`Queue ${queue.name} has no routing key`);
           }
         }
@@ -92,7 +88,12 @@ export class BrokerService implements OnModuleInit {
           this.logger.warn(`Handler ${queue.name} already subscribed`);
           continue;
         }
-        this.handlersPool.set(topic.name, { queue: queue.name, routingKey: topic.routingKey, subscribed: false });
+        this.handlersPool.set(topic.name, {
+          queue: queue?.name || topic.queue,
+          routingKey: (Array.isArray(queue?.routingKey) ? queue?.routingKey?.[0] : queue?.routingKey) || topic.routingKey,
+          exchange: exchange?.name || topic.exchange,
+          subscribed: false
+        });
       } else if (topic.mode === 'event') {
       }
       else {
