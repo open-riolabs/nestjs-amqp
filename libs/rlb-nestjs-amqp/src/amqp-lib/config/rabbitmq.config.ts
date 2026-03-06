@@ -1,4 +1,3 @@
-import { ModuleMetadata, Type } from "@nestjs/common";
 import { AmqpConnectionManagerOptions } from "amqp-connection-manager";
 import { MessageDeserializer, MessageErrorHandler, MessageHandlerErrorBehavior, MessageSerializer, RabbitMQChannels, RabbitMQHandlers, RabbitMQUriConfig } from "../types";
 import { RabbitMQExchangeBindingConfig, RabbitMQExchangeConfig } from "./rabbitmq-exchange.config";
@@ -117,15 +116,4 @@ export interface RabbitMQChannelConfig {
    * If no channel has been marked as default, new channel will be created.
    */
   default?: boolean;
-}
-
-export interface RabbitMQModuleOptionsFactory {
-  createRabbitMQModuleOptions(): Promise<RabbitMQConfig> | RabbitMQConfig;
-}
-
-export interface RabbitMQModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
-  inject?: any[];
-  useClass?: Type<RabbitMQModuleOptionsFactory>;
-  useExisting?: Type<RabbitMQModuleOptionsFactory>;
-  useFactory?: (...args: any[]) => Promise<RabbitMQConfig> | RabbitMQConfig;
 }
