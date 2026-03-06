@@ -46,14 +46,6 @@ export class BrokerService implements OnModuleInit {
           this.logger.warn(`RPC Topic ${topic.name} not added to pool. Queue or exchange are required`);
           continue;
         }
-        if (topic.queue) {
-          const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
-          if (!queue) {
-            this.logger.warn(`RPC Topic ${topic.name} not added to pool. Queue ${topic.queue} not found in broker configuration`);
-            continue;
-          }
-          queueName = topic.name;
-        }
         if (this.rpcsPool.has(topic.name)) {
           this.logger.warn(`RPC Topic ${topic.name} already registered`);
           continue;
