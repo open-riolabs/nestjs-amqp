@@ -1,3 +1,4 @@
+import { PipeTransform } from "@nestjs/common";
 import { RLB_BROKER_AUTH_METADATA_KEY, RLB_BROKER_HTTP_METADATA_KEY, RLB_BROKER_METHOD_METADATA_KEY, RLB_BROKER_PARAM_METADATA_KEY } from "../const";
 
 const STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg;
@@ -51,12 +52,12 @@ export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: s
     Reflect.defineMetadata(RLB_BROKER_AUTH_METADATA_KEY, existingMetadata, target.constructor);
   };
 }
+export function BrokerParam(source: BrokerParamSource, name?: string, pipe?: PipeTransform): ParameterDecorator {
 
-export function BrokerParam(source: BrokerParamSource, name?: string): ParameterDecorator {
   return (target, propertyKey, parameterIndex) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_PARAM_METADATA_KEY, target, propertyKey) || [];
 
-    existingMetadata.push({ index: parameterIndex, name, source });
+    existingMetadata.push({ index: parameterIndex, name, source, pipe });
 
     Reflect.defineMetadata(RLB_BROKER_PARAM_METADATA_KEY, existingMetadata, target, propertyKey);
   };
