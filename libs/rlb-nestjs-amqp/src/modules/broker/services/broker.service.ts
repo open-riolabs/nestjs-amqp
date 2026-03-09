@@ -239,7 +239,7 @@ export class BrokerService implements OnModuleInit {
     let routingKey = msTopic.routingKey;
     if (msTopic.queue) {
       const queue = this.brokerConfig.queues.find(q => q.name === msTopic?.queue);
-      exchange = queue?.exchange;
+      exchange = queue?.exchange || exchange;
       routingKey = routingKey || (Array.isArray(queue?.routingKey) ? queue?.routingKey[0] : queue?.routingKey);
     }
     headers = headers || {};
