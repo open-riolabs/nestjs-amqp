@@ -37,6 +37,7 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@angular-devkit/core": "^21.2.3",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.14",
@@ -86,5 +87,10 @@
     "moduleNameMapper": {
       "^@app/rlb-nestjs-amqp(|/.*)$": "<rootDir>/libs/rlb-nestjs-amqp/src/$1"
     }
+  },
+  "overrides": {
+    "ajv": "^8.18.0",
+    "braces": "^3.0.3",
+    "micromatch": "^4.0.8"
   }
 }
