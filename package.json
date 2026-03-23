@@ -13,10 +13,11 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/apps/rlb-nestjs-amqp/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand"
+    "test": "jest --config ./jest.json",
+    "postbuild": "npm run copy:collection && npm run copy:lib",
+    "copy:collection": "cpx \"libs/rlb-nestjs-amqp/src/schematics/collection.json\" \"dist/schematics\" && cpx \"libs/rlb-nestjs-amqp/src/schematics/**/schema.json\" \"dist/schematics\"",
+    "copy:lib": "cpx \"libs/rlb-nestjs-amqp/src/schematics/**/{.*,files,workspace}/**/\" \"dist/schematics\" && cpx \"libs/rlb-nestjs-amqp/src/schematics/**/{.*,*}\" \"dist/schematics\"",
+    "nest-add": "npx schematics ./dist/schematics/collection.json:nest-add project --name=Pet --no-dry-run",
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
@@ -48,6 +49,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
+    "cpx": "^1.5.0",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
