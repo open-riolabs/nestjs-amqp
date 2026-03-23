@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@angular-devkit/core": "^21.2.3",
+    "@angular-devkit/schematics": "^21.2.3",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.14",
