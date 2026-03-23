@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "nest-add": {
+      "description": "Add RabbitMQ support to a NestJS project",
+      "factory": "./nest-add/index***REMOVED***main",
+      "schema": "./nest-add/schema.json"
+    }
+  }
+}
