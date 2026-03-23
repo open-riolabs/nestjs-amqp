@@ -17,7 +17,7 @@
     "postbuild": "npm run copy:collection && npm run copy:lib",
     "copy:collection": "cpx \"libs/rlb-nestjs-amqp/src/schematics/collection.json\" \"dist/schematics\" && cpx \"libs/rlb-nestjs-amqp/src/schematics/**/schema.json\" \"dist/schematics\"",
     "copy:lib": "cpx \"libs/rlb-nestjs-amqp/src/schematics/**/{.*,files,workspace}/**/\" \"dist/schematics\" && cpx \"libs/rlb-nestjs-amqp/src/schematics/**/{.*,*}\" \"dist/schematics\"",
-    "nest-add": "npx schematics ./dist/schematics/collection.json:nest-add project --name=Pet --no-dry-run",
+    "nest-add": "npx schematics ./dist/schematics/collection.json:nest-add project --name=Pet --no-dry-run"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
