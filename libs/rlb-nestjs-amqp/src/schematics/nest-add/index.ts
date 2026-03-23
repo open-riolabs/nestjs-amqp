@@ -14,19 +14,19 @@ type UpdateJsonFn<T> = (obj: T) => T | void;
 // ---------------------------------------------------------------------------
 
 const BROKER_IMPORT_LINE =
-  "import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';";
+  "import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';" +
+  "\nimport { ConfigModule, ConfigService } from '@nestjs/config';";
 
 const BROKER_FOR_ROOT_ASYNC = `BrokerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => {
-        const options = configService.get<RabbitMQConfig>('broker');
-        const topics = configService.get<BrokerTopic[]>('topics');
-        const app = configService.get<AppConfig>('app');
-        const gateway = configService.get<GatewayConfig>('gateway');
-        const authConfig = configService.get<HandlerAuthConfig[]>('auth-providers');
-        return { options, topics, appOptions: app, authOptions: authConfig, gatewayOptions: gateway };
-      },
+      useFactory: async (configService: ConfigService) => ({
+        options: configService.get<RabbitMQConfig>('broker')!,
+        topics: configService.get<BrokerTopic[]>('topics')!,
+        appOptions: configService.get<AppConfig>('app'),
+        gatewayOptions: configService.get<GatewayConfig>('gateway'),
+        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),
+      })
     })`;
 
 // ---------------------------------------------------------------------------
