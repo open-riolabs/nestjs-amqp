@@ -1,9 +1,8 @@
-import { Path, strings } from '@angular-devkit/core';
+import { strings } from '@angular-devkit/core';
 import { apply, applyTemplates, branchAndMerge, chain, FileEntry, forEach, MergeStrategy, mergeWith, move, Rule, SchematicContext, Tree, url } from '@angular-devkit/schematics';
 import { parse } from 'jsonc-parser';
 import { normalize } from 'path';
 import { normalizeToKebabOrSnakeCase } from '../utils/formatting';
-import { ModuleFinder } from '../utils/module.finder';
 import { Location, NameParser } from '../utils/name.parser';
 import { mergeSourceRoot } from '../utils/source-root.helpers';
 import { InitOptions } from './init.schema';
@@ -107,7 +106,6 @@ export function main(options: InitOptions): Rule {
     return branchAndMerge(
       chain([
         mergeSourceRoot(options),
-        addDeclarationToModule(options),
         addBrokerModuleToAppModule(),
         updateConfigYaml(),
         updatePackageJson(options),
@@ -158,45 +156,6 @@ const renameDotfiles = forEach((entry: FileEntry) => {
   }
   return entry;
 });
-
-// ---------------------------------------------------------------------------
-// Rule: aggiunge CoreModule al modulo radice trovato da ModuleFinder
-// ---------------------------------------------------------------------------
-
-function addDeclarationToModule(options: InitOptions): Rule {
-  return (tree: Tree) => {
-    if (options.skipImport !== undefined && options.skipImport) {
-      return tree;
-    }
-    options.module = new ModuleFinder(tree).find({
-      name: '',
-      path: options.path as Path,
-    });
-    if (!options.module) {
-      return tree;
-    }
-    const content = tree.read(options.module).toString();
-    const contentLines = content.split('\n');
-    const importIndex = findImportsEndpoint(contentLines);
-    const toInsert = "import { CoreModule } from '@lbd-core/lib-nestjs-core';\n";
-    contentLines.splice(importIndex + 1, 0, toInsert);
-
-    const providersIndex = contentLines.findIndex(line => line.trim().startsWith('imports:'));
-    const openingIndex = contentLines.findIndex((line, index) => index >= providersIndex && line.includes('['));
-    const closingIndex = contentLines.findIndex((line, index) => index >= providersIndex && index >= openingIndex && line.includes(']'));
-
-    if (providersIndex !== -1) {
-      if (openingIndex === closingIndex) {
-        const line = contentLines[providersIndex];
-        contentLines[providersIndex] = line.replace('[', `[CoreModule,`);
-      } else {
-        contentLines.splice(openingIndex, +1, `CoreModule,`);
-      }
-    }
-    tree.overwrite(options.module, contentLines.join('\n'));
-    return tree;
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Rule: crea o aggiorna config/config.yaml con il blocco di configurazione
