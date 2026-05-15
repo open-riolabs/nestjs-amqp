@@ -72,8 +72,9 @@ export class HttpAuthHandlerService {
     const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
     const [username, password] = credentials.split(':');
 
-    if (username === authConfig.clientId && password === authConfig.clientSecret) {
+    if (password === authConfig.clientSecret && (!authConfig.clientId || (authConfig.clientId && username === authConfig.clientId))) {
       out[`${authConfig.headerPrefix}USERNAME`] = username;
+      out[`${authConfig.headerPrefix}USERID`] = username;
       out.success = true;
       return out;
     }
