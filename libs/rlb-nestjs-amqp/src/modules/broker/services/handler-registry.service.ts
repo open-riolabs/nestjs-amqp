@@ -18,18 +18,17 @@ export class HandlerRegistryService {
   public registerHandler<Payload = any, Response = any>(type: 'fun', topic: string, handler: RpcEventHandler<Payload, Response>): void;
   public registerHandler<Payload = any, Response = any>(type: 'rpc', topic: string, handler: RpcEventHandler<Payload, Response>): void;
   public registerHandler<Payload = any, Response = any>(type: 'fun' | 'rpc', topic: string, handler: RpcEventHandler<Payload, Response> | RpcEventHandler<Payload, Response>): void {
-    const dasherizedTopic = this.dasherizeString(topic);
     if (type as any === 'fun') {
-      if (this.registry.has(dasherizedTopic)) {
-        this.logger.error(`Handler for topic ${dasherizedTopic} already exists`);
-        throw new Error(`Handler for topic ${dasherizedTopic} already exists`);
+      if (this.registry.has(topic)) {
+        this.logger.error(`Handler for topic ${topic} already exists`);
+        throw new Error(`Handler for topic ${topic} already exists`);
       }
       this.registry.set(topic, handler);
     }
     if (type === 'rpc') {
-      if (this.rpcRegistry.has(dasherizedTopic)) {
-        this.logger.error(`Handler for topic ${dasherizedTopic} already exists`);
-        throw new Error(`Handler for topic ${dasherizedTopic} already exists`);
+      if (this.rpcRegistry.has(topic)) {
+        this.logger.error(`Handler for topic ${topic} already exists`);
+        throw new Error(`Handler for topic ${topic} already exists`);
       }
       this.rpcRegistry.set(topic, handler as RpcEventHandler<Payload, Response>);
     }

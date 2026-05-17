@@ -1,5 +1,5 @@
 app:
-  port: 80
+  port: 3000
   host: 0.0.0.0
   environment: "development"
 
@@ -7,7 +7,7 @@ auth-providers: []
 
 broker:
   name: "rabbitmq"
-  uri: "<AMQP_URI>"
+  uri: "amqp://REDACTED-AMQP-HOST:5672/test"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
@@ -18,19 +18,31 @@ broker:
         connection_name: "whatsapp-gateway"
       credentials:
         mechanism: PLAIN
-        username: "<AMQP_USERNAME>"
-        password: "<AMQP_PASSWORD>"
+        username: test
+        password: test
 
   exchanges:
-    - name: wa.fanout
-      type: "fanout"
+    ***REMOVED*** Direct exchange used by RPC sample (1:1 routing on a known queue).
+    - name: gtw.rpc
+      type: "direct"
       createExchangeIfNotExists: true
       options:
         durable: true
         autoDelete: false
         internal: false
-    - name: gtw.config
-      type: "direct"
+    ***REMOVED*** Topic exchange used by event sample (publish-subscribe with routing key).
+    - name: gtw.events
+      type: "topic"
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        internal: false
+    ***REMOVED*** Topic exchange used by broadcast sample. The per-instance queue
+    ***REMOVED*** `broadcast.demo-<connection_name>` is asserted lazily by registerHandler()
+    ***REMOVED*** at consumer startup and is now forced to `durable: true` by the lib.
+    - name: gtw.broadcast
+      type: "topic"
       createExchangeIfNotExists: true
       options:
         durable: true
@@ -38,41 +50,78 @@ broker:
         internal: false
 
   queues:
-    - name: gtw.config
+    ***REMOVED*** RPC queue: bound to gtw.rpc with the action routing key.
+    - name: gtw.rpc.queue
       createQueueIfNotExists: true
-      exchange: gtw.config
-      routingKey: gtw.config
+      exchange: gtw.rpc
+      routingKey: gtw.rpc.demo
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
+    ***REMOVED*** Event consumer queue: bound to gtw.events with the demo routing key.
+    ***REMOVED*** Survives broker restarts; messages persist (publisher sends persistent).
+    - name: gtw.events.queue
+      createQueueIfNotExists: true
+      exchange: gtw.events
+      routingKey: gtw.events.demo
       options:
         durable: true
         autoDelete: false
         exclusive: false
 
 topics:
-  - name: wa.fanout
-    exchange: wa.fanout
-    routingKey: "wa.fanout"
-    mode: event
-  - name: gtw.config
-    exchange: gtw.config
-    queue: gtw.config
-    routingKey: gtw.config
+  ***REMOVED*** ---- RPC ----------------------------------------------------------------
+  ***REMOVED*** Used by both server (registerRpc) and client (requestData / HTTP proxy).
+  - name: rpc.demo
     mode: rpc
+    queue: gtw.rpc.queue
+    exchange: gtw.rpc
+    routingKey: gtw.rpc.demo
+
+  ***REMOVED*** ---- EVENT (publisher side) --------------------------------------------
+  ***REMOVED*** publishMessage('event.demo', ...) -> gtw.events / gtw.events.demo
+  - name: event.demo
+    mode: event
+    exchange: gtw.events
+    routingKey: gtw.events.demo
+
+  ***REMOVED*** ---- EVENT (consumer side) ---------------------------------------------
+  ***REMOVED*** registerHandler('event.demo.consumer', ...) -> consumes gtw.events.queue.
+  - name: event.demo.consumer
+    mode: handle
+    queue: gtw.events.queue
+
+  ***REMOVED*** ---- BROADCAST ---------------------------------------------------------
+  ***REMOVED*** Same topic name is used by publisher and by each subscribing instance.
+  - name: broadcast.demo
+    mode: broadcast
+    exchange: gtw.broadcast
+    routingKey: gtw.broadcast.demo
 
 gateway:
   events: []
   mode: gateway
   paths:
-    - name: whatsapp-message
+    ***REMOVED*** HTTP -> RPC proxy. POST /demo/rpc translates to broker.requestData on
+    ***REMOVED*** topic `rpc.demo` action `add`. The `add` action is registered by
+    ***REMOVED*** RpcDemoService.add() via @BrokerAction (decorator pattern). Pass
+    ***REMOVED*** a `multiply` variant by adding another path with `action: multiply`.
+    - name: rpc-via-http
       method: POST
       dataSource: body
-      path: /whatsapp
-      topic: wa.fanout
-      action: whatsapp-webhook-message
-      mode: event
-    - name: whatsapp-config
-      method: GET
-      dataSource: query
-      path: /whatsapp
-      topic: gtw.config
-      action: whatsapp-webhook-verify
+      path: /demo/rpc
+      topic: rpc.demo
+      action: add
       mode: rpc
+
+    ***REMOVED*** HTTP -> Event proxy. POST /demo/event publishes on topic `event.demo`
+    ***REMOVED*** and returns 202 immediately (fire-and-forget from the HTTP client's PoV,
+    ***REMOVED*** but the publisher confirm is awaited internally by publishMessage).
+    - name: event-via-http
+      method: POST
+      dataSource: body
+      path: /demo/event
+      topic: event.demo
+      action: event.demo.action
+      mode: event

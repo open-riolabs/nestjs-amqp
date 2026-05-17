@@ -1,8 +1,14 @@
 import { HttpModule } from '@nestjs/axios';
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';
 import yamlConfig from './config/config.loader';
+import { EventDemoService } from './samples/event-demo.service';
+import { HandlerService } from './samples/handler.service';
+import { HttpDemoService } from './samples/http-demo.service';
+import { RpcDemoService } from './samples/rpc-demo.service';
+
+const unroutableLogger = new Logger('UnroutableMonitor');
 
 @Module({
   imports: [
@@ -11,7 +17,7 @@ import yamlConfig from './config/config.loader';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const options = configService.get<RabbitMQConfig>('broker');
+        const options = configService.get<RabbitMQConfig>('broker') as RabbitMQConfig;
         const topics = configService.get<BrokerTopic[]>('topics');
         const app = configService.get<AppConfig>('app');
         const gateway = configService.get<GatewayConfig>('gateway');
@@ -24,6 +30,6 @@ import yamlConfig from './config/config.loader';
       //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
     ]),
   ],
-  providers: [],
+  providers: [HandlerService, HttpDemoService, RpcDemoService, EventDemoService],
 })
 export class AppModule { }

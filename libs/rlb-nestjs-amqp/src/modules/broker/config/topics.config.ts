@@ -1,3 +1,5 @@
+import { MessageHandlerErrorBehavior } from '../../../amqp-lib/types';
+
 /**
  * Represents the configuration for a microservice topic.
  */
@@ -34,4 +36,11 @@ export interface BrokerTopic {
    * The exchange associated with the  routing key (Exchange topic)
    */
   exchange?: string;
+
+  /**
+   * Error behavior when message processing fails at the connection level.
+   * Applies to the decorator-based path (@BrokerAction via MetadataScanner).
+   * @default MessageHandlerErrorBehavior.REQUEUE
+   */
+  errorBehavior?: MessageHandlerErrorBehavior;
 }

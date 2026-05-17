@@ -89,7 +89,9 @@ export class MetadataScannerService implements OnModuleInit {
               }
             }
           }
-        } catch (error) { }
+        } catch (error) {
+          this.logger.debug(`Skipping provider ${String(providerKey)}: ${error?.message}`);
+        }
       }
     }
     for (const [topic, actions] of Object.entries(this.metadata)) {
@@ -115,7 +117,7 @@ export class MetadataScannerService implements OnModuleInit {
       }
       try {
         await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(
-          async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
+          async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any): Promise<MangedFunctionExecutor<Response> | Nack> => {
             const payload = msg.payload || {};
             const method = actions[msg.action];
             const args = [];
@@ -162,13 +164,14 @@ export class MetadataScannerService implements OnModuleInit {
             }
             catch (err) {
               this.logger.error(`An error occurred while processing message for topic ${cfgTopic.name}: ${err.message}`);
-              return new Nack(false);
+              throw err;
             }
           }, {
 
           queue: qName,
           exchange: eName,
           routingKey: kName,
+          errorBehavior: cfgTopic.errorBehavior,
         });
       } catch (error) {
         this.logger.error(`Error subscribing [${topic}] to ${eName}:${qName}:${kName}`);
@@ -180,7 +183,7 @@ export class MetadataScannerService implements OnModuleInit {
     try {
       let ret: Promise<Ret>;
       if (typeof fn === 'function') {
-        const _ret: Ret | Observable<Ret> | Promise<Ret> = await fn.apply(context, params);
+        const _ret: Ret | Observable<Ret> | Promise<Ret> = fn.apply(context, params);
         if (isObservable(_ret)) {
           ret = lastValueFrom(_ret);
         } else if (_ret instanceof Promise && typeof _ret.then === 'function') {
