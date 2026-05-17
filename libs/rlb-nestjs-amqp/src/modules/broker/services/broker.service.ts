@@ -119,7 +119,7 @@ export class BrokerService implements OnModuleInit {
       }
     }
     try {
-      await this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers });
+      await this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers, mandatory: msTopic.mandatory, persistent: msTopic.persistent });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
@@ -266,6 +266,7 @@ export class BrokerService implements OnModuleInit {
         replyTo,
         headers,
         timeout: timeout || this.brokerConfig.defaultRpcTimeout || 10000,
+        publishOptions: { mandatory: msTopic.mandatory, persistent: msTopic.persistent },
       });
       if (!result.success) {
         throw result.error;

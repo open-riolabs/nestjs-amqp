@@ -7,7 +7,7 @@ import { EMPTY, interval, lastValueFrom, race, Subject, throwError, } from 'rxjs
 import { catchError, filter, first, map, take, timeout } from 'rxjs/operators';
 import { defaultAssertQueueErrorHandler } from '..';
 import { RabbitMQQueueConfig } from '../config/rabbitmq-queue.config';
-import { ConnectionInitOptions, RabbitMQChannelConfig, RabbitMQConfig } from '../config/rabbitmq.config';
+import { ConnectionInitOptions, RabbitMQAlternateExchangeConfig, RabbitMQChannelConfig, RabbitMQConfig } from '../config/rabbitmq.config';
 import { CorrelationMessage } from '../models/correlation-message.model';
 import { ChannelNotAvailableError, ConnectionNotAvailableError, NullMessageError, RpcTimeoutError, } from '../models/errors.model';
 import { Nack } from '../models/nack.model';
@@ -470,21 +470,68 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
   ): Promise<void> {
     this._channels[name] = channel;
 
+    channel.removeAllListeners('return');
+    channel.on('return', (msg: ConsumeMessage) => {
+      const { exchange, routingKey } = msg.fields as any;
+      const isDirectReplyToArtifact =
+        exchange === '' &&
+        typeof routingKey === 'string' &&
+        routingKey.startsWith('amq.rabbitmq.reply-to');
+      if (isDirectReplyToArtifact) {
+        return;
+      }
+      this.logger.warn(
+        `Unroutable message returned by broker (channel "${name}") - exchange: "${exchange}" routingKey: "${routingKey}". ` +
+        `Check that a queue is bound to the exchange for this routing key, or configure 'defaultAlternateExchange' to capture them.`,
+      );
+      try {
+        this.config.onUnroutableMessage?.(msg);
+      } catch (e) {
+        this.logger.error(`onUnroutableMessage callback threw: ${(e as Error)?.message}`);
+      }
+    });
     await channel.prefetch(config.prefetchCount || this.config.prefetchCount);
 
     if (config.default) {
       this._channel = channel;
 
+      // Resolve all referenced alternate exchanges (broker-level default and
+      // per-exchange overrides). De-duplicated by AE name; the first occurrence
+      // wins (so a per-exchange config with the same name as the global one
+      // is treated as the same AE).
+      const globalAe = this.normalizeAlternateExchange(this.config.defaultAlternateExchange);
+      const aeRegistry = new Map<string, RabbitMQAlternateExchangeConfig>();
+      if (globalAe) aeRegistry.set(globalAe.name, globalAe);
+      for (const x of this.config.exchanges) {
+        const perEx = this.normalizeAlternateExchange(x.alternateExchange);
+        if (perEx && !aeRegistry.has(perEx.name)) aeRegistry.set(perEx.name, perEx);
+      }
+
+      // All AEs must exist BEFORE any exchange that references them.
+      for (const ae of aeRegistry.values()) {
+        await this.setupAlternateExchange(channel, ae);
+      }
+
       // Always assert exchanges & rpc queue in default channel.
+      // AE resolution per exchange (highest priority first):
+      //   1. user-set options.alternateExchange
+      //   2. per-exchange `alternateExchange` field
+      //   3. broker-level `defaultAlternateExchange`
       await Promise.all(
         this.config.exchanges.map((x) => {
           const { createExchangeIfNotExists = true } = x;
 
           if (createExchangeIfNotExists) {
+            const options: Options.AssertExchange = { ...(x.options || {}) };
+            if (!options.alternateExchange) {
+              const perEx = this.normalizeAlternateExchange(x.alternateExchange);
+              const effectiveAe = perEx ?? globalAe;
+              if (effectiveAe) options.alternateExchange = effectiveAe.name;
+            }
             return channel.assertExchange(
               x.name,
               x.type || this.config.defaultExchangeType,
-              x.options,
+              options,
             );
           }
           return channel.checkExchange(x.name);
@@ -783,6 +830,38 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
       return this._managedChannel;
     }
     return channel;
+  }
+
+  private normalizeAlternateExchange(
+    raw: string | RabbitMQAlternateExchangeConfig | undefined,
+  ): RabbitMQAlternateExchangeConfig | undefined {
+    if (!raw) return undefined;
+    if (typeof raw === 'string') return { name: raw };
+    return raw;
+  }
+
+  private async setupAlternateExchange(
+    channel: ConfirmChannel,
+    aeConfig: RabbitMQAlternateExchangeConfig,
+  ): Promise<void> {
+    await channel.assertExchange(
+      aeConfig.name,
+      aeConfig.type || 'fanout',
+      { durable: true, ...(aeConfig.options || {}) },
+    );
+
+    if (aeConfig.unroutableQueue) {
+      const { name: qName, options, bindingKey = '', bindingArgs } = aeConfig.unroutableQueue;
+      await channel.assertQueue(qName, { durable: true, ...(options || {}) });
+      await channel.bindQueue(qName, aeConfig.name, bindingKey, bindingArgs);
+      this.logger.log(
+        `Alternate exchange "${aeConfig.name}" ready (capturing unroutable messages into queue "${qName}")`,
+      );
+    } else {
+      this.logger.log(
+        `Alternate exchange "${aeConfig.name}" ready (no dedicated queue; bind one to inspect unroutable messages)`,
+      );
+    }
   }
 
   private registerConsumerForQueue<T, U>(consumer: ConsumerHandler<T, U>) {

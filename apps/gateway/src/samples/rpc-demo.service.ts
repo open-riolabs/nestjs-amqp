@@ -51,7 +51,7 @@ export class RpcDemoService implements OnModuleInit {
     @BrokerParam('body', 'b') b: number,
   ): OpResult {
     this.logger.log(`[rpc.multiply] ${a} * ${b}`);
-    throw new Error();
+    //throw new Error();
     return { op: 'multiply', result: a * b, node: process.env.HOSTNAME || 'local' };
   }
 

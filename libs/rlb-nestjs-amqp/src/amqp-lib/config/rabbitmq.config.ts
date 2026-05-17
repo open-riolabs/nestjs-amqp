@@ -1,7 +1,34 @@
 import { AmqpConnectionManagerOptions } from "amqp-connection-manager";
+import { ConsumeMessage, Options } from "amqplib";
 import { MessageDeserializer, MessageErrorHandler, MessageHandlerErrorBehavior, MessageSerializer, RabbitMQChannels, RabbitMQHandlers, RabbitMQUriConfig } from "../types";
 import { RabbitMQExchangeBindingConfig, RabbitMQExchangeConfig } from "./rabbitmq-exchange.config";
 import { RabbitMQQueueConfig } from "./rabbitmq-queue.config";
+
+/**
+ * Configuration for the alternate exchange used as a sink for unroutable
+ * messages. When set on `RabbitMQConfig.defaultAlternateExchange`, RabbitMQ
+ * redirects every message published to a configured exchange with no matching
+ * binding to this exchange, instead of silently dropping it.
+ */
+export interface RabbitMQAlternateExchangeConfig {
+  /** Name of the alternate exchange. */
+  name: string;
+  /** Defaults to 'fanout'. */
+  type?: string;
+  /** AssertExchange options. Defaults to `{ durable: true }`. */
+  options?: Options.AssertExchange;
+  /**
+   * Optional queue automatically bound to the alternate exchange so
+   * unroutable messages can be inspected / replayed later.
+   */
+  unroutableQueue?: {
+    name: string;
+    options?: Options.AssertQueue;
+    /** Defaults to '' (ignored by fanout exchanges). */
+    bindingKey?: string;
+    bindingArgs?: any;
+  };
+}
 
 export interface RabbitMQConfig {
   uri: RabbitMQUriConfig;
@@ -21,6 +48,25 @@ export interface RabbitMQConfig {
   registerHandlers?: boolean;
   enableDirectReplyTo?: boolean;
   enableControllerDiscovery?: boolean;
+
+  /**
+   * When set, an "alternate exchange" is asserted at connection time and
+   * automatically attached to every exchange declared in `exchanges` that
+   * doesn't already specify one. Messages that would otherwise be unroutable
+   * (no matching binding) are diverted there instead of being dropped.
+   *
+   * Accepts a string for the simple case (use that name, fanout, durable, no
+   * dedicated queue) or a full config object.
+   */
+  defaultAlternateExchange?: string | RabbitMQAlternateExchangeConfig;
+
+  /**
+   * Invoked whenever the broker returns an unroutable message (requires the
+   * publish to have used `mandatory: true`). Direct reply-to artefacts are
+   * filtered out before reaching this callback. Useful to bump a metric or
+   * forward to an alerting pipeline.
+   */
+  onUnroutableMessage?: (msg: ConsumeMessage) => void;
   /**
    * You can optionally create channels which you consume messages from.
    *

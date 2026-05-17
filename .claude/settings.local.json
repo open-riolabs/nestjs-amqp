@@ -6,7 +6,8 @@
       "Bash(echo \"EXIT=$?\")",
       "Bash(git -C \"d:/source-control/open-rlb/nestjs-amqp\" diff --stat)",
       "Bash(git -C \"d:/source-control/open-rlb/nestjs-amqp\" diff libs/rlb-nestjs-amqp/src/amqp-lib/amqp/connection.ts libs/rlb-nestjs-amqp/src/amqp-lib/config/rabbitmq.config.ts)",
-      "Bash(git -C \"d:/source-control/open-rlb/nestjs-amqp\" diff libs/rlb-nestjs-amqp/src/modules/broker/services/broker.service.ts libs/rlb-nestjs-amqp/src/modules/broker/config/topics.config.ts libs/rlb-nestjs-amqp/src/modules/broker/services/handler-registry.service.ts libs/rlb-nestjs-amqp/src/modules/broker/services/metadata-scanner.service.ts)"
+      "Bash(git -C \"d:/source-control/open-rlb/nestjs-amqp\" diff libs/rlb-nestjs-amqp/src/modules/broker/services/broker.service.ts libs/rlb-nestjs-amqp/src/modules/broker/config/topics.config.ts libs/rlb-nestjs-amqp/src/modules/broker/services/handler-registry.service.ts libs/rlb-nestjs-amqp/src/modules/broker/services/metadata-scanner.service.ts)",
+      "Bash(git -C \"d:/source-control/open-rlb/nestjs-amqp\" diff HEAD libs/rlb-nestjs-amqp/src/amqp-lib/amqp/connection.ts)"
     ]
   }
 }

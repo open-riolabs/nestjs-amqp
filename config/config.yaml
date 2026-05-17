@@ -71,6 +71,8 @@ broker:
         exclusive: false
 
 topics:
+  ***REMOVED*** `mandatory: true` makes the broker return unrouted publishes to the
+  ***REMOVED*** publisher channel, where AmqpConnection logs them (RPC reply-to filtered).
   ***REMOVED*** ---- RPC ----------------------------------------------------------------
   ***REMOVED*** Used by both server (registerRpc) and client (requestData / HTTP proxy).
   - name: rpc.demo
@@ -78,6 +80,7 @@ topics:
     queue: gtw.rpc.queue
     exchange: gtw.rpc
     routingKey: gtw.rpc.demo
+    mandatory: true
 
   ***REMOVED*** ---- EVENT (publisher side) --------------------------------------------
   ***REMOVED*** publishMessage('event.demo', ...) -> gtw.events / gtw.events.demo
@@ -85,6 +88,7 @@ topics:
     mode: event
     exchange: gtw.events
     routingKey: gtw.events.demo
+    mandatory: true
 
   ***REMOVED*** ---- EVENT (consumer side) ---------------------------------------------
   ***REMOVED*** registerHandler('event.demo.consumer', ...) -> consumes gtw.events.queue.
@@ -98,6 +102,20 @@ topics:
     mode: broadcast
     exchange: gtw.broadcast
     routingKey: gtw.broadcast.demo
+    mandatory: true
+
+  ***REMOVED*** ---- UNROUTABLE DEMO ---------------------------------------------------
+  ***REMOVED*** Publishes to an existing exchange (`gtw.events`) using a routing key that
+  ***REMOVED*** NO queue is bound to. With `mandatory: true`, the broker returns the
+  ***REMOVED*** message to the publisher, which makes AmqpConnection's `'return'` listener
+  ***REMOVED*** emit the "Unrouted message returned ..." WARN. Useful to verify the
+  ***REMOVED*** detection path end-to-end (and to validate the alternate-exchange wiring
+  ***REMOVED*** when `defaultAlternateExchange` is configured).
+  - name: unroutable.demo
+    mode: event
+    exchange: gtw.events
+    routingKey: void.no.binding
+    mandatory: true
 
 gateway:
   events: []

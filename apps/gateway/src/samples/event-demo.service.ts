@@ -43,5 +43,19 @@ export class EventDemoService implements OnModuleInit {
         .publishMessage('event.demo', 'event.demo.action', payload)
         .catch(err => this.logger.error(`[event] publish failed: ${err.message}`));
     }, 4000);
+
+    // UNROUTABLE DEMO: publishes on `unroutable.demo` (gtw.events exchange,
+    // routing key `void.no.binding` — no queue is bound to it) with
+    // `mandatory: true`. The broker returns the message and AmqpConnection's
+    // `'return'` listener emits a WARN like:
+    //   Unrouted message returned on channel "..." - exchange: "gtw.events",
+    //   routingKey: "void.no.binding", replyCode: 312, replyText: "NO_ROUTE", ...
+    // The publish itself does NOT throw: a returned message is a successful
+    // publish from the channel's PoV, just unrouted at the broker.
+    setInterval(() => {
+      this.broker
+        .publishMessage('unroutable.demo', 'tick', { ts: Date.now() })
+        .catch(err => this.logger.error(`[unroutable] publish failed: ${err.message}`));
+    }, 8000);
   }
 }

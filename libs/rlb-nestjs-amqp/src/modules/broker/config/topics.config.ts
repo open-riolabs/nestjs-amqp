@@ -43,4 +43,24 @@ export interface BrokerTopic {
    * @default MessageHandlerErrorBehavior.REQUEUE
    */
   errorBehavior?: MessageHandlerErrorBehavior;
+
+  /**
+   * Publish with the AMQP `mandatory` flag. When true, messages that cannot be
+   * routed to any queue are returned to the publisher and surface on the
+   * channel `return` handler (logged by AmqpConnection). Applies to publish
+   * for `event`/`broadcast` and to the request publish for `rpc`.
+   * @default false
+   */
+  mandatory?: boolean;
+
+  /**
+   * Publish with the AMQP `persistent` flag (delivery-mode 2). When true, the
+   * broker writes the message to disk so it survives a broker restart -
+   * provided the target queue is also `durable: true`. Applies to publish for
+   * `event`/`broadcast` and to the request publish for `rpc`. The RPC reply
+   * persistence is controlled separately via `usePersistentReplyTo` on the
+   * handler options.
+   * @default false
+   */
+  persistent?: boolean;
 }
