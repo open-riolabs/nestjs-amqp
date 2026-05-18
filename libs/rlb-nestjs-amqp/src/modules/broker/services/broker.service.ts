@@ -94,7 +94,7 @@ export class BrokerService implements OnModuleInit {
     }
   }
 
-  async publishMessage(topic: string, action: string, payload: any, headers?: any): Promise<void> {
+  async publishMessage(topic: string, action: string, payload: any, headers?: any): Promise<boolean> {
     const msTopic = (this.topicConfigurations || []).find(t => t.name === topic);
     let exchange: string = '';
     let routingKey: string = '';
@@ -119,7 +119,7 @@ export class BrokerService implements OnModuleInit {
       }
     }
     try {
-      await this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers, mandatory: msTopic.mandatory, persistent: msTopic.persistent });
+      return await this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers, mandatory: msTopic.mandatory, persistent: msTopic.persistent });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;

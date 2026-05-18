@@ -98,7 +98,7 @@ export class HttpHandlerService implements OnModuleInit {
       }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+          await this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
           res.status(path.successStatusCode || 202).setHeaders(headers).end();
           this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
         } else if (path.mode === "rpc") {
