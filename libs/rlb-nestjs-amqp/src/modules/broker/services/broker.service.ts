@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { MessageHandlerErrorBehavior } from "@open-rlb/nestjs-amqp/amqp-lib/types";
 import { ConsumeMessage } from "amqplib";
 import { randomUUID } from "crypto";
 import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
@@ -42,6 +41,7 @@ export class BrokerService implements OnModuleInit {
 
     for (const topic of this.topicConfigurations || []) {
       if (topic.mode === 'rpc') {
+        let queueName: string | undefined;
         if (!topic.queue && !topic.exchange) {
           this.logger.warn(`RPC Topic ${topic.name} not added to pool. Queue or exchange are required`);
           continue;
@@ -51,7 +51,7 @@ export class BrokerService implements OnModuleInit {
           continue;
         }
         const par: { queue?: string, subscribed: boolean; exchange?: string; routingKey?: string; } = { subscribed: false };
-        if (topic.queue) par.queue = topic.queue;
+        if (queueName) par.queue = queueName;
         if (topic.exchange) par.exchange = topic.exchange;
         if (topic.routingKey) par.routingKey = topic.routingKey;
         this.rpcsPool.set(topic.name, par);
@@ -134,15 +134,10 @@ export class BrokerService implements OnModuleInit {
       return;
     }
     if (!_q.subscribed) {
-      if (!topic.toObservable) {
-        if (!handler) throw new Error(`Topic ${_topic} requires a handler function because it has handle property set to true`);
-        this.handlerRegistryService.registerHandler<Request, void>('fun', _topic, handler);
-      }
-      const qName = _q.queue;
-      const eName = _q.exchange;
-      const rKey = _q.routingKey;
+      let qName = _q.queue;
+      let eName = _q.exchange;
+      let rKey = _q.routingKey;
       try {
-        const queueOptions = topic.mode === 'broadcast' ? { durable: true } : undefined;
         const o = await this.amqpConnection.createSubscriber<ActionPayload<Request>>(
           async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
             const _msg: BrokerEvent<Request> = {
@@ -173,12 +168,15 @@ export class BrokerService implements OnModuleInit {
           queue: qName,
           exchange: eName,
           routingKey: rKey,
-          queueOptions,
         }, topic.name);
-        this.handlersPool.set(_topic, { ..._q, subscribed: true });
+        this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
         this.logger.log(`Handler subscribed [${topic.name}]. Path: '${eName}/${qName}***REMOVED***${rKey}' Consumer Tag: ${o.consumerTag}`);
       } catch (error) {
         this.logger.error(`An error occured subscribing handler for topic: '${topic.name}' Details: ${error.message}`);
+      }
+      if (!topic.toObservable) {
+        if (!handler) throw new Error(`Topic ${_topic} requires a handler function becouse it has handle property set to true`);
+        this.handlerRegistryService.registerHandler<Request, void>('fun', _topic, handler);
       }
     }
   }
@@ -191,18 +189,7 @@ export class BrokerService implements OnModuleInit {
     }
     if (!_q.subscribed) {
       const topic = this.topicConfigurations.find(t => t.name === _topic);
-      this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
-      let rpcOptions: { queue?: string; exchange?: string; routingKey?: string | string[]; errorBehavior?: MessageHandlerErrorBehavior; };
-      if (_q.queue) {
-        const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
-        if (!queue) {
-          this.logger.error(`Queue ${_q.queue} not found in broker configuration for topic ${_topic}`);
-          return;
-        }
-        rpcOptions = { queue: queue.name, exchange: queue.exchange, routingKey: queue.routingKey, errorBehavior: topic.errorBehavior };
-      } else {
-        rpcOptions = { exchange: _q.exchange, routingKey: _q.routingKey, errorBehavior: topic.errorBehavior };
-      }
+      const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
       await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg: BrokerEvent<Request> = {
           topic: topic.name,
@@ -225,10 +212,15 @@ export class BrokerService implements OnModuleInit {
           this.logger.error(`An error occurred while processing message for topic ${topic.name}: ${err.message}`);
           return new Nack(true);
         }
-      }, rpcOptions);
-      this.rpcsPool.set(_topic, { ..._q, subscribed: true });
-      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${rpcOptions.exchange}' Queue: '${rpcOptions.queue}'`);
+      }, {
+        queue: queue.name,
+        exchange: queue.exchange,
+        routingKey: queue.routingKey
+      });
+      this.rpcsPool.set(_topic, { queue: _q.queue, subscribed: true });
+      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${queue.exchange}' Queue: '${queue.name}'`);
     }
+    this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
 
   async requestData<Request = any, Response = any>(
