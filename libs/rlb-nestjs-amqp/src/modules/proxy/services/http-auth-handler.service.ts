@@ -26,7 +26,7 @@ export class HttpAuthHandlerService {
       case 'basic': out = await this.checkBasicAuth(req, authConfig); break;
       case 'jwt': out = await this.checkJwt(req, authConfig); break;
       case 'jwks': out = await this.checkJwt(req, authConfig); break;
-      case 'str-compare': await this.checkStringCompare(req, authConfig); break;
+      case 'str-compare': out = await this.checkStringCompare(req, authConfig); break;
       default:
         break;
     }
