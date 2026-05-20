@@ -46,6 +46,21 @@ export class HandlerRegistryService {
     throw new Error(`Invalid registry type ${type}`);
   }
 
+  public unregisterHandler(type: 'fun' | 'rpc', topic: string): boolean {
+    if (type === 'fun') {
+      return this.registry.delete(topic);
+    }
+    if (type === 'rpc') {
+      return this.rpcRegistry.delete(topic);
+    }
+    throw new Error(`Invalid registry type ${type}`);
+  }
+
+  public clear(): void {
+    this.registry.clear();
+    this.rpcRegistry.clear();
+  }
+
   protected dasherizeString(val: string) {
     if (!val) return;
     return val.replace(/[A-Z]/g, (char, index) => (index !== 0 ? '-' : '') + char.toLowerCase());

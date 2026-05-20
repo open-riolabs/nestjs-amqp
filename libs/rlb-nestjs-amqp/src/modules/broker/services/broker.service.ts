@@ -14,8 +14,9 @@ import { AppConfig, UtilsService } from "./utils.service";
 export class BrokerService implements OnModuleInit {
 
   private readonly events: Subject<BrokerEvent>;
-  private readonly rpcsPool: Map<string, { exchange?: string; queue?: string; routingKey?: string; subscribed: boolean; }> = new Map();
-  private readonly handlersPool: Map<string, { exchange?: string, routingKey?: string, queue?: string, subscribed?: boolean; }> = new Map();
+  private readonly rpcsPool: Map<string, { exchange?: string; queue?: string; routingKey?: string | string[]; subscribed: boolean; consumerTag?: string; }> = new Map();
+  private readonly handlersPool: Map<string, { exchange?: string, routingKey?: string, queue?: string, subscribed?: boolean; consumerTag?: string; }> = new Map();
+  private detached = false;
   private readonly logger: Logger;
   private readonly appConfig: AppConfig;
   constructor(
@@ -95,6 +96,9 @@ export class BrokerService implements OnModuleInit {
   }
 
   async publishMessage(topic: string, action: string, payload: any, headers?: any): Promise<boolean> {
+    if (this.detached) {
+      throw new Error(`Broker is detached: cannot publish to topic '${topic}'. Outgoing traffic was disabled by unregisterAll().`);
+    }
     const msTopic = (this.topicConfigurations || []).find(t => t.name === topic);
     let exchange: string = '';
     let routingKey: string = '';
@@ -169,7 +173,7 @@ export class BrokerService implements OnModuleInit {
           exchange: eName,
           routingKey: rKey,
         }, topic.name);
-        this.handlersPool.set(_topic, { queue: _q.queue, subscribed: true });
+        this.handlersPool.set(_topic, { queue: _q.queue, exchange: eName, routingKey: rKey, subscribed: true, consumerTag: o.consumerTag });
         this.logger.log(`Handler subscribed [${topic.name}]. Path: '${eName}/${qName}***REMOVED***${rKey}' Consumer Tag: ${o.consumerTag}`);
       } catch (error) {
         this.logger.error(`An error occured subscribing handler for topic: '${topic.name}' Details: ${error.message}`);
@@ -190,7 +194,7 @@ export class BrokerService implements OnModuleInit {
     if (!_q.subscribed) {
       const topic = this.topicConfigurations.find(t => t.name === _topic);
       const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
-      await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
+      const subscription = await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg: BrokerEvent<Request> = {
           topic: topic.name,
           payload: msg.payload,
@@ -217,8 +221,14 @@ export class BrokerService implements OnModuleInit {
         exchange: queue.exchange,
         routingKey: queue.routingKey
       });
-      this.rpcsPool.set(_topic, { queue: _q.queue, subscribed: true });
-      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${queue.exchange}' Queue: '${queue.name}'`);
+      this.rpcsPool.set(_topic, {
+        queue: _q.queue,
+        exchange: queue.exchange,
+        routingKey: queue.routingKey,
+        subscribed: true,
+        consumerTag: subscription.consumerTag,
+      });
+      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${queue.exchange}' Queue: '${queue.name}' Consumer Tag: ${subscription.consumerTag}`);
     }
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
@@ -230,6 +240,9 @@ export class BrokerService implements OnModuleInit {
     headers?: any,
     timeout?: number,
   ): Promise<Response> {
+    if (this.detached) {
+      throw new Error(`Broker is detached: cannot request data on topic '${topic}'. Outgoing traffic was disabled by unregisterAll().`);
+    }
     const correlationId = randomUUID();
     const msTopic = this.topicConfigurations.find(t => t.name === topic);
     if (!msTopic) {
@@ -268,6 +281,42 @@ export class BrokerService implements OnModuleInit {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);
       throw err;
     }
+  }
+
+  /**
+   * Detach every registered consumer on the AMQP connection: subscribers/RPCs
+   * registered explicitly via `registerHandler` / `registerRpc` and the ones
+   * auto-discovered by `MetadataScannerService` from `@BrokerAction` decorators.
+   *
+   * After this call:
+   *   - the broker stops consuming messages from RabbitMQ (remote callers hit
+   *     their RPC timeout, events pile up on the queues);
+   *   - `publishMessage` and `requestData` are also locked down: any further
+   *     attempt throws synchronously, so this instance becomes fully silent
+   *     in both directions.
+   *
+   * Pool state and the handler registry are reset, but the `detached` guard
+   * is persistent: once tripped it stays on for the lifetime of the service.
+   */
+  async unregisterAll(): Promise<void> {
+    this.logger.log('Unregistering all broker subscriptions and locking outgoing traffic');
+
+    this.detached = true;
+
+    await this.amqpConnection.cancelAllConsumers();
+
+    for (const [topicName, entry] of this.rpcsPool) {
+      this.rpcsPool.set(topicName, { ...entry, subscribed: false, consumerTag: undefined });
+    }
+    for (const [topicName, entry] of this.handlersPool) {
+      this.handlersPool.set(topicName, { ...entry, subscribed: false, consumerTag: undefined });
+    }
+
+    this.handlerRegistryService.clear();
+  }
+
+  public get isDetached(): boolean {
+    return this.detached;
   }
 
   getHandler<Request = any, Response = any>(topic: string): RpcEventHandler<Request, Response> {

@@ -870,6 +870,25 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     ] = consumer;
   }
 
+  public async cancelConsumer(consumerTag: ConsumerTag): Promise<void> {
+    const consumer = this._consumers[consumerTag];
+    if (!consumer) {
+      return;
+    }
+    const wrapper = this.selectManagedChannel(consumer.msgOptions?.queueOptions?.channel);
+    try {
+      await wrapper.cancel(consumerTag);
+    } catch (err) {
+      this.logger.warn?.(`Failed to cancel consumer ${consumerTag}: ${(err as Error)?.message}`);
+    }
+    delete this._consumers[consumerTag];
+  }
+
+  public async cancelAllConsumers(): Promise<void> {
+    const tags = Object.keys(this._consumers);
+    await Promise.all(tags.map((tag) => this.cancelConsumer(tag)));
+  }
+
   public async close(): Promise<void> {
     const managedChannels = Object.values(this._managedChannels);
 
