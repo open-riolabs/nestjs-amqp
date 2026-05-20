@@ -9,4 +9,6 @@ export * from './pipes';
 export * from './services/auto-discovery.service';
 export * from './services/broker.service';
 export * from './services/handler-registry.service';
+export * from './services/shutdown-state.service';
+export * from './utils/drainable-stream';
 

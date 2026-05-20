@@ -9,6 +9,7 @@ import { AutoDiscoveryService } from './services/auto-discovery.service';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
 import { MetadataScannerService } from './services/metadata-scanner.service';
+import { ShutdownStateService } from './services/shutdown-state.service';
 import { AppConfig, UtilsService } from './services/utils.service';
 export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
   new ConfigurableModuleBuilder<RabbitMQConfig>().setClassMethodName('forRoot').build();
@@ -20,6 +21,7 @@ export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
     BrokerService,
     HandlerRegistryService,
     MetadataScannerService,
+    ShutdownStateService,
     AutoDiscoveryService,
     UtilsService
   ],
