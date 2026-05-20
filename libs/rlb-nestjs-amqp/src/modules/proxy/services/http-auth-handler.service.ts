@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Request } from 'express';
 import { ProcessedAuthData } from '..';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
@@ -9,6 +9,9 @@ import { JwtService } from './jwt.service';
 
 @Injectable()
 export class HttpAuthHandlerService {
+
+  private readonly logger = new Logger(HttpAuthHandlerService.name);
+
   constructor(
     @Optional() @Inject(RLB_GTW_ACL_ROLE_SERVICE) private readonly aclRoleService: IAclRoleService,
     @Inject(RLB_AMQP_AUTH_OPTIONS) private readonly authProviders: HandlerAuthConfig[],
@@ -85,13 +88,18 @@ export class HttpAuthHandlerService {
   async checkStringCompare(req: Request, authConfig: HandlerAuthConfig) {
     let out: ProcessedAuthData = { success: false };
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith(authConfig.headerPrefix)) {
+    if (!authConfig.secret) {
+      out.success = true;
       return out;
     }
 
-    const token = authHeader.substring(authConfig.headerPrefix.length).trim();
-    if (token === authConfig.secret) {
-      out[`${authConfig.headerPrefix}TOKEN`] = token;
+    if (authConfig.secret && !authConfig.headerPrefix) {
+      this.logger.error("Missing field 'header prefix' in " + authConfig.name);
+      return out;
+    }
+
+    if (authHeader === authConfig.secret) {
+      out[`${authConfig.headerPrefix}TOKEN`] = authHeader;
       out.success = true;
       return out;
     }
