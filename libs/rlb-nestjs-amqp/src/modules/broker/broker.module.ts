@@ -30,6 +30,7 @@ export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
     UtilsService,
     BrokerService,
     AutoDiscoveryService,
+    ShutdownStateService
   ],
 })
 export class BrokerModule {
