@@ -1,5 +1,4 @@
-import { strings } from '@angular-devkit/core';
-import { apply, applyTemplates, branchAndMerge, chain, FileEntry, forEach, MergeStrategy, mergeWith, move, Rule, SchematicContext, Tree, url } from '@angular-devkit/schematics';
+import { apply, branchAndMerge, chain, MergeStrategy, mergeWith, move, noop, Rule, SchematicContext, Tree, url } from '@angular-devkit/schematics';
 import { parse } from 'jsonc-parser';
 import { normalize } from 'path';
 import { normalizeToKebabOrSnakeCase } from '../utils/formatting';
@@ -10,34 +9,38 @@ import { InitOptions } from './init.schema';
 type UpdateJsonFn<T> = (obj: T) => T | void;
 
 // ---------------------------------------------------------------------------
-// Costanti per BrokerModule
+// Costanti per BrokerModule — la parte gateway è inclusa solo se `gateway` è on
 // ---------------------------------------------------------------------------
 
-const BROKER_IMPORT_LINE =
-  "import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';" +
-  "\nimport { ConfigModule, ConfigService } from '@nestjs/config';";
+function brokerImportLine(gateway: boolean): string {
+  const broker = gateway
+    ? "import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';"
+    : "import { AppConfig, BrokerModule, BrokerTopic, HandlerAuthConfig, RabbitMQConfig } from '@open-rlb/nestjs-amqp';";
+  const config = "\nimport { ConfigModule, ConfigService } from '@nestjs/config';";
+  const http = gateway ? "\nimport { HttpModule } from '@nestjs/axios';" : '';
+  return broker + config + http;
+}
 
-const BROKER_FOR_ROOT_ASYNC = `BrokerModule.forRootAsync({
+function brokerForRootAsync(gateway: boolean): string {
+  // Pass only the necessary parts to the factory: gatewayOptions only when gateway is on.
+  const gatewayLine = gateway ? "\n        gatewayOptions: configService.get<GatewayConfig>('gateway')," : '';
+  return `BrokerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
         options: configService.get<RabbitMQConfig>('broker')!,
         topics: configService.get<BrokerTopic[]>('topics')!,
         appOptions: configService.get<AppConfig>('app'),
-        gatewayOptions: configService.get<GatewayConfig>('gateway'),
-        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),
+        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),${gatewayLine}
       })
     })`;
+}
 
 // ---------------------------------------------------------------------------
-// Costanti per config.yaml
+// Costanti per config.yaml — la sezione `gateway` è inclusa solo se gateway è on
 // ---------------------------------------------------------------------------
 
-/**
- * Blocco YAML da appendere (o da usare per creare) config/config.yaml.
- * Contiene un solo esempio per ciascuna delle categorie previste.
- */
-const CONFIG_YAML_BLOCK = `
+const CONFIG_YAML_BASE = `
 app:
   port: 80
   host: 0.0.0.0
@@ -83,9 +86,14 @@ topics:
     exchange: example.fanout
     routingKey: "example.topic"
     mode: event
+`;
 
+const CONFIG_YAML_GATEWAY = `
 gateway:
   events: []
+  ws:
+    heartbeatIntervalMs: 30000
+    ***REMOVED*** Auth is declared per-event (events[].auth / requireAuth / roles / scopeClaim).
   paths:
     - name: example-path
       method: POST
@@ -96,20 +104,27 @@ gateway:
       mode: event
 `;
 
+function configYaml(gateway: boolean): string {
+  return gateway ? CONFIG_YAML_BASE.trimEnd() + '\n' + CONFIG_YAML_GATEWAY : CONFIG_YAML_BASE;
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 export function main(options: InitOptions): Rule {
   options = transform(options);
+  const gateway = options.gateway !== false; // default on
+  const skills = options.skills !== false; // default on
   return (tree: Tree, context: SchematicContext) => {
     return branchAndMerge(
       chain([
         mergeSourceRoot(options),
-        addBrokerModuleToAppModule(),
-        updateConfigYaml(),
+        addBrokerModuleToAppModule(gateway),
+        updateConfigYaml(gateway),
+        gateway ? configureMainForGateway() : noop(),
         updatePackageJson(options),
-        mergeWith(generate(options), MergeStrategy.Overwrite),
+        skills ? copySkills() : noop(),
       ]),
     )(tree, context);
   };
@@ -133,54 +148,43 @@ function transform(source: InitOptions): InitOptions {
   return target;
 }
 
-function generate(options: InitOptions) {
-  return (context: SchematicContext) =>
-    apply(url('./files'), [
-      applyTemplates({
-        classify: strings.classify,
-        dasherize: strings.dasherize,
-        name: options.name,
-      }),
-      renameDotfiles,
-      move(normalize('./')),
-    ])(context);
-}
+// ---------------------------------------------------------------------------
+// Rule: copia le skill Claude in .claude/skills del progetto consumer
+// ---------------------------------------------------------------------------
 
-const renameDotfiles = forEach((entry: FileEntry) => {
-  if (entry.path.includes('/__dot')) {
-    const newPath = normalize(entry.path.replace('/__dot', '/.'));
-    return {
-      content: entry.content,
-      path: newPath,
-    } as FileEntry;
-  }
-  return entry;
-});
+function copySkills(): Rule {
+  // Static asset tree under ./files/skills → moved to .claude/skills (no templating).
+  return mergeWith(
+    apply(url('./files/skills'), [move(normalize('.claude/skills'))]),
+    MergeStrategy.Overwrite,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Rule: crea o aggiorna config/config.yaml con il blocco di configurazione
 // ---------------------------------------------------------------------------
 
-function updateConfigYaml(): Rule {
+function updateConfigYaml(gateway: boolean): Rule {
   return (tree: Tree) => {
     const CONFIG_PATH = 'config/config.yaml';
+    const block = configYaml(gateway);
 
     if (!tree.exists(CONFIG_PATH)) {
       // Crea il file da zero con l'intero blocco template
-      tree.create(CONFIG_PATH, CONFIG_YAML_BLOCK.trimStart());
+      tree.create(CONFIG_PATH, block.trimStart());
       return tree;
     }
 
     // File esistente: appende solo le sezioni ancora mancanti
     const existing = tree.read(CONFIG_PATH)!.toString('utf-8');
-    const SECTION_KEYS = ['app:', 'auth-providers:', 'broker:', 'topics:', 'gateway:'] as const;
+    const SECTION_KEYS = ['app:', 'auth-providers:', 'broker:', 'topics:', ...(gateway ? ['gateway:'] : [])] as const;
 
     let toAppend = '';
     for (const key of SECTION_KEYS) {
       if (!existing.includes(key)) {
-        const block = extractYamlSection(CONFIG_YAML_BLOCK, key);
-        if (block) {
-          toAppend += '\n' + block;
+        const section = extractYamlSection(block, key);
+        if (section) {
+          toAppend += '\n' + section;
         }
       }
     }
@@ -211,10 +215,10 @@ function extractYamlSection(yaml: string, sectionKey: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Rule: aggiunge BrokerModule.forRootAsync(...) ad app.module.ts
+// Rule: aggiunge BrokerModule.forRootAsync(...) (+ gateway) ad app.module.ts
 // ---------------------------------------------------------------------------
 
-function addBrokerModuleToAppModule(): Rule {
+function addBrokerModuleToAppModule(gateway: boolean): Rule {
   return (tree: Tree) => {
     // Cerca app.module.ts nella posizione canonica; fallback su ricerca ricorsiva
     const candidatePaths = [
@@ -232,7 +236,7 @@ function addBrokerModuleToAppModule(): Rule {
     }
 
     if (!modulePath) {
-      console.warn('[ng-add] app.module.ts non trovato: BrokerModule non aggiunto.');
+      console.warn('[nest-add] app.module.ts non trovato: BrokerModule non aggiunto.');
       return tree;
     }
 
@@ -248,16 +252,59 @@ function addBrokerModuleToAppModule(): Rule {
       const importInsertPos = findLastImportEndIndex(content);
       content =
         content.slice(0, importInsertPos) +
-        '\n' + BROKER_IMPORT_LINE +
+        '\n' + brokerImportLine(gateway) +
         content.slice(importInsertPos);
     }
 
-    // ---- 2. Aggiunge BrokerModule.forRootAsync nell'array imports ----------
+    // ---- 2. Aggiunge le voci nell'array imports (solo il necessario) -------
+    // BrokerModule.forRootAsync is the sentinel for "already wired": guard all the
+    // entries on it so HttpModule/ProxyModule aren't skipped by their import line.
     if (!content.includes('BrokerModule.forRootAsync')) {
-      content = insertIntoImportsArray(content, BROKER_FOR_ROOT_ASYNC);
+      if (gateway) {
+        content = insertIntoImportsArray(content, 'ProxyModule.forRoot([])');
+        content = insertIntoImportsArray(content, 'HttpModule');
+      }
+      content = insertIntoImportsArray(content, brokerForRootAsync(gateway));
     }
 
     tree.overwrite(modulePath, content);
+    return tree;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Rule: abilita rawBody + WsAdapter in main.ts (solo gateway)
+// ---------------------------------------------------------------------------
+
+function configureMainForGateway(): Rule {
+  return (tree: Tree) => {
+    const candidatePaths = ['/src/main.ts', '/app/main.ts', 'src/main.ts', 'app/main.ts'];
+    const mainPath = candidatePaths.find(p => tree.exists(p)) || findFileInTree(tree, 'main.ts');
+    if (!mainPath) {
+      console.warn('[nest-add] main.ts non trovato: abilita manualmente rawBody e WsAdapter.');
+      return tree;
+    }
+    let content = tree.read(mainPath)!.toString('utf-8');
+    if (content.includes('WsAdapter')) {
+      return tree; // già configurato
+    }
+
+    // import WsAdapter dopo l'ultimo import
+    const pos = findLastImportEndIndex(content);
+    content = content.slice(0, pos) + "\nimport { WsAdapter } from '@nestjs/platform-ws';" + content.slice(pos);
+
+    // abilita rawBody e registra il WS adapter subito dopo NestFactory.create(...)
+    const m = content.match(/const\s+(\w+)\s*=\s*await\s+NestFactory\.create\(\s*([A-Za-z0-9_]+)\s*(,\s*\{[^}]*\})?\s*\)\s*;?/);
+    if (m) {
+      const appVar = m[1];
+      const moduleArg = m[2];
+      const replacement = `const ${appVar} = await NestFactory.create(${moduleArg}, { rawBody: true });\n  ${appVar}.useWebSocketAdapter(new WsAdapter(${appVar}));`;
+      content = content.replace(m[0], replacement);
+    } else {
+      console.warn('[nest-add] NestFactory.create() non trovato in main.ts: aggiungi { rawBody: true } e useWebSocketAdapter manualmente.');
+    }
+
+    tree.overwrite(mainPath, content);
     return tree;
   };
 }
@@ -344,7 +391,7 @@ function findFileInTree(tree: Tree, fileName: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Rule: aggiorna package.json con script jest
+// Rule: aggiorna package.json (hook per script futuri)
 // ---------------------------------------------------------------------------
 
 function updatePackageJson(options: InitOptions) {
@@ -381,19 +428,4 @@ function updateNpmScripts(scripts: Record<string, any>, _options: InitOptions) {
   if (!scripts) {
     return;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Utility: trova l'indice dell'ultimo import nel formato array di stringhe
-// ---------------------------------------------------------------------------
-
-function findImportsEndpoint(contentLines: string[]): number {
-  const reversedContent = Array.from(contentLines).reverse();
-  const reverseImports = reversedContent.filter(line =>
-    line.match(/\} from ('|")/),
-  );
-  if (reverseImports.length <= 0) {
-    return 0;
-  }
-  return contentLines.indexOf(reverseImports[0]);
 }

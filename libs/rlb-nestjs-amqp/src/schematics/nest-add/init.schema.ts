@@ -47,6 +47,16 @@ export interface InitOptions {
    */
   flat?: boolean;
 
-  prefix?: string
+  prefix?: string;
 
+  /**
+   * Enable gateway mode: wire ProxyModule/HttpModule, add the gateway section to
+   * config.yaml and the WebSocket adapter to main.ts. Defaults to true.
+   */
+  gateway?: boolean;
+
+  /**
+   * Copy the Claude skill files into .claude/skills. Defaults to true.
+   */
+  skills?: boolean;
 }

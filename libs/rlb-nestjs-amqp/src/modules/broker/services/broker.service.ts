@@ -105,8 +105,13 @@ export class BrokerService implements OnModuleInit {
     if (!msTopic) {
       throw new Error(`Topic ${topic} not found in configuration`);
     }
-    if (msTopic.mode !== 'event' && msTopic.mode !== 'broadcast') {
-      throw new Error(`Mode for topic ${topic} is ${msTopic.mode}. Allowed modes for publishing messages are 'event' and 'broadcast'`);
+    // RPC/handle topics expose decorated `@BrokerAction` handlers. Allowing them
+    // here lets the same handler be reached fire-and-forget (event semantics):
+    // the consumer's RPC channel runs the function and skips the reply when no
+    // `replyTo` is present, so producers can wait only for the broker to take
+    // charge of the message (publisher confirm) instead of for a response.
+    if (!['event', 'broadcast', 'rpc', 'handle'].includes(msTopic.mode)) {
+      throw new Error(`Topic ${topic} is not configured for publishing`);
     }
     if (!msTopic.routingKey) {
       const queue = (this.brokerConfig?.queues || []).find(q => q.name === msTopic?.queue);
@@ -123,6 +128,8 @@ export class BrokerService implements OnModuleInit {
       }
     }
     try {
+      // Await the publish so this resolves only once the broker has accepted the
+      // message (publisher confirm via ConfirmChannel). Rejects on nack/error.
       return await this.amqpConnection.publish(exchange, routingKey, { action, payload }, { headers, mandatory: msTopic.mandatory, persistent: msTopic.persistent });
     } catch (err) {
       this.logger.error(`Error publishing message to topic ${topic}: ${err.message}`);

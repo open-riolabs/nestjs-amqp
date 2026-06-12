@@ -1,6 +1,7 @@
 ***REMOVED*** compiled output
 /dist
 /node_modules
+*.tsbuildinfo
 
 ***REMOVED*** Logs
 logs

@@ -41,8 +41,17 @@
         const { webSocket } = rxjs.webSocket;
         const { filter, map, share } = rxjs.operators;
 
+        // The gateway authenticates the connection from the JWT carried in the
+        // WebSocket subprotocol (Sec-WebSocket-Protocol). The browser sets it via
+        // the second argument of the WebSocket constructor. Leave it empty for
+        // anonymous access when gateway.ws.requireAuth is not enabled.
+        const TOKEN = ''; // e.g. 'eyJhbGciOi...'
+
         // Change to your actual WebSocket server (ws://localhost:PORT, etc.)
-        const wsSubject = webSocket('ws://localhost:8000?id=1234');
+        const wsSubject = webSocket({
+            url: 'ws://localhost:3000',
+            protocol: TOKEN ? [TOKEN] : undefined,
+        });
         const topics = {};
         const sharedMessages$ = wsSubject.pipe(share());
 

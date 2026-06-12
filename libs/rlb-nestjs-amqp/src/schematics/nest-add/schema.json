@@ -3,18 +3,31 @@
   "$id": "SchematicsHandlebar",
   "title": "Init Schema",
   "type": "object",
-  "properties": {},
-  "path": {
-    "type": "string",
-    "format": "path",
-    "description": "The path to create the init.",
-    "visible": false
-  },
-  "project": {
-    "type": "string",
-    "description": "The name of the project.",
-    "$default": {
-      "$source": "projectName"
+  "properties": {
+    "path": {
+      "type": "string",
+      "format": "path",
+      "description": "The path to create the init.",
+      "visible": false
+    },
+    "project": {
+      "type": "string",
+      "description": "The name of the project.",
+      "$default": {
+        "$source": "projectName"
+      }
+    },
+    "gateway": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable gateway mode (ProxyModule/HttpModule + gateway YAML + WS adapter in main.ts).",
+      "x-prompt": "Enable gateway mode (HTTP/WebSocket)?"
+    },
+    "skills": {
+      "type": "boolean",
+      "default": true,
+      "description": "Copy the Claude skill files into .claude/skills.",
+      "x-prompt": "Copy the Claude skills into the project?"
     }
   }
 }

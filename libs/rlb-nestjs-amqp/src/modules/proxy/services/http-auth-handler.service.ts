@@ -36,32 +36,53 @@ export class HttpAuthHandlerService {
     return out;
   }
 
-  async checkJwt(req: Request, authConfig: HandlerAuthConfig) {
-    let decoded: any;
-    let out: ProcessedAuthData = { success: false };
-    const jwt = req.headers.authorization?.split(" ")[1];
-    if (!jwt) return out;
+  /** Returns the configured auth provider by name, or undefined. */
+  findProvider(name: string): HandlerAuthConfig | undefined {
+    return this.authProviders.find(o => o.name === name);
+  }
+
+  /** Verifies a raw JWT against a provider, returning the decoded payload or undefined. */
+  async verifyToken(authConfig: HandlerAuthConfig, token: string): Promise<any | undefined> {
+    if (!token) return undefined;
     if (authConfig.type === 'jwt') {
-      decoded = await this.jwtService.verifyTokenSecret(authConfig, jwt);
+      return this.jwtService.verifyTokenSecret(authConfig, token);
     }
     if (authConfig.type === 'jwks') {
-      decoded = await this.jwtService.verifyTokenJwks(authConfig, jwt);
+      return this.jwtService.verifyTokenJwks(authConfig, token);
     }
-    if (!decoded) {
-      return out;
-    } else {
-      if (!authConfig.jwtMap) {
-        out = decoded;
-        out.success = true;
-      } else {
-        authConfig.jwtMap.map(o => o.split(':')).forEach(([source, dest]) => {
-          if (decoded?.[source])
-            out[`${authConfig.headerPrefix}${dest.trim().toUpperCase()}`] = decoded?.[source];
-        });
-        out.success = true;
-      }
-      return out;
+    return undefined;
+  }
+
+  /** Maps a decoded JWT payload to header-prefixed claims using the provider's jwtMap. */
+  mapClaims(authConfig: HandlerAuthConfig, decoded: any): ProcessedAuthData {
+    if (!decoded) return { success: false };
+    if (!authConfig.jwtMap) {
+      return { ...decoded, success: true };
     }
+    const out: ProcessedAuthData = { success: true };
+    authConfig.jwtMap.map(o => o.split(':')).forEach(([source, dest]) => {
+      if (decoded?.[source])
+        out[`${authConfig.headerPrefix}${dest.trim().toUpperCase()}`] = decoded?.[source];
+    });
+    return out;
+  }
+
+  async checkJwt(req: Request, authConfig: HandlerAuthConfig) {
+    const jwt = req.headers.authorization?.split(" ")[1];
+    const decoded = await this.verifyToken(authConfig, jwt);
+    return this.mapClaims(authConfig, decoded);
+  }
+
+  /** Role check from already-mapped claims (used by non-HTTP transports e.g. WS). */
+  async checkRolesForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }): Promise<boolean> {
+    if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${authConfig.name} is not a JWT or JWKS provider`);
+    if (!authConfig.aclTopic) throw new Error(`Auth provider ${authConfig.name} has no ACL topic defined`);
+    if (!authConfig.aclAction) throw new Error(`Auth provider ${authConfig.name} has no ACL action defined`);
+    if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
+    if (!claims) return false;
+    const userId = claims[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
+    if (!userId) return false;
+    return this.aclRoleService.canUserDo(authConfig.aclTopic, authConfig.aclAction, userId);
   }
 
   async checkBasicAuth(req: Request, authConfig: HandlerAuthConfig) {
