@@ -98,9 +98,16 @@ export class HttpHandlerService implements OnModuleInit {
       }
       try {
         if (path.mode === "event") {
-          this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
-          res.status(path.successStatusCode || 202).setHeaders(headers).end();
-          this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
+          try {
+            // Wait for the broker to take charge of the message (publisher confirm)
+            // before acknowledging the request, so the 2xx is not optimistic.
+            await this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+            res.status(path.successStatusCode || 202).setHeaders(headers).end();
+            this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
+          } catch (error) {
+            res.status(503).json(this.utils.error2Object(error, this.appConfig.environment !== 'production'));
+            this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
+          }
         } else if (path.mode === "rpc") {
           try {
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);

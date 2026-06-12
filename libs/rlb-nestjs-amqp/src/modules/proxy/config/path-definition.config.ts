@@ -27,12 +27,43 @@ export interface WebSocketEvent {
   exchange: string;
   routingKey: string;
   name: string;
+  /**
+   * Auth-provider name used to verify the connection token AND map its claims for
+   * this specific event (verification happens at subscribe time). When set, a valid
+   * token is required to subscribe unless `requireAuth` is explicitly `false`.
+   */
   auth?: string;
-  roles?: [];
+  /**
+   * Set to `false` to make `auth` optional: anonymous clients may subscribe, while
+   * authenticated ones still get their claims mapped (useful with `scopeClaim`).
+   * Defaults to `true` when `auth` is set.
+   */
+  requireAuth?: boolean;
+  roles?: string[];
+  /**
+   * When set, the server only forwards messages whose `payload[payloadKey]`
+   * equals the authenticated client's `scopeClaim` value. Prevents a client
+   * from receiving other users' data via a crafted `select` filter.
+   */
+  scopeClaim?: string;
+  payloadKey?: string;
   url?: string;
   method?: string;
   headers?: { [k: string]: string | string[] | number; };
   timeout?: number;
+}
+
+export interface WebSocketGatewayOptions {
+  /**
+   * Connection-level limits and heartbeat. Authentication/authorization is declared
+   * per-event on WebSocketEvent (auth/requireAuth/roles/scopeClaim), not here.
+   */
+  /** Maximum number of concurrent connections accepted by this instance. */
+  maxConnections?: number;
+  /** Maximum number of active subscriptions per connected client. */
+  maxSubscriptionsPerClient?: number;
+  /** Ping/pong heartbeat interval in milliseconds (default 30000). */
+  heartbeatIntervalMs?: number;
 }
 
 export interface GatewayConfigLoader {
@@ -51,4 +82,5 @@ export interface GatewayConfig {
   loadConfig?: GatewayConfigLoader;
   paths: PathDefinition[];
   events: WebSocketEvent[];
+  ws?: WebSocketGatewayOptions;
 }

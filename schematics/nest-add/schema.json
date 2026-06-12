@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "rlb-nestjs-amqp-nest-add",
+  "title": "Add @open-rlb/nestjs-amqp",
+  "type": "object",
+  "properties": {
+    "gateway": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable gateway mode: wire ProxyModule/HttpModule, add the gateway section to config.yaml and the WebSocket adapter to main.ts.",
+      "x-prompt": "Enable gateway mode (HTTP/WebSocket)?"
+    },
+    "module": {
+      "type": "string",
+      "default": "src/app.module.ts",
+      "description": "Path to the root module to modify."
+    },
+    "main": {
+      "type": "string",
+      "default": "src/main.ts",
+      "description": "Path to the bootstrap file (modified only when gateway is enabled)."
+    },
+    "config": {
+      "type": "string",
+      "default": "config/config.yaml",
+      "description": "Path of the YAML config file to create."
+    },
+    "skills": {
+      "type": "boolean",
+      "default": true,
+      "description": "Copy the Claude skill files into .claude/skills.",
+      "x-prompt": "Copy the Claude skills into the project?"
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "default": false,
+      "description": "Do not run the package manager install task."
+    }
+  },
+  "required": []
+}

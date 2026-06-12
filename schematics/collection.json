@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "nest-add": {
+      "description": "Add @open-rlb/nestjs-amqp to a NestJS project: module wiring, YAML config (with optional gateway), config loader and Claude skills.",
+      "factory": "./nest-add/index***REMOVED***nestAdd",
+      "schema": "./nest-add/schema.json"
+    }
+  }
+}

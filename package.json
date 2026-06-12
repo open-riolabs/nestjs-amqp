@@ -5,8 +5,12 @@
   "author": "Giuseppe Riolo <riolo.giuseppe@gmail.com>",
   "private": false,
   "license": "MIT",
+  "schematics": "./schematics/collection.json",
   "scripts": {
     "build": "tsc -p ./tsconfig.build.json",
+    "sync:skills": "node scripts/sync-skills.js",
+    "build:schematics": "node scripts/sync-skills.js && tsc -p schematics/tsconfig.json",
+    "prepack": "node scripts/sync-skills.js && tsc -p schematics/tsconfig.json",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

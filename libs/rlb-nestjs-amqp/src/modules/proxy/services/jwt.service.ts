@@ -24,7 +24,7 @@ export class JwtService implements OnModuleInit {
           cache: true,
           rateLimit: true,
           jwksRequestsPerMinute: 10,
-          requestAgent: new Agent({ rejectUnauthorized: false })
+          requestAgent: new Agent({ rejectUnauthorized: authConfig.httpsAllowUnauthorized !== true })
         });
       }
     }
