@@ -1,0 +1,15 @@
+{
+  // Used only by the VS Code debug launches (ts-node). It pins rootDir to the repo
+  // root — the common ancestor of apps/ and libs/ — so ts-node can compute the source
+  // layout (avoids TS5011), and resolves @open-rlb/nestjs-amqp to the lib SOURCE so no
+  // prebuild is needed to debug. transpileOnly skips full type-checking for fast startup.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "module": "commonjs"
+  },
+  "ts-node": {
+    "transpileOnly": true,
+    "files": true
+  }
+}

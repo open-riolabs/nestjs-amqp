@@ -23,6 +23,6 @@ HttpMetricSchema.index({ method: 1, route: 1 }, { unique: true });
 
 export const httpMetricModel = {
   provide: HTTP_METRIC_MODEL,
-  useFactory: (connection: Connection) => connection.model('http-metric', HttpMetricSchema),
+  useFactory: (connection: Connection) => connection.model('http-metric', HttpMetricSchema, 'http-metric'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };

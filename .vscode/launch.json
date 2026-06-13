@@ -4,7 +4,32 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug Nest Framework",
+      "name": "Debug gateway-2 (self-contained)",
+      "args": [
+        "${workspaceFolder}/apps/gateway-2/src/main.ts"
+      ],
+      "runtimeArgs": [
+        "--nolazy",
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.debug.json",
+        "TS_NODE_TRANSPILE_ONLY": "true",
+        "TZ": "UTC",
+        "PORT": "3000"
+      },
+      "sourceMaps": true,
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug gateway (basic example)",
       "args": [
         "${workspaceFolder}/apps/gateway/src/main.ts"
       ],
@@ -17,12 +42,24 @@
       ],
       "env": {
         "NODE_ENV": "development",
-        "TZ": "UTC"
+        "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.debug.json",
+        "TS_NODE_TRANSPILE_ONLY": "true",
+        "TZ": "UTC",
+        "PORT": "3001"
       },
       "sourceMaps": true,
-      "envFile": "${workspaceFolder}/.env",
-      "cwd": "${workspaceRoot}",
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
-    },
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug both gateways",
+      "configurations": [
+        "Debug gateway-2 (self-contained)",
+        "Debug gateway (basic example)"
+      ],
+      "stopAll": true
+    }
   ]
 }

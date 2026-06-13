@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule, MongooseModuleFactoryOptions } from '@nestjs/mongoose';
 import {
   AclActionRepository,
@@ -22,7 +22,16 @@ import { authProviderModel } from './schema/auth-provider.schema';
 import { httpMetricModel } from './schema/http-metric.schema';
 import { httpPathModel } from './schema/http-path.schema';
 
-interface MongoConfig { uri: string; dbName?: string; }
+export interface DatabaseConfig {
+  protocol: string;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  auth: boolean;
+}
+
 
 const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel];
 
@@ -46,14 +55,22 @@ const REPOSITORIES = [
   imports: [
     MongooseModule.forRootAsync({
       connectionName: DATA_CONNECTION_NAME,
+      imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService): MongooseModuleFactoryOptions => {
-        const cfg = config.get<MongoConfig>('mongo')!;
-        return { uri: cfg.uri, dbName: cfg.dbName };
-      },
+      useFactory: dbFactory,
     }),
   ],
   providers: [...MODELS, ...REPOSITORIES],
   exports: [...MODELS, ...REPOSITORIES.map((r) => r.provide)],
 })
 export class DatabaseModule { }
+
+
+export async function dbFactory(config: ConfigService): Promise<MongooseModuleFactoryOptions> {
+  const cfg: DatabaseConfig = config.get<DatabaseConfig>("data-mongodb");
+  let uri = `mongodb://${cfg.host}:${cfg.port}`;
+  if (cfg.auth && cfg.user && cfg.password) {
+    uri = `mongodb://${cfg.user}:${cfg.password}@${cfg.host}:${cfg.port}`;
+  }
+  return { uri, dbName: cfg.database };
+}

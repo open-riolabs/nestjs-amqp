@@ -24,12 +24,14 @@ AclRoleSchema.index({ name: 1 }, { unique: true });
 
 export const aclActionModel = {
   provide: ACL_ACTION_MODEL,
-  useFactory: (connection: Connection) => connection.model('acl-action', AclActionSchema),
+  // Explicit collection name (3rd arg) so Mongoose does NOT pluralize it: the lib's
+  // AclGrantRepository.checkActions $lookup joins on `from: 'acl-role'` by literal name.
+  useFactory: (connection: Connection) => connection.model('acl-action', AclActionSchema, 'acl-action'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };
 
 export const aclRoleModel = {
   provide: ACL_ROLE_MODEL,
-  useFactory: (connection: Connection) => connection.model('acl-role', AclRoleSchema),
+  useFactory: (connection: Connection) => connection.model('acl-role', AclRoleSchema, 'acl-role'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };

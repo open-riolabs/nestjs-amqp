@@ -31,6 +31,6 @@ HttpPathSchema.index({ name: 1 }, { unique: true });
 
 export const httpPathModel = {
   provide: HTTP_PATH_MODEL,
-  useFactory: (connection: Connection) => connection.model('http-path', HttpPathSchema),
+  useFactory: (connection: Connection) => connection.model('http-path', HttpPathSchema, 'http-path'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };

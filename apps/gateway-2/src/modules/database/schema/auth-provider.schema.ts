@@ -32,6 +32,6 @@ AuthProviderSchema.index({ name: 1 }, { unique: true });
 
 export const authProviderModel = {
   provide: AUTH_PROVIDER_MODEL,
-  useFactory: (connection: Connection) => connection.model('auth-provider', AuthProviderSchema),
+  useFactory: (connection: Connection) => connection.model('auth-provider', AuthProviderSchema, 'auth-provider'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };

@@ -91,4 +91,12 @@ export interface GatewayConfig {
   paths: PathDefinition[];
   events: WebSocketEvent[];
   ws?: WebSocketGatewayOptions;
+  /**
+   * Optional broadcast topic the gateway subscribes to for runtime route reloads.
+   * When a message arrives on this topic, the gateway rebuilds its route table from
+   * the YAML paths + `loadConfig.paths` (DB export) without restarting. Trigger it by
+   * publishing to this topic (e.g. an `event`-mode path like POST /admin/reload, or
+   * automatically after a path CRUD). Use `broadcast` mode so every instance reloads.
+   */
+  reloadTopic?: string;
 }

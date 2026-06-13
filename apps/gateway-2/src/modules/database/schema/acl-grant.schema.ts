@@ -18,6 +18,6 @@ AclGrantSchema.index({ userId: 1, resourceId: 1 });
 
 export const aclGrantModel = {
   provide: ACL_GRANT_MODEL,
-  useFactory: (connection: Connection) => connection.model('acl-grant', AclGrantSchema),
+  useFactory: (connection: Connection) => connection.model('acl-grant', AclGrantSchema, 'acl-grant'),
   inject: [getConnectionToken(DATA_CONNECTION_NAME)],
 };

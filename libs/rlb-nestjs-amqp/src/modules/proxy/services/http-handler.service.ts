@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { BrokerService } from "../../broker";
 import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
@@ -13,6 +13,9 @@ import multer = require('multer');
 export class HttpHandlerService implements OnModuleInit {
 
   private server: ExpressAdapter;
+  /** Swappable route table. Mounted once via a stable delegator; rebuilt on reload so
+   *  routes can be added/modified/removed at runtime without restarting the process. */
+  private dynamicRouter: Router | null = null;
 
   private readonly logger: Logger;
   private readonly multer: multer.Multer;
@@ -33,32 +36,87 @@ export class HttpHandlerService implements OnModuleInit {
 
   async onModuleInit() {
     this.server = this.httpAdapterHost.httpAdapter.getInstance<ExpressAdapter>();
-    const extPath: PathDefinition[] = [];
-    if (this.gatewayConfig.loadConfig?.paths) {
-      const o = await this.broker.requestData(this.gatewayConfig.loadConfig.paths.topic, this.gatewayConfig.loadConfig.paths.action, {});
-      extPath.push(...o);
-    }
-    const paths = [...this.gatewayConfig?.paths || [], ...extPath];
-    for (const path of paths) {
-      this.registerPath(path);
+    // Mount a single stable delegator. The actual route table lives in `dynamicRouter`,
+    // which `reload()` rebuilds and swaps atomically — so subsequent requests hit the
+    // new table while in-flight ones finish on the old one.
+    this.server.use((req: Request, res: Response, next: NextFunction) => {
+      if (this.dynamicRouter) return this.dynamicRouter(req, res, next);
+      next();
+    });
+    await this.reload();
+
+    // Optional multi-instance reload: subscribe to a broadcast control topic so every
+    // gateway instance rebuilds its routes when signalled (e.g. after a DB path CRUD).
+    const reloadTopic = this.gatewayConfig.reloadTopic;
+    if (reloadTopic) {
+      try {
+        await this.broker.registerHandler(reloadTopic, async () => {
+          this.logger.log(`[RELOAD] signal received on '${reloadTopic}' — rebuilding routes`);
+          await this.reload();
+        });
+        this.logger.log(`[RELOAD] listening for route-reload signals on topic '${reloadTopic}'`);
+      } catch (error) {
+        this.logger.warn(`[RELOAD] could not subscribe to reload topic '${reloadTopic}': ${error?.message}`);
+      }
     }
   }
 
-  registerPath(path: PathDefinition) {
+  /**
+   * (Re)builds the Express route table from the YAML paths plus the DB-exported paths
+   * (`gateway.loadConfig.paths`), then swaps it in atomically. Safe to call at runtime:
+   * added paths appear, removed paths disappear, and modified paths are re-registered.
+   * Returns the number of routes successfully registered.
+   */
+  async reload(): Promise<number> {
+    const extPath: PathDefinition[] = [];
+    if (this.gatewayConfig.loadConfig?.paths) {
+      try {
+        const o = await this.broker.requestData(this.gatewayConfig.loadConfig.paths.topic, this.gatewayConfig.loadConfig.paths.action, {});
+        if (Array.isArray(o)) extPath.push(...o);
+      } catch (error) {
+        this.logger.warn(`[RELOAD] failed to pull DB paths (${this.gatewayConfig.loadConfig.paths.topic}/${this.gatewayConfig.loadConfig.paths.action}): ${error?.message}. Keeping YAML paths only.`);
+      }
+    }
+    const paths = [...this.gatewayConfig?.paths || [], ...extPath];
+    const router = Router();
+    let ok = 0;
+    for (const path of paths) {
+      try {
+        this.registerPath(path, router);
+        ok++;
+      } catch (error) {
+        this.logger.error(`[RELOAD] skipping invalid path '${path?.name || path?.path}': ${error?.message}`);
+      }
+    }
+    this.dynamicRouter = router;
+    this.logger.log(`[RELOAD] routes ready: ${ok}/${paths.length} (yaml=${this.gatewayConfig?.paths?.length || 0}, db=${extPath.length})`);
+    return ok;
+  }
+
+  /**
+   * Registers one path. When `router` is omitted the path is appended live to the current
+   * dynamic router (used by RemoteConfigService for pushed single-path config); reload()
+   * passes the router it is building. Note: a subsequent reload() rebuilds from YAML+DB
+   * and drops live-appended paths that aren't part of that config.
+   */
+  registerPath(path: PathDefinition, router?: Router) {
     if (!path.method) throw new Error("Method is required for path definition");
     if (!path.path) throw new Error("Path is required for path definition");
     if (!path.topic) throw new Error("Topic is required for path definition");
     if (!path.mode) throw new Error("Mode is required for path definition");
 
-    this.server[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
+    const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
+    target[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
       if (path.auth && !authData?.success && path.allowAnonymous !== true) {
         res.status(401).json({ message: "Unauthorized" });
+        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
         return;
       }
       if (!(await this.httpAuthHandlerService.checkRoles(authData, path))) {
         res.status(403).json({ message: "Forbidden" });
+        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
         return;
       }
       const httpHeaders = this.httpHeaders(req, path);
@@ -150,8 +208,8 @@ export class HttpHandlerService implements OnModuleInit {
           throw new Error(`Invalid mode '${path.mode}' for path definition`);
         }
       } catch (error) {
+        this.logger.error(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
         if (this.appConfig.environment === "development") {
-          this.logger.error(error.message);
           res.status(500).json(error);
         }
         else {
