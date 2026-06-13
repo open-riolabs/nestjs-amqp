@@ -526,6 +526,60 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 
 ---
 
+***REMOVED******REMOVED*** Moduli opzionali con MongoDB: `AclModule` e `GatewayAdminModule`
+
+Due moduli **opzionali** (Mongo auto-contenuto) per gestire ACL e configurazione gateway a database. Richiedono i peer opzionali:
+
+```bash
+npm i mongoose @nestjs/mongoose
+```
+
+***REMOVED******REMOVED******REMOVED*** `AclModule` — ACL DB-backed con cache 2-livelli
+
+ACL su Mongo (azioni → ruoli → grant per-utente) con `canUserDo` corretto e **cache RAM + L2 pluggable** (TTL diversi) e invalidazione che forza il DB.
+
+```ts
+import { AclModule, AclService, RLB_ACL_CACHE_STORE } from '@open-rlb/nestjs-amqp';
+import { RLB_GTW_ACL_ROLE_SERVICE } from '@open-rlb/nestjs-amqp';
+
+@Module({
+  imports: [
+    BrokerModule.forRootAsync({ /* ... */ }),
+    AclModule.forRoot(
+      { mongo: { uri: 'mongodb://localhost:27017', dbName: 'acl' }, cache: { ramTtlMs: 30000, l2TtlSec: 600 } },
+      // L2 opzionale: un provider che implementa AclCacheStore (get/set/del/keys). Se omesso → solo RAM.
+      { provide: RLB_ACL_CACHE_STORE, useClass: MyRedisAclStore },
+    ),
+  ],
+  // per usarlo come ACL del gateway:
+  providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }],
+})
+export class AppModule {}
+```
+
+- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl` e imposta negli auth-provider `aclTopic: rlb-acl`, `aclAction: acl-can-user-do`.
+- `AclService.canUserDo(topic, action, userId)` serve dalla cache; sul miss interroga il DB (`checkActions`: i ruoli del grant devono coprire l'azione) e ripopola RAM+L2.
+- **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
+
+***REMOVED******REMOVED******REMOVED*** `GatewayAdminModule` — CRUD rotte/auth + liste + metriche
+
+Persistenza su Mongo di rotte HTTP e auth-providers, con **liste esportabili** per il gateway (in aggiunta allo YAML), **metriche a contatori** e **ordinamento path static-before-param**.
+
+```ts
+import { GatewayAdminModule } from '@open-rlb/nestjs-amqp';
+
+GatewayAdminModule.forRoot({ mongo: { uri: 'mongodb://localhost:27017', dbName: 'gw' } });
+```
+
+Handler su topic **`rlb-gateway-admin`** (`GATEWAY_ADMIN_TOPIC`):
+- CRUD rotte: `gw-path-create/update/delete/get/list`; **`gw-path-export` (rpc)** → tutte le rotte abilitate come `PathDefinition[]` **ordinate** (statiche prima delle parametriche). Punta `gateway.loadConfig.paths` a `{ topic: rlb-gateway-admin, action: gw-path-export }`.
+- CRUD auth: `gw-auth-create/.../list`; **`gw-auth-export` (rpc)** → `HandlerAuthConfig[]` abilitati (per frontend / merge lato gateway).
+- Metriche: **`gw-metrics-track` (event)** incrementa i contatori per `(method, route)`; **`gw-metrics-get` (rpc)** restituisce count/errori/durata media per il frontend.
+
+> **Ordinamento path**: `gw-path-export` usa `orderPaths()` così `resources/path` precede `resources/:varName` — necessario perché Express, registrando prima la rotta parametrica, intercetterebbe il segmento statico.
+
+---
+
 ***REMOVED******REMOVED*** API `BrokerService`
 
 | Metodo                                                       | Uso                                              |
