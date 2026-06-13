@@ -2,12 +2,12 @@ import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { Request, Response } from "express";
-import * as multer from 'multer';
 import { BrokerService } from "../../broker";
 import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
+import multer = require('multer');
 
 @Injectable()
 export class HttpHandlerService implements OnModuleInit {

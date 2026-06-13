@@ -123,6 +123,11 @@ Mapping example: token `{ sub: "u_1" }` + `jwtMap: [sub:userId]` + `headerPrefix
 Types: `jwt` (HS/RS secret), `jwks` (remote keys), `basic` (clientId/clientSecret),
 `str-compare` (static token after `headerPrefix` in Authorization).
 
+Provider notes: `algorithms` is REQUIRED for `jwt`/`jwks` (omit → denied; `jwks` allows only
+RS*/ES*/PS*, rejects HS*/none). `str-compare` without `secret` and `basic` without
+`clientSecret` PASS THROUGH (request treated as authenticated — provider effectively open).
+Define `jwtMap` to avoid forwarding unmapped claims.
+
 ---
 
 ***REMOVED******REMOVED*** gateway  (GatewayConfig)
@@ -136,6 +141,8 @@ gateway:
     maxConnections: 5000
     maxSubscriptionsPerClient: 50
     heartbeatIntervalMs: 30000
+    allowedOrigins: [https://app.example.com]   ***REMOVED*** Origin allowlist (omit → all accepted)
+    maxMessageBytes: 16384                        ***REMOVED*** drop oversized client frames (default 16KB)
     ***REMOVED*** auth/roles/scope are declared PER-EVENT on events[], not here
 
   loadConfig:                        ***REMOVED*** optional remote load via RPC at boot

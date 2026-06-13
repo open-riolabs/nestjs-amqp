@@ -291,6 +291,8 @@ auth-providers:
 
 Mapping dei claim: un token con `{ sub: "u_1", roles: [...] }` e `jwtMap: [sub:userId]`, `headerPrefix: X-GTW-AUTH-` produce l'header `X-GTW-AUTH-USERID = u_1` propagato al microservizio. Leggilo con `@BrokerParam('header', 'X-GTW-AUTH-USERID')`.
 
+> **Sicurezza dei provider**: `algorithms` è **obbligatorio** per `jwt`/`jwks` (se omesso la verifica è negata → previene l'algorithm-confusion); per `jwks` solo algoritmi asimmetrici (RS\*/ES\*/PS\*), `HS*`/`none` rifiutati. `str-compare` senza `secret` e `basic` senza `clientSecret` fanno **pass-through** (richiesta considerata autenticata — provider di fatto aperto/disabilitato; usalo consapevolmente). Senza `jwtMap` i claim vengono propagati non mappati: definiscilo sempre.
+
 ***REMOVED******REMOVED******REMOVED*** `gateway`
 
 ```yaml
@@ -463,6 +465,9 @@ gateway:
     maxConnections: 5000             ***REMOVED*** limite connessioni per istanza
     maxSubscriptionsPerClient: 50    ***REMOVED*** limite sottoscrizioni per client
     heartbeatIntervalMs: 30000       ***REMOVED*** ping/pong per chiudere le connessioni morte
+    allowedOrigins:                  ***REMOVED*** allowlist Origin dell'handshake (omessa → tutte)
+      - https://app.example.com
+    maxMessageBytes: 16384           ***REMOVED*** scarta i frame client più grandi (default 16KB)
 
   events:
     - name: orders
@@ -508,8 +513,10 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 - **Auth per evento**: `events[].auth` indica il provider che verifica il token e mappa i claim per quell'evento; `requireAuth: false` rende l'auth opzionale (anonimi ammessi, claim mappati se il token c'è). Subscribe negato (`onError: unauthorized`) se l'auth è richiesta e il token non è valido.
 - **Authz per evento**: `roles` (ACL via `IAclRoleService`) sull'identità ricavata da `auth`.
 - **Scoping per-utente**: `scopeClaim` + `payloadKey` impediscono a un client di ricevere dati altrui tramite un `select` arbitrario (il filtro server-side è intersecato con quello del client, mai allargato). Se `scopeClaim` è impostato senza `payloadKey`, **nega tutto** (safe default).
+- **Sessione limitata dalla scadenza del token**: l'`exp` del JWT viene catturato alla prima verifica e la connessione viene chiusa (`1008 token expired`) appena scade — niente consegne dopo la scadenza.
+- **Origin allowlist**: `gateway.ws.allowedOrigins` rifiuta gli handshake cross-site (se omessa, tutte le origin sono accettate e lo si segnala a boot).
 - **Multi-istanza**: ogni istanza crea una coda AMQP **effimera ed esclusiva** (nome unico per processo) → tutte le repliche ricevono ogni evento e lo inoltrano ai rispettivi client.
-- **Hardening**: heartbeat ping/pong, limiti connessioni/sottoscrizioni, cleanup robusto su `close`/`error`.
+- **Hardening**: heartbeat ping/pong, limiti connessioni/sottoscrizioni, limite dimensione frame (`maxMessageBytes`), cleanup robusto su `close`/`error`.
 
 ---
 

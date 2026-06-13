@@ -1,4 +1,12 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // TS 6 requires an explicit rootDir when emitting. Pin it to the library source
+    // so the output layout stays dist/<...> (e.g. dist/schematics/nest-add) as before.
+    "rootDir": "./libs/rlb-nestjs-amqp/src",
+    // Disable incremental for the dist build: under TS 6 the incremental cache could
+    // skip emit and leave the output (e.g. the schematic's index.js) partially missing.
+    "incremental": false
+  },
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "apps/**/*", "scripts/**/*"],
 }

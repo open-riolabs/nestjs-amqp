@@ -71,8 +71,23 @@ or WS event. Each item is a real failure mode in this codebase.
 20. **`handle`/`broadcast` handlers must return `void`**; a return value logs
     `Subscribe handlers should only return void`.
 
-***REMOVED******REMOVED*** TLS / credentials
+***REMOVED******REMOVED*** TLS / credentials / provider hardening
 21. **JWKS verifies TLS by default.** `httpsAllowUnauthorized: true` only for self-signed dev
     issuers.
 22. **Credential `mechanism`**: `PLAIN` | `EXTERNAL` | `AMQPLAIN` (case-insensitive). Unknown
     value leaves `response` unset → auth fails.
+23. **`algorithms` is REQUIRED for `jwt`/`jwks`.** If omitted, verification is denied
+    (algorithm-confusion guard). For `jwks` only asymmetric algs are allowed (RS*/ES*/PS*);
+    `HS*`/`none` are rejected.
+24. **`str-compare`/`basic` PASS THROUGH when their secret is unset.** A `str-compare`
+    without `secret` or a `basic` without `clientSecret` treats every request as authenticated
+    (provider effectively open/disabled — by design). Set the secret to actually enforce it.
+25. **Define `jwtMap`.** Without it, every token claim is forwarded unmapped (over-exposure).
+
+***REMOVED******REMOVED*** WebSocket session/transport security
+26. **WS sessions are bounded by the token `exp`.** The connection is closed (`1008`) when the
+    JWT expires; no delivery happens afterward. Long-lived sockets need token refresh +
+    reconnect.
+27. **Set `gateway.ws.allowedOrigins`** to reject cross-site handshakes; if omitted, all
+    Origins are accepted (logged at boot). `maxMessageBytes` (default 16384) drops oversized
+    client frames.

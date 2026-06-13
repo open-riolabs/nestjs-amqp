@@ -18,6 +18,8 @@ type NamedWebSocket = WebSocket & {
   isAlive: boolean;
   /** Raw token from the handshake subprotocol; verified per-event at subscribe time. */
   token?: string;
+  /** Token `exp` (epoch seconds) captured on first verification; bounds the session. */
+  tokenExp?: number;
   /** Memoized mapped claims, one entry per auth-provider that has verified the token. */
   authByProvider?: { [provider: string]: ProcessedAuthData; };
 };
@@ -48,9 +50,14 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
   afterInit(server: Server) {
     this.server = server;
     const interval = this.gatewayConfig.ws?.heartbeatIntervalMs ?? 30000;
-    // Heartbeat: ping every client, terminate the ones that did not pong back.
+    // Heartbeat: ping every client, drop dead ones AND close sessions whose token expired.
     this.heartbeat = setInterval(() => {
-      server.clients.forEach((ws: NamedWebSocket) => {
+      server.clients.forEach((sock) => {
+        const ws = sock as NamedWebSocket;
+        if (this.isExpired(ws)) {
+          this.closeExpired(ws);
+          return;
+        }
         if (ws.isAlive === false) {
           ws.terminate();
           this.handleDisconnect(ws);
@@ -64,6 +71,15 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
 
   handleConnection(client: NamedWebSocket, request: IncomingMessage) {
     const wsCfg = this.gatewayConfig.ws;
+
+    // Reject cross-origin handshakes when an allowlist is configured.
+    if (wsCfg?.allowedOrigins?.length) {
+      const origin = request.headers.origin;
+      if (!origin || !wsCfg.allowedOrigins.includes(origin)) {
+        client.close(1008, 'Origin not allowed');
+        return;
+      }
+    }
 
     // Enforce the per-instance connection limit (the new socket is already in the set).
     if (wsCfg?.maxConnections && this.server?.clients && this.server.clients.size > wsCfg.maxConnections) {
@@ -79,6 +95,16 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     client.on('message', (raw) => this.onClientMessage(client, raw));
     client.on('close', () => this.handleDisconnect(client));
     client.on('error', () => this.handleDisconnect(client));
+  }
+
+  /** True once the connection's token (if any) has passed its `exp`. */
+  private isExpired(client: NamedWebSocket): boolean {
+    return client.tokenExp != null && Date.now() >= client.tokenExp * 1000;
+  }
+
+  private closeExpired(client: NamedWebSocket) {
+    this.handleDisconnect(client);
+    try { client.close(1008, 'token expired'); } catch { /* socket closing */ }
   }
 
   handleDisconnect(client: NamedWebSocket) {
@@ -99,6 +125,18 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
   // --- Client message handling ----------------------------------------------
 
   private async onClientMessage(client: NamedWebSocket, raw: any) {
+    // Expired session: close instead of processing further frames.
+    if (this.isExpired(client)) {
+      this.closeExpired(client);
+      return;
+    }
+    // Drop oversized frames before parsing (cheap DoS guard).
+    const maxBytes = this.gatewayConfig.ws?.maxMessageBytes ?? 16384;
+    const size = typeof raw === 'string' ? Buffer.byteLength(raw) : (raw?.length ?? 0);
+    if (size > maxBytes) {
+      this.logger.warn(`Dropped oversized WS message (${size}B > ${maxBytes}B) from client ${client.id}`);
+      return;
+    }
     let parsed: { action?: string; topic?: string; select?: { [k: string]: any; }; };
     try {
       parsed = JSON.parse(raw.toString());
@@ -168,6 +206,11 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     this.subscriptions[client.id][eventDef.name] = this.subjects[eventDef.name]
       .pipe(filter((o) => this.matches(o, select, eventDef, scopeValue)))
       .subscribe((o) => {
+        // Stop delivering (and close) the moment the token's lifetime ends.
+        if (this.isExpired(client)) {
+          this.closeExpired(client);
+          return;
+        }
         client.send(JSON.stringify({
           topic: `on${eventDef.name.charAt(0).toUpperCase() + eventDef.name.slice(1)}`,
           data: o.payload || o,
@@ -212,6 +255,10 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
       return (client.authByProvider[providerName] = { success: false });
     }
     const decoded = await this.httpAuth.verifyToken(provider, client.token);
+    // Capture the token expiry once: it bounds the whole WS session lifetime.
+    if (decoded?.exp && client.tokenExp == null) {
+      client.tokenExp = decoded.exp;
+    }
     const claims = this.httpAuth.mapClaims(provider, decoded);
     return (client.authByProvider[providerName] = claims);
   }
@@ -239,6 +286,19 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     }
     this.wsEvents = [...this.gatewayConfig?.events || [], ...extEvents]; // load events from config and from broker
     this.wsEvents.forEach(e => e.name = e.name.trim());
+
+    if (!this.gatewayConfig.ws?.allowedOrigins?.length) {
+      this.logger.warn('gateway.ws.allowedOrigins not set: WebSocket handshakes are accepted from any Origin.');
+    }
+    // Security sanity checks for each ws event.
+    for (const e of this.wsEvents.filter(o => o.type === 'ws')) {
+      if (e.auth && !this.httpAuth.findProvider(e.auth)) {
+        this.logger.error(`WS event '${e.name}' references unknown auth provider '${e.auth}'; subscriptions will be denied.`);
+      }
+      if (e.auth && e.requireAuth !== false && !(e.scopeClaim && e.payloadKey)) {
+        this.logger.warn(`WS event '${e.name}' has auth but no scopeClaim/payloadKey: every authorized subscriber receives ALL messages (no per-user isolation).`);
+      }
+    }
 
     const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
     for (const event of this.wsEvents) {

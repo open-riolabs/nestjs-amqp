@@ -92,6 +92,14 @@ export class HttpAuthHandlerService {
       return out;
     }
 
+    // Pass-through: a basic provider without a configured clientSecret is treated
+    // as open (success) by design — it disables the credential check for this provider.
+    if (!authConfig.clientSecret) {
+      this.logger.warn(`Auth provider ${authConfig.name} (basic) has no clientSecret configured; passing through as authenticated.`);
+      out.success = true;
+      return out;
+    }
+
     const base64Credentials = authHeader.split(' ')[1];
     const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
     const [username, password] = credentials.split(':');
@@ -109,8 +117,11 @@ export class HttpAuthHandlerService {
   async checkStringCompare(req: Request, authConfig: HandlerAuthConfig) {
     let out: ProcessedAuthData = { success: false };
     const authHeader = req.headers.authorization;
+    // Pass-through: a str-compare provider without a configured secret is treated
+    // as open (success) by design — it disables the token check for this provider.
     if (!authConfig.secret) {
       out.success = true;
+      this.logger.warn(`Auth provider ${authConfig.name} (str-compare) has no secret configured; passing through as authenticated.`);
       return out;
     }
 

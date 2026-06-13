@@ -64,6 +64,14 @@ export interface WebSocketGatewayOptions {
   maxSubscriptionsPerClient?: number;
   /** Ping/pong heartbeat interval in milliseconds (default 30000). */
   heartbeatIntervalMs?: number;
+  /**
+   * Allowlist of accepted `Origin` headers for the WS handshake. When set,
+   * connections from other origins are closed (defense against cross-site WS).
+   * When omitted, all origins are accepted (logged at boot).
+   */
+  allowedOrigins?: string[];
+  /** Max size (bytes) of an inbound client message; larger ones are dropped (default 16384). */
+  maxMessageBytes?: number;
 }
 
 export interface GatewayConfigLoader {
