@@ -55,4 +55,5 @@ rules-first version for editing tasks.
    explicit `name` to `@BrokerParam`.
 7. `publishMessage` is `async` — `await` it for the publisher-confirm guarantee.
 8. `roles` (HTTP or WS) require an `IAclRoleService` registered via
-   `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRoot([...])`.
+   `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`.
+   Auth-providers + gateway config are passed to `ProxyModule` (not `BrokerModule`).

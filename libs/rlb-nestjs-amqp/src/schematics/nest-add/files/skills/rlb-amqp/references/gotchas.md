@@ -47,9 +47,11 @@ or WS event. Each item is a real failure mode in this codebase.
 
 ***REMOVED******REMOVED*** Auth / ACL
 15. **`roles` (HTTP path or WS event) require an `IAclRoleService`** registered via
-    `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRoot([...])`. The provider must define
-    `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, and `uidClaim` must match a
-    `jwtMap` dest. Missing → throw.
+    `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. The
+    provider must define `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, and
+    `uidClaim` must match a `jwtMap` dest. Missing → throw.
+16. **Auth-providers + gateway config are passed to `ProxyModule`** (`authOptions` /
+    `gatewayOptions`), not `BrokerModule`. `BrokerModule` owns only `options`/`topics`/`appOptions`.
 
 ***REMOVED******REMOVED*** WebSocket
 16. **Auth is per-event, not global.** `events[].auth` names the provider that verifies the

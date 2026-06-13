@@ -48,14 +48,21 @@ import yamlConfig from './config/config.loader';
         options: config.get<RabbitMQConfig>('broker'),
         topics: config.get<BrokerTopic[]>('topics'),
         appOptions: config.get<AppConfig>('app'),
-        authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
-        gatewayOptions: config.get<GatewayConfig>('gateway'),
       }),
     }),
     HttpModule,
-    ProxyModule.forRoot([
-      // { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: MyAclService }, // only if using `roles`
-    ]),
+    // Gateway: auth-providers + gateway config live in ProxyModule (NOT BrokerModule).
+    ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
+        gatewayOptions: config.get<GatewayConfig>('gateway'),
+      }),
+      providers: [
+        // { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: MyAclService }, // only if using `roles`
+      ],
+    }),
   ],
   providers: [/* MyActionService */],
 })

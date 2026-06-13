@@ -1,14 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule, MongooseModuleFactoryOptions } from '@nestjs/mongoose';
-import {
-  AclActionRepository,
-  AclGrantRepository,
-  AclRoleRepository,
-  AuthProviderRepository,
-  HttpMetricRepository,
-  HttpPathRepository,
-} from '@open-rlb/nestjs-amqp';
 import { DATA_CONNECTION_NAME } from './connections';
 import { MongoAclActionRepository } from './repository/mongo-acl-action.repository';
 import { MongoAclGrantRepository } from './repository/mongo-acl-grant.repository';
@@ -32,24 +24,8 @@ export interface DatabaseConfig {
   auth: boolean;
 }
 
-
 const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel];
-
-// Bind the lib's abstract repository contracts to the concrete Mongo implementations.
-const REPOSITORIES = [
-  { provide: AclActionRepository, useClass: MongoAclActionRepository },
-  { provide: AclRoleRepository, useClass: MongoAclRoleRepository },
-  { provide: AclGrantRepository, useClass: MongoAclGrantRepository },
-  { provide: HttpPathRepository, useClass: MongoHttpPathRepository },
-  { provide: AuthProviderRepository, useClass: MongoAuthProviderRepository },
-  { provide: HttpMetricRepository, useClass: MongoHttpMetricRepository },
-];
-
-/**
- * Single data module for this microservice (chatbot-ms style): owns the one Mongoose
- * connection, registers all schema models and repositories, and exports them. Global so
- * the lib's AclModule/GatewayAdminModule services resolve the repository contracts.
- */
+const REPOSITORIES = [MongoAclActionRepository, MongoAclRoleRepository, MongoAclGrantRepository, MongoHttpPathRepository, MongoAuthProviderRepository, MongoHttpMetricRepository];
 @Global()
 @Module({
   imports: [
@@ -61,7 +37,7 @@ const REPOSITORIES = [
     }),
   ],
   providers: [...MODELS, ...REPOSITORIES],
-  exports: [...MODELS, ...REPOSITORIES.map((r) => r.provide)],
+  exports: [...MODELS, ...REPOSITORIES]
 })
 export class DatabaseModule { }
 

@@ -22,8 +22,9 @@ import { BrokerModule } from '@open-rlb/nestjs-amqp';
       brokerConfig,   // RabbitMQConfig (connessione, exchange, queue)
       topics,         // BrokerTopic[] (topic logici dell'applicazione)
       appOptions,     // AppConfig (opzionale)
-      authOptions,    // HandlerAuthConfig[] (opzionale)
     ),
+    // Gateway only: auth-providers + gateway config vanno su ProxyModule, non BrokerModule.
+    // ProxyModule.forRoot({ authOptions, gatewayOptions }, [/* providers, es. ACL role service */]),
   ],
 })
 export class AppModule {}

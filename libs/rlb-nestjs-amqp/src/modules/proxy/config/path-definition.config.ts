@@ -99,4 +99,11 @@ export interface GatewayConfig {
    * automatically after a path CRUD). Use `broadcast` mode so every instance reloads.
    */
   reloadTopic?: string;
+  /**
+   * Optional per-call metrics sink. When set, the gateway fires a fire-and-forget
+   * track event (method/route/name/status/durationMs) after EVERY HTTP request it
+   * serves — no manual call needed. Point it at the gateway-admin metrics handler,
+   * e.g. { topic: 'rlb-gateway-admin', action: 'gw-metrics-track' }. Omit to disable.
+   */
+  metrics?: GatewayConfigSource;
 }

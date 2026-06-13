@@ -1,8 +1,8 @@
 ***REMOVED*** config.yaml — full schema
 
 Five top-level sections: `app`, `broker`, `topics`, `auth-providers`, `gateway`.
-Loaded by `config/config.loader.ts` and injected via `BrokerModule.forRootAsync` +
-`ProxyModule.forRoot` (see the repo `README.md` Quick start).
+Loaded by `config/config.loader.ts`. `app`/`broker`/`topics` go to `BrokerModule.forRootAsync`;
+`auth-providers` + `gateway` go to `ProxyModule.forRootAsync` (see the repo `README.md` Quick start).
 
 ---
 

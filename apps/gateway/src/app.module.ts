@@ -20,15 +20,22 @@ const unroutableLogger = new Logger('UnroutableMonitor');
         const options = configService.get<RabbitMQConfig>('broker') as RabbitMQConfig;
         const topics = configService.get<BrokerTopic[]>('topics');
         const app = configService.get<AppConfig>('app');
-        const gateway = configService.get<GatewayConfig>('gateway');
-        const authConfig = configService.get<HandlerAuthConfig[]>('auth-providers');
-        return { options, topics, appOptions: app, authOptions: authConfig, gatewayOptions: gateway };
+        return { options, topics, appOptions: app };
       },
     }),
     HttpModule,
-    ProxyModule.forRoot([
-      //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
-    ]),
+    // Auth-providers + gateway config now live in ProxyModule (moved from BrokerModule).
+    ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),
+        gatewayOptions: configService.get<GatewayConfig>('gateway'),
+      }),
+      providers: [
+        //{ provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: AclService },
+      ],
+    }),
   ],
   providers: [HandlerService, HttpDemoService, RpcDemoService, EventDemoService],
 })

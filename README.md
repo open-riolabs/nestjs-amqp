@@ -22,7 +22,7 @@ nest g @open-rlb/nestjs-amqp:nest-add --gateway=false
 
 Opzioni: `--gateway` (on/off, default on), `--module` (default `src/app.module.ts`), `--main` (default `src/main.ts`), `--config` (default `config/config.yaml`), `--skills` (copia le skill, default on), `--skip-install`.
 
-Con `--gateway=false` la factory passa solo `{ options, topics, appOptions, authOptions }` e non importa `ProxyModule`/`HttpModule`; con il gateway attivo aggiunge anche `gatewayOptions`, `ProxyModule.forRoot([])`, `HttpModule` e il `WsAdapter` in `main.ts`. Lo schematic è idempotente (non tocca un `AppModule` che già importa `BrokerModule`).
+Con `--gateway=false` la factory passa a `BrokerModule` solo `{ options, topics, appOptions }` e non importa `ProxyModule`/`HttpModule`; con il gateway attivo aggiunge `ProxyModule.forRootAsync(...)` (che riceve `authOptions` + `gatewayOptions`), `HttpModule` e il `WsAdapter` in `main.ts`. Lo schematic è idempotente (non tocca un `AppModule` che già importa `BrokerModule`).
 
 > Documentazione completa. Indice:
 > [Architettura](***REMOVED***architettura) ·
@@ -112,14 +112,21 @@ import yamlConfig from './config/config.loader';
         options: config.get<RabbitMQConfig>('broker'),
         topics: config.get<BrokerTopic[]>('topics'),
         appOptions: config.get<AppConfig>('app'),
-        authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
-        gatewayOptions: config.get<GatewayConfig>('gateway'),
       }),
     }),
     HttpModule,
-    ProxyModule.forRoot([
-      // { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: MyAclService }, // solo se usi `roles`
-    ]),
+    // auth-providers + gateway config → ProxyModule (non più BrokerModule)
+    ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
+        gatewayOptions: config.get<GatewayConfig>('gateway'),
+      }),
+      providers: [
+        // { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: MyAclService }, // solo se usi `roles`
+      ],
+    }),
   ],
 })
 export class AppModule {}
@@ -541,8 +548,16 @@ import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrant
 @Module({
   imports: [
     BrokerModule.forRootAsync({ /* ... */ }),
-    // ProxyModule usa AclService come IAclRoleService (AclModule è @Global):
-    ProxyModule.forRoot([{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }]),
+    // ProxyModule riceve auth/gateway config e usa AclService come IAclRoleService (AclModule è @Global):
+    ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
+        gatewayOptions: config.get<GatewayConfig>('gateway'),
+      }),
+      providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }],
+    }),
     AclModule.forRoot(
       [
         ...aclMongoModelProviders,                                   // provider dei model Mongoose
@@ -645,7 +660,7 @@ Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili pr
 
 ***REMOVED******REMOVED******REMOVED*** Auth / ACL
 
-14. **`roles` su una path o evento richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRoot([...])`. L'auth-provider deve definire `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, e `uidClaim` deve corrispondere a un `dest` del `jwtMap`. Mancante → throw.
+14. **`roles` su una path o evento richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. L'auth-provider deve definire `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, e `uidClaim` deve corrispondere a un `dest` del `jwtMap`. Mancante → throw. Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
 15. **Gli header propagati sono uppercase e prefissati** (`${headerPrefix}${DEST}`): leggi `X-GTW-AUTH-USERID`, non `userId`.
 
 ***REMOVED******REMOVED******REMOVED*** WebSocket

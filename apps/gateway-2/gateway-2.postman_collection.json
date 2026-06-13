@@ -349,27 +349,21 @@
       ]
     },
     {
-      "name": "7 · Gateway-admin · metrics",
+      "name": "7 · Gateway-admin · metrics (auto-collected)",
+      "description": "Metrics are emitted INTERNALLY by the gateway after every HTTP request (gateway.metrics in config) — no manual track call. This folder just reads the counters the gateway already recorded for the calls made in folders 0-6.",
       "item": [
         {
-          "name": "POST /admin/metrics/track  (fire-and-forget event)",
+          "name": "GET /admin/metrics  (counters / avg per route, auto-tracked)",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": [
-              "pm.test('accepted (event mode -> 2xx, no body)', function () { pm.expect(pm.response.code).to.be.oneOf([200,202,204]); });"
-            ] } }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"method\": \"GET\",\n  \"route\": \"/protected\",\n  \"name\": \"protected-resource\",\n  \"status\": 200,\n  \"durationMs\": 12\n}" },
-            "url": { "raw": "{{baseUrl}}/admin/metrics/track", "host": ["{{baseUrl}}"], "path": ["admin", "metrics", "track"] }
-          }
-        },
-        {
-          "name": "GET /admin/metrics  (counters / avg per route)",
-          "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [
-              "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });"
+              "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });",
+              "var body = pm.response.json();",
+              "pm.test('gateway auto-recorded metrics for prior calls', function () {",
+              "  pm.expect(Array.isArray(body)).to.be.true;",
+              "  // The gateway tracks every served route; by now there should be at least one.",
+              "  pm.expect(body.length, 'metric rows').to.be.at.least(1);",
+              "});",
+              "console.log('Auto-collected routes:', (body || []).map(function (m) { return m.method + ' ' + m.route + ' x' + m.count; }).join(', '));"
             ] } }
           ],
           "request": {

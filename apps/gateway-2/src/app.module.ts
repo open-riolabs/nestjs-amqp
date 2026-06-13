@@ -2,14 +2,20 @@ import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
+  AclActionRepository,
+  AclGrantRepository,
   AclModule,
+  AclRoleRepository,
   AclService,
   AppConfig,
+  AuthProviderRepository,
   BrokerModule,
   BrokerTopic,
   GatewayAdminModule,
   GatewayConfig,
   HandlerAuthConfig,
+  HttpMetricRepository,
+  HttpPathRepository,
   ProxyModule,
   RabbitMQConfig,
   RLB_ACL_CACHE_STORE,
@@ -18,12 +24,20 @@ import {
 import { RedisModule, SingleOptions } from '@rlb-core/lib-nestjs-redis';
 import { ACL_REDIS_NAMESPACE, RedisAclStore } from './cache/redis-acl-store';
 import yamlConfig from './config/config.loader';
-import { DatabaseModule } from './modules/database/database.module';
+import {
+  DatabaseModule
+} from './modules/database/database.module';
+import { MongoAclActionRepository } from './modules/database/repository/mongo-acl-action.repository';
+import { MongoAclGrantRepository } from './modules/database/repository/mongo-acl-grant.repository';
+import { MongoAclRoleRepository } from './modules/database/repository/mongo-acl-role.repository';
+import { MongoAuthProviderRepository } from './modules/database/repository/mongo-auth-provider.repository';
+import { MongoHttpMetricRepository } from './modules/database/repository/mongo-http-metric.repository';
+import { MongoHttpPathRepository } from './modules/database/repository/mongo-http-path.repository';
 
 @Module({
   imports: [
+    HttpModule,
     ConfigModule.forRoot({ isGlobal: true, load: [yamlConfig] }),
-    // Single data module: owns the connection, models and repository contracts (global).
     DatabaseModule,
     RedisModule.registerAsync(ACL_REDIS_NAMESPACE, {
       inject: [ConfigService],
@@ -36,18 +50,32 @@ import { DatabaseModule } from './modules/database/database.module';
         options: config.get<RabbitMQConfig>('broker') as RabbitMQConfig,
         topics: config.get<BrokerTopic[]>('topics'),
         appOptions: config.get<AppConfig>('app'),
+      }),
+    }),
+    ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
         authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
         gatewayOptions: config.get<GatewayConfig>('gateway'),
       }),
+      providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }],
     }),
-    HttpModule,
-    ProxyModule.forRoot([{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }]),
-    // Repositories come from DatabaseModule (global). Here we only add the L2 cache store.
     AclModule.forRoot(
-      [RedisAclStore, { provide: RLB_ACL_CACHE_STORE, useExisting: RedisAclStore }],
+      [
+        { provide: AclActionRepository, useExisting: MongoAclActionRepository },
+        { provide: AclRoleRepository, useExisting: MongoAclRoleRepository },
+        { provide: AclGrantRepository, useExisting: MongoAclGrantRepository },
+        RedisAclStore,
+        { provide: RLB_ACL_CACHE_STORE, useExisting: RedisAclStore },
+      ],
       { cache: { ramTtlMs: 30000, l2TtlSec: 600 } },
     ),
-    GatewayAdminModule.forRoot([]),
+    GatewayAdminModule.forRoot([
+      { provide: HttpPathRepository, useExisting: MongoHttpPathRepository },
+      { provide: AuthProviderRepository, useExisting: MongoAuthProviderRepository },
+      { provide: HttpMetricRepository, useExisting: MongoHttpMetricRepository },
+    ]),
   ],
 })
 export class AppModule { }

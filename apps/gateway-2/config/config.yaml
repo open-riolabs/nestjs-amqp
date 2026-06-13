@@ -3,8 +3,6 @@ app:
   host: 0.0.0.0
   environment: development
 
-***REMOVED*** Single MongoDB connection for this microservice (DatabaseModule reads this).
-
 data-mongodb:
   protocol: mongodb://
   host: vm1.riolabs.net
@@ -14,7 +12,7 @@ data-mongodb:
   database: rlb-wa2
   auth: true
 
-***REMOVED*** Redis for the L2 ACL cache (node-redis single). RedisAclStore reads this.
+***REMOVED*** Redis for the L2 ACL cache
 redis:
   url: redis://admin:REDACTED@vm1.riolabs.net:6379/8
 
@@ -82,11 +80,6 @@ topics:
     routingKey: rlb-gateway-control
 
 auth-providers:
-  ***REMOVED*** Real Keycloak realm (direct access grants enabled). The Postman collection logs in
-  ***REMOVED*** via the password grant against `tokenUrl` and sends the access_token as a Bearer.
-  ***REMOVED*** checkRoles maps `sub` -> X-GTW-AUTH-USERID and calls AclService.canUserDo(aclTopic,
-  ***REMOVED*** aclAction, userId): the user (keyed by their Keycloak `sub`) must own a role whose
-  ***REMOVED*** actions include `gateway-access`.
   - name: gateway-jwks
     type: jwks
     jwtMap:
@@ -233,9 +226,6 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-track
       mode: event
-
-    ***REMOVED*** --- runtime route reload: publish a broadcast so every gateway rebuilds its routes
-    ***REMOVED***     (YAML paths + DB export) WITHOUT a restart. Call after a DB path create/update/delete.
     - name: gw-reload
       method: POST
       path: /admin/reload
@@ -264,4 +254,9 @@ gateway:
       action: gw-path-export
   ***REMOVED*** Broadcast topic that triggers a runtime route rebuild (see topics: rlb-gateway-control).
   reloadTopic: rlb-gateway-control
+  ***REMOVED*** Per-call metrics: the gateway auto-emits a track event after every request to the
+  ***REMOVED*** gateway-admin metrics handler (GatewayMetricsService.track). No manual call needed.
+  metrics:
+    topic: rlb-gateway-admin
+    action: gw-metrics-track
   events: []

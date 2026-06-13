@@ -13,17 +13,17 @@ type UpdateJsonFn<T> = (obj: T) => T | void;
 // ---------------------------------------------------------------------------
 
 function brokerImportLine(gateway: boolean): string {
+  // BrokerModule only owns broker/topics/app. When gateway is on, auth-providers and the
+  // gateway config are wired into ProxyModule instead (so import those types there).
   const broker = gateway
     ? "import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';"
-    : "import { AppConfig, BrokerModule, BrokerTopic, HandlerAuthConfig, RabbitMQConfig } from '@open-rlb/nestjs-amqp';";
+    : "import { AppConfig, BrokerModule, BrokerTopic, RabbitMQConfig } from '@open-rlb/nestjs-amqp';";
   const config = "\nimport { ConfigModule, ConfigService } from '@nestjs/config';";
   const http = gateway ? "\nimport { HttpModule } from '@nestjs/axios';" : '';
   return broker + config + http;
 }
 
-function brokerForRootAsync(gateway: boolean): string {
-  // Pass only the necessary parts to the factory: gatewayOptions only when gateway is on.
-  const gatewayLine = gateway ? "\n        gatewayOptions: configService.get<GatewayConfig>('gateway')," : '';
+function brokerForRootAsync(): string {
   return `BrokerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -31,8 +31,21 @@ function brokerForRootAsync(gateway: boolean): string {
         options: configService.get<RabbitMQConfig>('broker')!,
         topics: configService.get<BrokerTopic[]>('topics')!,
         appOptions: configService.get<AppConfig>('app'),
-        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),${gatewayLine}
       })
+    })`;
+}
+
+function proxyForRootAsync(): string {
+  // Gateway owns auth-providers + gateway config (moved out of BrokerModule). Add ACL/role
+  // service bindings in the `providers` array when needed.
+  return `ProxyModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        authOptions: configService.get<HandlerAuthConfig[]>('auth-providers'),
+        gatewayOptions: configService.get<GatewayConfig>('gateway'),
+      }),
+      providers: [],
     })`;
 }
 
@@ -261,10 +274,10 @@ function addBrokerModuleToAppModule(gateway: boolean): Rule {
     // entries on it so HttpModule/ProxyModule aren't skipped by their import line.
     if (!content.includes('BrokerModule.forRootAsync')) {
       if (gateway) {
-        content = insertIntoImportsArray(content, 'ProxyModule.forRoot([])');
+        content = insertIntoImportsArray(content, proxyForRootAsync());
         content = insertIntoImportsArray(content, 'HttpModule');
       }
-      content = insertIntoImportsArray(content, brokerForRootAsync(gateway));
+      content = insertIntoImportsArray(content, brokerForRootAsync());
     }
 
     tree.overwrite(modulePath, content);

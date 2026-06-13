@@ -107,6 +107,11 @@ export class HttpHandlerService implements OnModuleInit {
 
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
     target[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
+      // Auto per-call metrics: when a metrics sink is configured, emit one fire-and-forget
+      // track event per request after the response is flushed (captures the FINAL status
+      // and duration whatever branch handled it). Disabled when gateway.metrics is unset.
+      this.trackMetrics(req, res, path);
+
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
       if (path.auth && !authData?.success && path.allowAnonymous !== true) {
@@ -216,6 +221,31 @@ export class HttpHandlerService implements OnModuleInit {
           res.status(500).json({ message: "Internal server error", name: error.name });
         }
       }
+    });
+  }
+
+  /**
+   * Emits one fire-and-forget metrics track event per request, after the response is
+   * flushed, when `gateway.metrics` is configured (i.e. the metrics module is enabled).
+   * Never throws and never delays the response: failures are logged at debug level.
+   */
+  private trackMetrics(req: Request, res: Response, path: PathDefinition) {
+    const sink = this.gatewayConfig.metrics;
+    if (!sink?.topic || !sink?.action) return;
+    const startedAt = Date.now();
+    res.once('finish', () => {
+      const payload = {
+        method: req.method,
+        route: path.path,
+        name: path.name,
+        topic: path.topic,
+        action: path.action,
+        status: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      };
+      // Fire-and-forget: do not await; a failing metrics sink must not affect requests.
+      this.broker.publishMessage(sink.topic, sink.action, payload)
+        .catch((error) => this.logger.debug(`[METRICS] track failed for '${path.path}': ${error?.message}`));
     });
   }
 

@@ -1,10 +1,8 @@
 import { ConfigurableModuleBuilder, DynamicModule, Global, Module, Provider, Type } from '@nestjs/common';
 import { AmqpConnection } from '@open-rlb/nestjs-amqp/amqp-lib';
 import { RabbitMQConfig } from '../../amqp-lib/config/rabbitmq.config';
-import { GatewayConfig } from '../proxy';
-import { HandlerAuthConfig } from './config/handler-auth.config';
 import { BrokerTopic } from './config/topics.config';
-import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_AUTH_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS, RLB_AMQP_TOPIC_CONNECTION } from './const';
+import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_TOPIC_CONNECTION } from './const';
 import { AutoDiscoveryService } from './services/auto-discovery.service';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
@@ -38,8 +36,6 @@ export class BrokerModule {
     options: RabbitMQConfig,
     topics: BrokerTopic[],
     appOptions?: AppConfig,
-    authOptions?: HandlerAuthConfig[],
-    gatewayOptions?: GatewayConfig
   ): DynamicModule {
 
     if (!options) {
@@ -53,8 +49,6 @@ export class BrokerModule {
     const amqpOptionsProvider: Provider = { provide: RLB_AMQP_BROKER_OPTIONS, useValue: options };
     const topicOptionsProvider: Provider = { provide: RLB_AMQP_TOPIC_CONNECTION, useValue: topics };
     const appOptionsProvider: Provider = { provide: RLB_AMQP_APP_OPTIONS, useValue: appOptions };
-    const authOptionsProvider: Provider = { provide: RLB_AMQP_AUTH_OPTIONS, useValue: authOptions };
-    const gatewayOptionsProvider: Provider = { provide: RLB_AMQP_GATEWAY_OPTIONS, useValue: gatewayOptions };
 
     return {
       module: BrokerModule,
@@ -62,15 +56,11 @@ export class BrokerModule {
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
-        authOptionsProvider,
-        gatewayOptionsProvider
       ],
       exports: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
-        authOptionsProvider,
-        gatewayOptionsProvider
       ],
     };
   }
@@ -80,14 +70,10 @@ export class BrokerModule {
       options: RabbitMQConfig;
       topics: BrokerTopic[];
       appOptions?: AppConfig;
-      authOptions?: HandlerAuthConfig[];
-      gatewayOptions?: GatewayConfig;
     }> | {
       options: RabbitMQConfig;
       topics: BrokerTopic[];
       appOptions?: AppConfig;
-      authOptions?: HandlerAuthConfig[];
-      gatewayOptions?: GatewayConfig;
     },
     inject?: Type<any>[],
     imports?: Type<any>[];
@@ -119,39 +105,17 @@ export class BrokerModule {
       inject: asyncOptions.inject || [],
     };
 
-    const authOptionsProvider: Provider = {
-      provide: RLB_AMQP_AUTH_OPTIONS,
-      useFactory: async (...args: any[]) => {
-        const result = await asyncOptions.useFactory(...args);
-        return result.authOptions;
-      },
-      inject: asyncOptions.inject || [],
-    };
-
-    const gatewayOptionsProvider: Provider = {
-      provide: RLB_AMQP_GATEWAY_OPTIONS,
-      useFactory: async (...args: any[]) => {
-        const result = await asyncOptions.useFactory(...args);
-        return result.gatewayOptions;
-      },
-      inject: asyncOptions.inject || [],
-    };
-
     return {
       module: BrokerModule,
       providers: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
-        authOptionsProvider,
-        gatewayOptionsProvider,
       ],
       exports: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
-        authOptionsProvider,
-        gatewayOptionsProvider,
       ],
     };
   }
