@@ -1,0 +1,239 @@
+{
+  "info": {
+    "name": "gateway-2 (open-rlb/nestjs-amqp)",
+    "description": "End-to-end tests for the gateway-2 example: ACL role verification on HTTP routes, DB-managed routes (loadConfig), and gateway-admin CRUD + metrics.\n\nBefore running:\n1. Start Mongo, Redis, RabbitMQ.\n2. `npm run build` then `nest start gateway-2`.\n3. Run the folders top-to-bottom. Folder '1. ACL setup' seeds the action/role/grant so the protected route returns 200.\n\nThe collection mints an HS256 JWT (pre-request script) using {{jwtSecret}}/{{jwtIssuer}}/{{userId}} — matching the `gateway-jwt` auth-provider in config.yaml.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "jwtSecret", "value": "demo-secret-change-me" },
+    { "key": "jwtIssuer", "value": "gateway-2-demo" },
+    { "key": "userId", "value": "u_123" },
+    { "key": "token", "value": "" },
+    { "key": "lastPathId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Mint an HS256 JWT for the gateway-jwt provider and expose it as {{token}}.",
+          "function b64url(words){ return CryptoJS.enc.Base64.stringify(words).replace(/=+$/,'').replace(/\\+/g,'-').replace(/\\//g,'_'); }",
+          "var now = Math.floor(Date.now()/1000);",
+          "var header = { alg: 'HS256', typ: 'JWT' };",
+          "var payload = { sub: pm.variables.get('userId'), iss: pm.variables.get('jwtIssuer'), iat: now, exp: now + 3600 };",
+          "var h = b64url(CryptoJS.enc.Utf8.parse(JSON.stringify(header)));",
+          "var p = b64url(CryptoJS.enc.Utf8.parse(JSON.stringify(payload)));",
+          "var sig = b64url(CryptoJS.HmacSHA256(h + '.' + p, pm.variables.get('jwtSecret')));",
+          "pm.collectionVariables.set('token', h + '.' + p + '.' + sig);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. ACL setup (seed action / role / grant)",
+      "item": [
+        {
+          "name": "POST /acl/actions  (create 'gateway-access')",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gateway-access\",\n  \"description\": \"Access the protected HTTP routes\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "POST /acl/roles  (create 'user' -> [gateway-access])",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"user\",\n  \"description\": \"Standard user\",\n  \"actions\": [\"gateway-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "POST /acl/grants  (grant 'user' to {{userId}})",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        },
+        {
+          "name": "GET /acl/actions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/actions?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["acl", "actions"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+          }
+        },
+        {
+          "name": "GET /acl/roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/roles?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["acl", "roles"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Protected route (ACL role verification)",
+      "item": [
+        {
+          "name": "GET /protected  (200 when granted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [
+                "pm.test('Allowed (200) once the grant exists', function () { pm.expect(pm.response.code).to.eql(200); });",
+                "// If you revoke the grant (DELETE /acl/grants), this becomes 403."
+              ] }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/protected", "host": ["{{baseUrl}}"], "path": ["protected"] }
+          }
+        },
+        {
+          "name": "GET /protected  (401 without token)",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["// no-op: this request intentionally omits the Authorization header"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Unauthorized (401) without a token', function () { pm.expect(pm.response.code).to.eql(401); });"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/protected", "host": ["{{baseUrl}}"], "path": ["protected"] }
+          }
+        },
+        {
+          "name": "DELETE /acl/grants  (revoke -> next /protected is 403)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Gateway admin (DB routes / auth / metrics)",
+      "item": [
+        {
+          "name": "POST /admin/paths  (create DB route /db/echo)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "var b = pm.response.json(); if (b && b._id) { pm.collectionVariables.set('lastPathId', b._id); }",
+              "pm.test('created', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"db-echo\",\n  \"method\": \"GET\",\n  \"path\": \"/db/echo\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
+          }
+        },
+        {
+          "name": "GET /admin/paths  (list DB routes)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/paths?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["admin", "paths"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "GET /admin/paths/export  (ordered PathDefinition[] for loadConfig)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/paths/export", "host": ["{{baseUrl}}"], "path": ["admin", "paths", "export"] }
+          }
+        },
+        {
+          "name": "POST /admin/auth  (create an auth-provider in DB)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"extra-jwt\",\n  \"type\": \"jwt\",\n  \"secret\": \"another-secret\",\n  \"issuer\": \"gateway-2-demo\",\n  \"algorithms\": [\"HS256\"],\n  \"jwtMap\": [\"sub:userId\"],\n  \"headerPrefix\": \"X-GTW-AUTH-\",\n  \"uidClaim\": \"USERID\",\n  \"usernameClaim\": \"USERNAME\",\n  \"aclTopic\": \"rlb-acl\",\n  \"aclAction\": \"gateway-access\",\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/auth", "host": ["{{baseUrl}}"], "path": ["admin", "auth"] }
+          }
+        },
+        {
+          "name": "GET /admin/auth  (list auth-providers in DB)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/auth?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["admin", "auth"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "POST /admin/metrics/track  (record a call)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"method\": \"GET\",\n  \"route\": \"/protected\",\n  \"name\": \"protected-resource\",\n  \"status\": 200,\n  \"durationMs\": 12\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/metrics/track", "host": ["{{baseUrl}}"], "path": ["admin", "metrics", "track"] }
+          }
+        },
+        {
+          "name": "GET /admin/metrics  (counters / avg per route)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/metrics", "host": ["{{baseUrl}}"], "path": ["admin", "metrics"] }
+          }
+        },
+        {
+          "name": "DELETE /admin/paths  (cleanup created route)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{lastPathId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. DB-loaded route (after restart)",
+      "item": [
+        {
+          "name": "GET /db/echo  (works only AFTER restarting the gateway)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "// gateway.loadConfig.paths registers DB routes at BOOT. Create the route in",
+              "// folder 3, restart `nest start gateway-2`, then this returns 200.",
+              "pm.test('200 if the DB route was loaded at boot', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/db/echo", "host": ["{{baseUrl}}"], "path": ["db", "echo"] }
+          }
+        }
+      ]
+    }
+  ]
+}

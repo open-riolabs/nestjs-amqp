@@ -3,6 +3,14 @@
 /node_modules
 *.tsbuildinfo
 
+***REMOVED*** never keep compiled output beside sources — builds must emit to /dist only
+libs/**/*.js
+libs/**/*.js.map
+libs/**/*.d.ts
+apps/**/*.js
+apps/**/*.js.map
+apps/**/*.d.ts
+
 ***REMOVED*** Logs
 logs
 *.log
