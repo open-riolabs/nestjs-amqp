@@ -23,15 +23,17 @@ import {
 } from '@open-rlb/nestjs-amqp';
 import { InMemoryAclStore } from './cache/in-memory-acl-store';
 import yamlConfig from './config/config.loader';
+import { DatabaseModule } from './modules/database/database.module';
 import {
-  DatabaseModule
-} from './modules/database/database.module';
-import { MongoAclActionRepository } from './modules/database/repository/mongo-acl-action.repository';
-import { MongoAclGrantRepository } from './modules/database/repository/mongo-acl-grant.repository';
-import { MongoAclRoleRepository } from './modules/database/repository/mongo-acl-role.repository';
-import { MongoAuthProviderRepository } from './modules/database/repository/mongo-auth-provider.repository';
-import { MongoHttpMetricRepository } from './modules/database/repository/mongo-http-metric.repository';
-import { MongoHttpPathRepository } from './modules/database/repository/mongo-http-path.repository';
+  InMemoryAclActionRepository,
+  InMemoryAclGrantRepository,
+  InMemoryAclRoleRepository,
+} from './modules/database/repository/acl.repository';
+import {
+  InMemoryAuthProviderRepository,
+  InMemoryHttpMetricRepository,
+  InMemoryHttpPathRepository,
+} from './modules/database/repository/gateway.repository';
 
 @Module({
   imports: [
@@ -58,18 +60,18 @@ import { MongoHttpPathRepository } from './modules/database/repository/mongo-htt
     }),
     AclModule.forRoot(
       [
-        { provide: AclActionRepository, useExisting: MongoAclActionRepository },
-        { provide: AclRoleRepository, useExisting: MongoAclRoleRepository },
-        { provide: AclGrantRepository, useExisting: MongoAclGrantRepository },
+        { provide: AclActionRepository, useExisting: InMemoryAclActionRepository },
+        { provide: AclRoleRepository, useExisting: InMemoryAclRoleRepository },
+        { provide: AclGrantRepository, useExisting: InMemoryAclGrantRepository },
         InMemoryAclStore,
         { provide: RLB_ACL_CACHE_STORE, useExisting: InMemoryAclStore },
       ],
       { cache: { ramTtlMs: 30000, l2TtlSec: 600 } },
     ),
     GatewayAdminModule.forRoot([
-      { provide: HttpPathRepository, useExisting: MongoHttpPathRepository },
-      { provide: AuthProviderRepository, useExisting: MongoAuthProviderRepository },
-      { provide: HttpMetricRepository, useExisting: MongoHttpMetricRepository },
+      { provide: HttpPathRepository, useExisting: InMemoryHttpPathRepository },
+      { provide: AuthProviderRepository, useExisting: InMemoryAuthProviderRepository },
+      { provide: HttpMetricRepository, useExisting: InMemoryHttpMetricRepository },
     ]),
   ],
 })

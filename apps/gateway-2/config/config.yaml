@@ -3,18 +3,8 @@ app:
   host: 0.0.0.0
   environment: development
 
-data-mongodb:
-  protocol: mongodb://
-  host: vm1.riolabs.net
-  port: 27017
-  user: rlb-mistral-admin
-  password: REDACTED
-  database: rlb-wa2
-  auth: true
-
-***REMOVED*** Redis for the L2 ACL cache
-redis:
-  url: redis://admin:REDACTED@vm1.riolabs.net:6379/8
+***REMOVED*** This example keeps ACL/gateway-admin data fully in RAM (in-memory repositories) and the
+***REMOVED*** ACL L2 cache in RAM too — no Mongo/Redis needed. Only RabbitMQ is required.
 
 broker:
   name: "rabbitmq"

@@ -535,7 +535,7 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 
 ***REMOVED******REMOVED*** Moduli opzionali `AclModule` e `GatewayAdminModule` (persistenza fornita dal consumer)
 
-Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **La lib non dipende da Mongo/Redis**: definisce i servizi/cache + i **contratti repository (classi astratte)** e l'interfaccia `AclCacheStore`; **il consumer fornisce le implementazioni** (es. Mongo + Redis). Esempio completo e funzionante: **[`apps/gateway-2`](apps/gateway-2)** (repo Mongo + cache L2 Redis + YAML).
+Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **La lib non dipende da Mongo/Redis**: definisce i servizi/cache + i **contratti repository (classi astratte)** e l'interfaccia `AclCacheStore`; **il consumer fornisce le implementazioni** (es. Mongo + Redis). Esempio completo e funzionante: **[`apps/gateway-2`](apps/gateway-2)** — per restare autonomo usa **repository in-RAM** (`InMemory*Repository`) e una **cache L2 in-RAM** (`InMemoryAclStore`), così gira solo con RabbitMQ; in produzione si rimpiazzano con implementazioni Mongo/Redis senza toccare la lib.
 
 ***REMOVED******REMOVED******REMOVED*** `AclModule` — ACL DB-backed con cache 2-livelli
 
