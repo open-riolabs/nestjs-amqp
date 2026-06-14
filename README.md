@@ -564,8 +564,8 @@ import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrant
         { provide: AclActionRepository, useClass: MongoAclActionRepository },
         { provide: AclRoleRepository,   useClass: MongoAclRoleRepository },
         { provide: AclGrantRepository,  useClass: MongoAclGrantRepository },
-        RedisAclStore,                                               // implementa AclCacheStore
-        { provide: RLB_ACL_CACHE_STORE, useExisting: RedisAclStore },// L2 opzionale (omesso → solo RAM)
+        InMemoryAclStore,                                            // implementa AclCacheStore
+        { provide: RLB_ACL_CACHE_STORE, useExisting: InMemoryAclStore },// L2 opzionale (omesso → solo RAM)
       ],
       { cache: { ramTtlMs: 30000, l2TtlSec: 600 } },
     ),
@@ -577,7 +577,7 @@ export class AppModule {}
 - I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl` e imposta negli auth-provider `aclTopic: rlb-acl`, `aclAction: acl-can-user-do`.
 - `AclService.canUserDo(topic, action, userId)` serve dalla cache; sul miss interroga il DB (`checkActions`: i ruoli del grant devono coprire l'azione) e ripopola RAM+L2.
 - **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
-- **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-2` è `RedisAclStore` su `@rlb-core/lib-nestjs-redis`.
+- **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-2` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
 
 ***REMOVED******REMOVED******REMOVED*** `GatewayAdminModule` — CRUD rotte/auth + liste + metriche
 

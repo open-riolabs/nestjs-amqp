@@ -21,8 +21,7 @@ import {
   RLB_ACL_CACHE_STORE,
   RLB_GTW_ACL_ROLE_SERVICE,
 } from '@open-rlb/nestjs-amqp';
-import { RedisModule, SingleOptions } from '@rlb-core/lib-nestjs-redis';
-import { ACL_REDIS_NAMESPACE, RedisAclStore } from './cache/redis-acl-store';
+import { InMemoryAclStore } from './cache/in-memory-acl-store';
 import yamlConfig from './config/config.loader';
 import {
   DatabaseModule
@@ -39,10 +38,6 @@ import { MongoHttpPathRepository } from './modules/database/repository/mongo-htt
     HttpModule,
     ConfigModule.forRoot({ isGlobal: true, load: [yamlConfig] }),
     DatabaseModule,
-    RedisModule.registerAsync(ACL_REDIS_NAMESPACE, {
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({ type: 'single', options: config.get<SingleOptions>('redis') }),
-    }),
     BrokerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -66,8 +61,8 @@ import { MongoHttpPathRepository } from './modules/database/repository/mongo-htt
         { provide: AclActionRepository, useExisting: MongoAclActionRepository },
         { provide: AclRoleRepository, useExisting: MongoAclRoleRepository },
         { provide: AclGrantRepository, useExisting: MongoAclGrantRepository },
-        RedisAclStore,
-        { provide: RLB_ACL_CACHE_STORE, useExisting: RedisAclStore },
+        InMemoryAclStore,
+        { provide: RLB_ACL_CACHE_STORE, useExisting: InMemoryAclStore },
       ],
       { cache: { ramTtlMs: 30000, l2TtlSec: 600 } },
     ),
