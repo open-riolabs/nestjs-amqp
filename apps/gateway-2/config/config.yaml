@@ -108,7 +108,7 @@ gateway:
       action: gw-metrics-get
       mode: rpc
 
-    ***REMOVED*** --- ACL management (open: used to seed actions / roles / grants) ---
+    ***REMOVED*** --- ACL management: actions (full CRUD) ---
     - name: acl-action-create
       method: POST
       path: /acl/actions
@@ -123,6 +123,22 @@ gateway:
       topic: rlb-acl
       action: acl-action-list
       mode: rpc
+    - name: acl-action-update     ***REMOVED*** body: { id, name?, description? }
+      method: PUT
+      path: /acl/actions
+      dataSource: body
+      topic: rlb-acl
+      action: acl-action-update
+      mode: rpc
+    - name: acl-action-delete     ***REMOVED*** body: { id }
+      method: DELETE
+      path: /acl/actions
+      dataSource: body
+      topic: rlb-acl
+      action: acl-action-delete
+      mode: rpc
+
+    ***REMOVED*** --- ACL management: roles (full CRUD + get) ---
     - name: acl-role-create
       method: POST
       path: /acl/roles
@@ -137,6 +153,29 @@ gateway:
       topic: rlb-acl
       action: acl-role-list
       mode: rpc
+    - name: acl-role-get          ***REMOVED*** query: ?name=
+      method: GET
+      path: /acl/roles/get
+      dataSource: query
+      topic: rlb-acl
+      action: acl-role-get
+      mode: rpc
+    - name: acl-role-update       ***REMOVED*** body: { name, actions?, description? }
+      method: PUT
+      path: /acl/roles
+      dataSource: body
+      topic: rlb-acl
+      action: acl-role-update
+      mode: rpc
+    - name: acl-role-delete       ***REMOVED*** body: { name }
+      method: DELETE
+      path: /acl/roles
+      dataSource: body
+      topic: rlb-acl
+      action: acl-role-delete
+      mode: rpc
+
+    ***REMOVED*** --- ACL grants (per-user; resourceId optional) ---
     - name: acl-grant
       method: POST
       path: /acl/grants
@@ -150,6 +189,25 @@ gateway:
       dataSource: body
       topic: rlb-acl
       action: acl-revoke
+      mode: rpc
+
+    ***REMOVED*** --- ACL checks (exposed over HTTP for the demo; normally called over the broker) ---
+    ***REMOVED*** Gateway-style primary filter {userId, roles}: true if the user holds at least one role.
+    - name: acl-check-gtw
+      method: POST
+      path: /acl/check
+      dataSource: body
+      topic: rlb-acl
+      action: acl-can-user-do-gtw
+      mode: rpc
+    ***REMOVED*** MS-side resource-scoped check {userId, roles, resource}: true if a global grant OR a
+    ***REMOVED*** grant bound to that resource gives the user a role.
+    - name: acl-check-resource
+      method: POST
+      path: /acl/check-resource
+      dataSource: body
+      topic: rlb-acl
+      action: acl-can-user-do
       mode: rpc
 
     ***REMOVED*** --- gateway-admin: manage DB routes / auth-providers / metrics ---
@@ -224,7 +282,8 @@ gateway:
       action: gw-reload
       mode: event
 
-    ***REMOVED*** --- PROTECTED demo: Keycloak JWT + roles → triggers ACL role verification ---
+    ***REMOVED*** --- PROTECTED demo: Keycloak JWT + roles → gateway role filter (canUserDoGtw) ---
+    ***REMOVED*** `roles` lists ROLE names now: the gateway passes if the user holds AT LEAST ONE of them.
     - name: protected-resource
       method: GET
       path: /protected
@@ -233,7 +292,7 @@ gateway:
       action: gw-metrics-get
       mode: rpc
       auth: gateway-jwks
-      roles: [gateway-access]
+      roles: [user, admin]
 
   ***REMOVED*** Routes managed in the DB are loaded (ordered static-before-param) at boot AND on every
   ***REMOVED*** runtime reload, in addition to the YAML ones above. Seed via POST /admin/paths then

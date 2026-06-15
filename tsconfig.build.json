@@ -8,5 +8,5 @@
     // skip emit and leave the output (e.g. the schematic's index.js) partially missing.
     "incremental": false
   },
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "apps/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "apps/**/*", "scripts/**/*", "libs/rlb-nestjs-amqp/src/acl-legacy/**"],
 }

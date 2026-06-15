@@ -8,7 +8,16 @@ export const RLB_ACL_CACHE_STORE = 'RLB_ACL_CACHE_STORE';
 
 /** Lib-defined action names handled on ACL_TOPIC. */
 export const ACL_ACTIONS = {
+  /** MS-side resource-scoped role check {userId, role(s), resource}: global grant OR exact match. */
   canUserDo: 'acl-can-user-do',
+  /** Gateway primary filter: user holds at least one of the given roles (resource-agnostic). */
+  canUserDoGtw: 'acl-can-user-do-gtw',
+  /** Lists the resources a user can access, grouped by business resource, with their actions. */
+  listResourcesByUser: 'acl-list-resources-by-user',
+  /** Raw list of a user's grants (ungrouped). */
+  listByUser: 'acl-list-by-user',
+  /** Action-based check scoped to a specific resource (+ business resource). */
+  verifyAccess: 'acl-verify-access',
   grant: 'acl-grant',
   revoke: 'acl-revoke',
   invalidate: 'acl-invalidate',
@@ -20,4 +29,5 @@ export const ACL_ACTIONS = {
   roleUpdate: 'acl-role-update',
   roleDelete: 'acl-role-delete',
   roleList: 'acl-role-list',
+  roleGet: 'acl-role-get',
 } as const;

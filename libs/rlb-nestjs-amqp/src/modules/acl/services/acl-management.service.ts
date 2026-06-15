@@ -32,7 +32,7 @@ export class AclManagementService {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
     await this.assertRolesExist(roles);
-    const grant = await this.grants.insert({ userId, roles, resourceId, resourceBusinessId, friendlyName });
+    const grant = await this.grants.insert({ userId, roles, resourceId, resourceBusinessId: resourceBusinessId, friendlyName });
     await this.cache.invalidate(userId);
     return grant;
   }
@@ -128,6 +128,20 @@ export class AclManagementService {
     @BrokerParam('body', 'limit') limit?: number,
   ): Promise<PaginationModel<AclRole>> {
     return this.roles.filterPaginated({}, Number(page) || 1, Number(limit) || 10);
+  }
+
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleGet, 'rpc')
+  async getRole(@BrokerParam('body', 'name') name: string): Promise<AclRole> {
+    if (!name) throw new BadRequestError('name is required');
+    return this.roles.findOne({ name });
+  }
+
+  /**
+   * Flattened, de-duplicated set of actions granted by the given role names. Plain method
+   * (as in the legacy AccessActionService) — call it in-process via the exported service.
+   */
+  async getActionsByNames(names: string[]): Promise<string[]> {
+    return this.roles.getActionsByNames(names);
   }
 
   // --- helpers ----------------------------------------------------------------

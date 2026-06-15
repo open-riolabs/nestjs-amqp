@@ -46,8 +46,11 @@ gateway:
 - If `parseRaw: true` → the app must bootstrap with
   `NestFactory.create(AppModule, { rawBody: true })` (gotcha 12).
 - If `roles` is used → an `IAclRoleService` must be registered via
-  `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`, and the
-  auth-provider must define `aclTopic`/`aclAction`/`uidClaim`/`usernameClaim` (gotcha 15).
+  `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. The check
+  is role-based (`canUserDoGtw(path.roles, userId)`): `roles` are ROLE NAMES and the user
+  passes with AT LEAST ONE. The auth-provider only needs `uidClaim` (+ `headerPrefix`) to
+  extract the userId (gotcha 15). For a resource-scoped decision, the target ms calls
+  `canUserDo(roles, userId, resourceId)` (RPC `acl-can-user-do`) itself.
 - Forwarded auth claims reach the handler as prefixed/uppercased headers
   (e.g. `X-GTW-AUTH-USERID`) — read them with `@BrokerParam('header', ...)`.
 

@@ -7,6 +7,4 @@ export interface AclCacheOptions {
 
 export interface AclModuleOptions {
   cache?: AclCacheOptions;
-  /** Broker topic to bind handlers to (default ACL_TOPIC = 'rlb-acl'). */
-  topic?: string;
 }

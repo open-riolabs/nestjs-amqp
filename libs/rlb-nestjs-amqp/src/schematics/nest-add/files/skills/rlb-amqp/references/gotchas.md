@@ -46,11 +46,18 @@ or WS event. Each item is a real failure mode in this codebase.
     handle re-encoding carefully on the consumer side.
 
 ***REMOVED******REMOVED*** Auth / ACL
-15. **`roles` (HTTP path or WS event) require an `IAclRoleService`** registered via
+15. **`roles` on an HTTP path require an `IAclRoleService`** registered via
     `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. The
-    provider must define `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, and
-    `uidClaim` must match a `jwtMap` dest. Missing → throw.
-16. **Auth-providers + gateway config are passed to `ProxyModule`** (`authOptions` /
+    gateway check is **role-based** (`canUserDoGtw(path.roles, userId)`): `path.roles` lists
+    ROLE NAMES and the user passes if they hold AT LEAST ONE (resource-agnostic primary
+    filter). The provider only needs `uidClaim` (+ `headerPrefix`) to extract the userId —
+    no topic/action.
+16. **Two role-based ACL checks** on `rlb-acl` (both cached, inputs = userId + roles only):
+    `acl-can-user-do-gtw` → `canUserDoGtw(roles, userId)` (gateway primary filter, OR,
+    resource-agnostic) and `acl-can-user-do` → `canUserDo(roles, userId, resourceId)`
+    (**ms-side**; a global grant OR a grant on that resource satisfies it — the resource is
+    known only to the target ms).
+17. **Auth-providers + gateway config are passed to `ProxyModule`** (`authOptions` /
     `gatewayOptions`), not `BrokerModule`. `BrokerModule` owns only `options`/`topics`/`appOptions`.
 
 ***REMOVED******REMOVED*** WebSocket

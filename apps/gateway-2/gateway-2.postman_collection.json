@@ -13,7 +13,8 @@
     { "key": "token", "value": "" },
     { "key": "userId", "value": "ebd36ac4-5633-4434-b402-ab3b8b9e0a7b" },
     { "key": "lastPathId", "value": "" },
-    { "key": "lastAuthId", "value": "" }
+    { "key": "lastAuthId", "value": "" },
+    { "key": "lastActionId", "value": "" }
   ],
   "item": [
     {
@@ -175,6 +176,110 @@
             "header": [],
             "url": { "raw": "{{baseUrl}}/acl/roles?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["acl", "roles"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
           }
+        },
+        {
+          "name": "GET /acl/roles/get?name=user  (role-get by name)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('200 and returns the role', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(JSON.stringify(pm.response.json())).to.include('user'); });"
+            ] } }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/roles/get?name=user", "host": ["{{baseUrl}}"], "path": ["acl", "roles", "get"], "query": [{ "key": "name", "value": "user" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2b · ACL · update & delete (CRUD on throwaway entities)",
+      "description": "Exercises the new routes: PUT/DELETE /acl/actions (by id) and PUT/DELETE /acl/roles (by name) on throwaway entities, so the seeded gateway-access / user / admin stay intact.",
+      "item": [
+        {
+          "name": "POST /acl/actions  (create temp-action)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "var b = pm.response.json(); if (b && b._id) { pm.collectionVariables.set('lastActionId', b._id); }",
+              "pm.test('created', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-action\",\n  \"description\": \"throwaway\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "PUT /acl/actions  (update temp-action by id)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('updated (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
+            ] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{lastActionId}}\",\n  \"description\": \"updated description\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "DELETE /acl/actions  (delete temp-action by id)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{lastActionId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "POST /acl/roles  (create temp-role -> [gateway-access])",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('created (or exists)', function () { pm.expect(pm.response.code).to.be.oneOf([200,201,400]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-role\",\n  \"description\": \"throwaway\",\n  \"actions\": [\"gateway-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "PUT /acl/roles  (update temp-role by name)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('updated (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
+            ] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-role\",\n  \"description\": \"updated\",\n  \"actions\": [\"gateway-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "DELETE /acl/roles  (delete temp-role by name)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-role\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
         }
       ]
     },
@@ -265,6 +370,88 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"],\n  \"friendlyName\": \"{{kcUsername}}\"\n}" },
             "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4b · ACL checks (gateway filter + MS resource)",
+      "description": "Gateway filter (/acl/check → acl-can-user-do-gtw, {userId, roles}) and MS-side resource check (/acl/check-resource → acl-can-user-do, {userId, roles, resource}). Both return a boolean: the gateway answers 200 with body `true`, and 204 (no content) for `false`.",
+      "item": [
+        {
+          "name": "POST /acl/check  (gateway filter: roles=[user] -> TRUE)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('allowed (200, true) — user has global role user', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/check", "host": ["{{baseUrl}}"], "path": ["acl", "check"] }
+          }
+        },
+        {
+          "name": "POST /acl/check  (gateway filter: roles=[superadmin] -> FALSE)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('not allowed (204, or 200 false)', function () { if (pm.response.code === 200) { pm.expect(pm.response.text()).to.match(/^false/); } else { pm.expect(pm.response.code).to.eql(204); } });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"superadmin\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/check", "host": ["{{baseUrl}}"], "path": ["acl", "check"] }
+          }
+        },
+        {
+          "name": "POST /acl/grants  (grant {{userId}} -> [admin] ONLY on resource doc-1)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('granted on doc-1', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resourceId\": \"doc-1\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        },
+        {
+          "name": "POST /acl/check-resource  (admin on doc-1 -> TRUE, exact resource)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('allowed (200, true)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resource\": \"doc-1\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/check-resource", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"] }
+          }
+        },
+        {
+          "name": "POST /acl/check-resource  (admin on doc-2 -> FALSE, not granted there)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('not allowed (204, or 200 false)', function () { if (pm.response.code === 200) { pm.expect(pm.response.text()).to.match(/^false/); } else { pm.expect(pm.response.code).to.eql(204); } });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resource\": \"doc-2\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/check-resource", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"] }
+          }
+        },
+        {
+          "name": "POST /acl/check-resource  (user on doc-2 -> TRUE, global grant applies everywhere)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('allowed via global grant (200, true)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"],\n  \"resource\": \"doc-2\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/check-resource", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"] }
           }
         }
       ]

@@ -20,13 +20,13 @@ export class AclCacheService {
     this.l2TtlSec = options.cache?.l2TtlSec ?? 600;
   }
 
-  private key(userId: string, topic: string, action: string): string {
-    return `acl/${userId}/${topic}/${action}`;
+  private key(userId: string, action: string): string {
+    return `acl/${userId}/${action}`;
   }
 
   /** Cached decision (L1 → L2), or null on a miss (caller must read from the DB). */
-  async get(userId: string, topic: string, action: string): Promise<boolean | null> {
-    const key = this.key(userId, topic, action);
+  async get(userId: string, action: string): Promise<boolean | null> {
+    const key = this.key(userId, action);
     const local = this.ram.get(key);
     if (local && local.exp > Date.now()) return local.v;
     if (local) this.ram.delete(key);
@@ -45,8 +45,8 @@ export class AclCacheService {
     return null;
   }
 
-  async set(userId: string, topic: string, action: string, value: boolean): Promise<void> {
-    const key = this.key(userId, topic, action);
+  async set(userId: string, action: string, value: boolean): Promise<void> {
+    const key = this.key(userId, action);
     this.ram.set(key, { v: value, exp: Date.now() + this.ramTtlMs });
     if (this.store) {
       try {

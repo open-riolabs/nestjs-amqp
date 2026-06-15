@@ -141,18 +141,19 @@ export class HttpAuthHandlerService {
 
   async checkRoles(data: { [key: string]: any; }, path: PathDefinition): Promise<boolean> {
     if (!path?.auth) return true;
-    if (!path?.roles) return true;
+    if (!path?.roles?.length) return true;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
     if (!authConfig) throw new Error(`Auth provider ${path.auth} not found`);
     if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${path.auth} is not a JWT or JWKS provider`);
-    if (!authConfig.usernameClaim) throw new Error(`Auth provider ${path.auth} has no username claim defined`);
-    if (!authConfig.aclTopic) throw new Error(`Auth provider ${path.auth} has no ACL topic defined`);
-    if (!authConfig.aclAction) throw new Error(`Auth provider ${path.auth} has no ACL action defined`);
+    if (!authConfig.uidClaim) throw new Error(`Auth provider ${path.auth} has no uid claim defined`);
     if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
     if (!data) return false;
     const userId = data[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
     if (!userId) return false;
-    const canUserDo = await this.aclRoleService.canUserDo(authConfig.aclTopic, authConfig.aclAction, userId);
-    return canUserDo;
+    // Primary filter: userId (from the auth provider) + the roles the path requires →
+    // true if the user holds AT LEAST ONE of them. No topic/action. Fine-grained,
+    // resource-scoped checks happen on the target microservice (AclService.canUserDo /
+    // 'acl-can-user-do'), which is the only one that knows the resource.
+    return this.aclRoleService.canUserDoGtw(path.roles, userId);
   }
 }

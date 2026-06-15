@@ -35,6 +35,30 @@ export class InMemoryCollection<T extends { _id?: string }> {
     return { ...stored };
   }
 
+  insertMany(models: T[]): T[] {
+    return (models || []).map((m) => this.insert(m));
+  }
+
+  private findId(filter: Record<string, any>): string | undefined {
+    for (const [id, v] of this.items) if (matches(v, filter)) return id;
+    return undefined;
+  }
+
+  upsertById(id: string, patch: Partial<T>): T {
+    return this.items.has(id) ? this.updateById(id, patch)! : this.insert({ ...(patch as object), _id: id } as T);
+  }
+
+  upsertOne(filter: Record<string, any>, patch: Partial<T>): T {
+    const id = this.findId(filter);
+    return id ? this.updateById(id, patch)! : this.insert(patch as T);
+  }
+
+  removeMany(filter: Record<string, any>): number {
+    let removed = 0;
+    for (const [id, v] of [...this.items]) if (matches(v, filter)) { this.items.delete(id); removed++; }
+    return removed;
+  }
+
   findById(id: string): T | undefined {
     const v = this.items.get(id);
     return v ? { ...v } : undefined;

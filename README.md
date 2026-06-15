@@ -574,8 +574,10 @@ import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrant
 export class AppModule {}
 ```
 
-- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl` e imposta negli auth-provider `aclTopic: rlb-acl`, `aclAction: acl-can-user-do`.
-- `AclService.canUserDo(topic, action, userId)` serve dalla cache; sul miss interroga il DB (`checkActions`: i ruoli del grant devono coprire l'azione) e ripopola RAM+L2.
+- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` / `acl-can-user-do-gtw` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl` e imposta negli auth-provider `aclTopic: rlb-acl`.
+- **Due verifiche role-based** (servite dalla cache 2-tier, miss → DB → ripopola); input solo `userId` + `roles`, **niente topic/action**:
+  - `canUserDoGtw(roles, userId)` — **filtro primario del gateway** (role-based, OR): vero se l'utente ha almeno uno dei ruoli, resource-agnostico. È quello usato da `checkRoles` su `path.roles`. RPC `acl-can-user-do-gtw`.
+  - `canUserDo(roles, userId, resourceId)` — **lato microservizio**: vero se un grant **globale** (senza `resourceId`) **oppure** legato a quella risorsa dà all'utente il ruolo (`roles` accetta `string | string[]`). La risorsa è nota solo al ms, che chiama l'RPC `acl-can-user-do` con payload `{ userId, resource, roles }`.
 - **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
 - **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-2` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
 
@@ -660,7 +662,7 @@ Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili pr
 
 ***REMOVED******REMOVED******REMOVED*** Auth / ACL
 
-14. **`roles` su una path o evento richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. L'auth-provider deve definire `aclTopic`, `aclAction`, `uidClaim`, `usernameClaim`, e `uidClaim` deve corrispondere a un `dest` del `jwtMap`. Mancante → throw. Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
+14. **`roles` su una path richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. Il check del gateway è **role-based**: `path.roles` elenca **nomi di ruolo** e l'utente passa se ne possiede **almeno uno** (`canUserDoGtw(path.roles, userId)`, filtro primario resource-agnostico). L'auth-provider deve definire `uidClaim` (per estrarre lo userId) + `headerPrefix`. La verifica fine sulla risorsa va fatta sul microservizio con `canUserDo(roles, userId, resourceId)` (RPC `acl-can-user-do`). Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
 15. **Gli header propagati sono uppercase e prefissati** (`${headerPrefix}${DEST}`): leggi `X-GTW-AUTH-USERID`, non `userId`.
 
 ***REMOVED******REMOVED******REMOVED*** WebSocket

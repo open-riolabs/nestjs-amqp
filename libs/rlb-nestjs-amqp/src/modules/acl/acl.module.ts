@@ -14,7 +14,7 @@ export class AclModule {
    * @param providers DI bindings supplied by the consuming app: the concrete repositories
    *   bound to the abstract AclActionRepository / AclRoleRepository / AclGrantRepository
    *   tokens, and optionally the RLB_ACL_CACHE_STORE L2 implementation.
-   * @param options cache TTLs / topic.
+   * @param options cache TTLs.
    */
   static forRoot(providers: Provider[], options: AclModuleOptions = {}): DynamicModule {
     return {
