@@ -209,6 +209,32 @@ gateway:
       topic: rlb-acl
       action: acl-can-user-do
       mode: rpc
+    ***REMOVED*** Authenticated: lists the caller's accessible resources (grouped by business resource).
+    ***REMOVED*** Reads userId from the forwarded X-GTW-AUTH-USERID header → needs `auth` (no roles).
+    - name: acl-list-resources-by-user
+      method: GET
+      path: /acl/resources
+      dataSource: query
+      topic: rlb-acl
+      action: acl-list-resources-by-user
+      mode: rpc
+      auth: gateway-jwks
+    ***REMOVED*** Raw list of a user's grants. body: { userId }
+    - name: acl-list-by-user
+      method: POST
+      path: /acl/by-user
+      dataSource: body
+      topic: rlb-acl
+      action: acl-list-by-user
+      mode: rpc
+    ***REMOVED*** Action check scoped to a resource. body: { userId, resourceId, action, resourceBusinessId? }
+    - name: acl-verify-access
+      method: POST
+      path: /acl/verify
+      dataSource: body
+      topic: rlb-acl
+      action: acl-verify-access
+      mode: rpc
 
     ***REMOVED*** --- gateway-admin: manage DB routes / auth-providers / metrics ---
     - name: gw-path-create

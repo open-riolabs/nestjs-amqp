@@ -19,8 +19,6 @@ export class AclManagementService {
     private readonly cache: AclCacheService,
   ) { }
 
-  // --- Grants (per-user) ------------------------------------------------------
-
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.grant, 'rpc')
   async grant(
     @BrokerParam('body', 'userId') userId: string,
@@ -47,8 +45,6 @@ export class AclManagementService {
     await this.cache.invalidate(userId);
     return removed;
   }
-
-  // --- Actions (affect everyone → full invalidation) --------------------------
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionCreate, 'rpc')
   async createAction(
@@ -86,8 +82,6 @@ export class AclManagementService {
   ): Promise<PaginationModel<AclAction>> {
     return this.actions.filterPaginated({}, Number(page) || 1, Number(limit) || 10);
   }
-
-  // --- Roles (affect everyone → full invalidation) ----------------------------
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleCreate, 'rpc')
   async createRole(
@@ -136,15 +130,9 @@ export class AclManagementService {
     return this.roles.findOne({ name });
   }
 
-  /**
-   * Flattened, de-duplicated set of actions granted by the given role names. Plain method
-   * (as in the legacy AccessActionService) — call it in-process via the exported service.
-   */
   async getActionsByNames(names: string[]): Promise<string[]> {
     return this.roles.getActionsByNames(names);
   }
-
-  // --- helpers ----------------------------------------------------------------
 
   private async assertActionsExist(names: string[]): Promise<void> {
     const found = await this.actions.filter({ name: { $in: names } });

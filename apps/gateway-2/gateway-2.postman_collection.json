@@ -453,6 +453,62 @@
             "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"],\n  \"resource\": \"doc-2\"\n}" },
             "url": { "raw": "{{baseUrl}}/acl/check-resource", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"] }
           }
+        },
+        {
+          "name": "GET /acl/resources  (my resources, grouped by business resource)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('200 + array of resource groups', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });",
+              "console.log('resources:', pm.response.text());"
+            ] } }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/acl/resources", "host": ["{{baseUrl}}"], "path": ["acl", "resources"] }
+          }
+        },
+        {
+          "name": "POST /acl/by-user  (raw grants of {{userId}})",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('200 + array of grants', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/by-user", "host": ["{{baseUrl}}"], "path": ["acl", "by-user"] }
+          }
+        },
+        {
+          "name": "POST /acl/verify  (admin-access on doc-1 -> TRUE)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('allowed (200, true) — doc-1 grant has role admin -> admin-access', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resourceId\": \"doc-1\",\n  \"action\": \"admin-access\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/verify", "host": ["{{baseUrl}}"], "path": ["acl", "verify"] }
+          }
+        },
+        {
+          "name": "POST /acl/verify  (admin-access on doc-2 -> FALSE)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('not allowed (204, or 200 false) — no grant on doc-2', function () { if (pm.response.code === 200) { pm.expect(pm.response.text()).to.match(/^false/); } else { pm.expect(pm.response.code).to.eql(204); } });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resourceId\": \"doc-2\",\n  \"action\": \"admin-access\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/verify", "host": ["{{baseUrl}}"], "path": ["acl", "verify"] }
+          }
         }
       ]
     },

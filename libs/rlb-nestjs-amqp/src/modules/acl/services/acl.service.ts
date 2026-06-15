@@ -22,16 +22,9 @@ export class AclService implements IAclRoleService {
     return Array.isArray(roles) ? roles : (roles ? [roles] : []);
   }
 
-  /**
-   * Gateway PRIMARY FILTER (role-based, OR): true when the user holds AT LEAST ONE of `roles`,
-   * resource-agnostic. Inputs are just userId (from the auth provider) + roles (from the path
-   * config) — no topic, no action. Coarse gate run on every HTTP request, served from cache.
-   */
   async canUserDoGtw(roles: string | string[], userId: string): Promise<boolean> {
     const list = this.toList(roles);
     if (!userId || !list.length) return false;
-    // Cache is scoped per user: the full key is acl/<userId>/<this>, so this part only
-    // needs to disambiguate the role set.
     const cacheAction = `role-gtw:${[...list].sort().join(',')}`;
     const cached = await this.cache.get(userId, cacheAction);
     if (cached !== null) return cached;
@@ -41,15 +34,9 @@ export class AclService implements IAclRoleService {
     return allowed;
   }
 
-  /**
-   * MS-SIDE resource-scoped check: true when the user holds at least one of `roles` through a
-   * grant that is EITHER global (no `resourceId`) OR bound to the given `resourceId`. The
-   * resource is known only to the calling microservice, so it is passed in explicitly.
-   */
   async canUserDo(roles: string | string[], userId: string, resourceId?: string): Promise<boolean> {
     const list = this.toList(roles);
     if (!userId || !list.length) return false;
-    // Per-user cache: full key is acl/<userId>/<this>.
     const cacheAction = `role-res:${resourceId ?? '*'}:${[...list].sort().join(',')}`;
     const cached = await this.cache.get(userId, cacheAction);
     if (cached !== null) return cached;
@@ -60,9 +47,6 @@ export class AclService implements IAclRoleService {
     return allowed;
   }
 
-  // --- broker handlers --------------------------------------------------------
-
-  /** Gateway primary filter over the broker: { userId, roles } (roles: string | string[]). */
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.canUserDoGtw, 'rpc')
   async handleCanUserDoGtw(
     @BrokerParam('body', 'userId') userId: string,
@@ -76,7 +60,6 @@ export class AclService implements IAclRoleService {
     }
   }
 
-  /** MS-side resource-scoped check over the broker: { userId, resource, roles } (string | string[]). */
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.canUserDo, 'rpc')
   async handleCanUserDo(
     @BrokerParam('body', 'userId') userId: string,
@@ -91,11 +74,6 @@ export class AclService implements IAclRoleService {
     }
   }
 
-  /**
-   * Lists the resources the authenticated user can access, grouped by business resource,
-   * with the flattened set of actions granted on each (resolved from the grant's roles).
-   * userId comes from the forwarded auth header (gateway-mapped claim).
-   */
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.listResourcesByUser, 'rpc')
   async listResourcesByUser(
     @BrokerParam('header', 'X-GTW-AUTH-USERID') userId: string,
@@ -126,7 +104,6 @@ export class AclService implements IAclRoleService {
     }
   }
 
-  /** Raw list of a user's grants (ungrouped). */
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.listByUser, 'rpc')
   async listByUser(@BrokerParam('body', 'userId') userId: string): Promise<AclGrant[]> {
     try {
@@ -137,11 +114,6 @@ export class AclService implements IAclRoleService {
     }
   }
 
-  /**
-   * Action-based check scoped to a specific resource: true when the user's grants matching
-   * { userId, resourceId, resourceBusinessId } cover `action` (via their roles). `productId`
-   * is accepted as the legacy alias of `resourceBusinessId`.
-   */
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.verifyAccess, 'rpc')
   async verifyAccess(
     @BrokerParam('body', 'userId') userId: string,
