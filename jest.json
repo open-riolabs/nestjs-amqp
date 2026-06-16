@@ -12,6 +12,8 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "moduleNameMapper": {
+    "^@open-rlb/nestjs-amqp$": "<rootDir>/libs/rlb-nestjs-amqp/src",
+    "^@open-rlb/nestjs-amqp/(.*)$": "<rootDir>/libs/rlb-nestjs-amqp/src/$1",
     "^src/(.*)": "<rootDir>/src/$1",
     "^src": "<rootDir>/src"
   }

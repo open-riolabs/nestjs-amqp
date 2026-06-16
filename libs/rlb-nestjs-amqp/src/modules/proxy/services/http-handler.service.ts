@@ -104,6 +104,11 @@ export class HttpHandlerService implements OnModuleInit {
     if (!path.path) throw new Error("Path is required for path definition");
     if (!path.topic) throw new Error("Topic is required for path definition");
     if (!path.mode) throw new Error("Mode is required for path definition");
+    // Fail loud on a misconfiguration that otherwise silently denies every request:
+    // roles require an auth provider to derive the caller's identity for the ACL check.
+    if (path.roles?.length && !path.auth) {
+      this.logger.warn(`Path '${path.name || path.path}' declares roles but no 'auth' provider; the role check cannot identify the caller and every request will be denied (403). Set 'auth' to enable the ACL.`);
+    }
 
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
     target[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
@@ -112,18 +117,35 @@ export class HttpHandlerService implements OnModuleInit {
       // and duration whatever branch handled it). Disabled when gateway.metrics is unset.
       this.trackMetrics(req, res, path);
 
+      // --- Authentication & authorization gate ---------------------------------
+      // `allowAnonymous` makes the route public: enforcement is skipped entirely.
+      // We still run processAuthData best-effort so that a valid token's mapped claims
+      // are forwarded downstream (optional auth); a missing/invalid token on an
+      // anonymous route is simply not blocked.
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
-      if (path.auth && !authData?.success && path.allowAnonymous !== true) {
-        res.status(401).json({ message: "Unauthorized" });
-        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
-        return;
+      if (path.allowAnonymous !== true) {
+        // (1) Authentication — a configured provider must validate the request.
+        if (path.auth && !authData?.success) {
+          res.status(401).json({ message: "Unauthorized" });
+          this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
+          return;
+        }
+        // (2) Authorization — role-based ACL, applied only when the path declares
+        // `roles` (checkRoles is a no-op when `auth` or `roles` is absent).
+        if (!(await this.httpAuthHandlerService.checkRoles(authData, path))) {
+          res.status(403).json({ message: "Forbidden" });
+          this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
+          return;
+        }
       }
-      if (!(await this.httpAuthHandlerService.checkRoles(authData, path))) {
-        res.status(403).json({ message: "Forbidden" });
-        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
-        return;
-      }
+
+      // Forward only the mapped claim headers downstream (e.g. X-GTW-AUTH-USERID per the
+      // provider's jwtMap/uidClaim), never the internal `success` flag. At each call site
+      // these auth-derived headers are spread AFTER the client-forwardable ones
+      // (httpHeaders), so a forwarded request header can never override the authenticated
+      // identity (anti-spoofing); gateway metadata (X-GTW-METHOD/PATH) is spread last.
+      const { success: _authSuccess, ...authHeaders } = authData || {};
       const httpHeaders = this.httpHeaders(req, path);
 
       let data = req[path.dataSource] || req.body || {};
@@ -164,7 +186,7 @@ export class HttpHandlerService implements OnModuleInit {
           try {
             // Wait for the broker to take charge of the message (publisher confirm)
             // before acknowledging the request, so the 2xx is not optimistic.
-            await this.broker.publishMessage(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
+            await this.broker.publishMessage(path.topic, path.action, data, { ...httpHeaders, ...authHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path });
             res.status(path.successStatusCode || 202).setHeaders(headers).end();
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
           } catch (error) {
@@ -173,7 +195,7 @@ export class HttpHandlerService implements OnModuleInit {
           }
         } else if (path.mode === "rpc") {
           try {
-            const resp = await this.broker.requestData(path.topic, path.action, data, { ...authData, ...httpHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
+            const resp = await this.broker.requestData(path.topic, path.action, data, { ...httpHeaders, ...authHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
             if (resp) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);

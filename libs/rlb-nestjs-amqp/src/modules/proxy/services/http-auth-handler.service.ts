@@ -73,16 +73,22 @@ export class HttpAuthHandlerService {
     return this.mapClaims(authConfig, decoded);
   }
 
-  /** Role check from already-mapped claims (used by non-HTTP transports e.g. WS). */
-  async checkRolesForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }): Promise<boolean> {
+  /**
+   * Role-based ACL check from already-mapped claims (used by non-HTTP transports,
+   * e.g. WebSocket events). Resource-agnostic: returns true when the identity behind
+   * `claims` holds AT LEAST ONE of `roles` (delegated to `canUserDoGtw`). When no roles
+   * are required it authorizes; the resource-scoped check lives on the microservice.
+   */
+  async checkRolesForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }, roles?: string | string[]): Promise<boolean> {
+    const list = Array.isArray(roles) ? roles : (roles ? [roles] : []);
+    if (!list.length) return true;
     if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${authConfig.name} is not a JWT or JWKS provider`);
-    if (!authConfig.aclTopic) throw new Error(`Auth provider ${authConfig.name} has no ACL topic defined`);
-    if (!authConfig.aclAction) throw new Error(`Auth provider ${authConfig.name} has no ACL action defined`);
+    if (!authConfig.uidClaim) throw new Error(`Auth provider ${authConfig.name} has no uid claim defined`);
     if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
     if (!claims) return false;
     const userId = claims[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
     if (!userId) return false;
-    return this.aclRoleService.canUserDo(authConfig.aclTopic, authConfig.aclAction, userId);
+    return this.aclRoleService.canUserDoGtw(list, userId);
   }
 
   async checkBasicAuth(req: Request, authConfig: HandlerAuthConfig) {
@@ -139,21 +145,22 @@ export class HttpAuthHandlerService {
     return out;
   }
 
+  /**
+   * Gateway authorization for an HTTP path. No-op (authorized) when the path declares
+   * no `auth` or no `roles`. Otherwise resolves the path's provider and applies the
+   * role-based primary filter via `checkRolesForClaims`: the user passes if they hold
+   * at least one of `path.roles` (resource-agnostic). Fine-grained, resource-scoped
+   * checks happen on the target microservice (AclService.canUserDo / 'acl-can-user-do'),
+   * which is the only one that knows the resource.
+   */
   async checkRoles(data: { [key: string]: any; }, path: PathDefinition): Promise<boolean> {
-    if (!path?.auth) return true;
     if (!path?.roles?.length) return true;
+    // Roles declared but no auth provider to identify the caller: fail closed (deny),
+    // since there is no userId to evaluate against the ACL. A path that wants to enforce
+    // roles MUST declare `auth` (mirrors the WebSocket event behaviour).
+    if (!path?.auth) return false;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
     if (!authConfig) throw new Error(`Auth provider ${path.auth} not found`);
-    if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${path.auth} is not a JWT or JWKS provider`);
-    if (!authConfig.uidClaim) throw new Error(`Auth provider ${path.auth} has no uid claim defined`);
-    if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
-    if (!data) return false;
-    const userId = data[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
-    if (!userId) return false;
-    // Primary filter: userId (from the auth provider) + the roles the path requires →
-    // true if the user holds AT LEAST ONE of them. No topic/action. Fine-grained,
-    // resource-scoped checks happen on the target microservice (AclService.canUserDo /
-    // 'acl-can-user-do'), which is the only one that knows the resource.
-    return this.aclRoleService.canUserDoGtw(path.roles, userId);
+    return this.checkRolesForClaims(authConfig, data, path.roles);
   }
 }

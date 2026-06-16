@@ -176,7 +176,7 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
       let allowed = false;
       if (provider && claims?.success) {
         try {
-          allowed = await this.httpAuth.checkRolesForClaims(provider, claims);
+          allowed = await this.httpAuth.checkRolesForClaims(provider, claims, eventDef.roles);
         } catch (e) {
           this.logger.error(`Role check failed for event ${eventDef.name}: ${e.message}`);
         }
@@ -294,6 +294,9 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     for (const e of this.wsEvents.filter(o => o.type === 'ws')) {
       if (e.auth && !this.httpAuth.findProvider(e.auth)) {
         this.logger.error(`WS event '${e.name}' references unknown auth provider '${e.auth}'; subscriptions will be denied.`);
+      }
+      if (e.roles?.length && !e.auth) {
+        this.logger.error(`WS event '${e.name}' declares roles but no 'auth' provider; the role check cannot identify the subscriber and every subscription will be denied. Set 'auth' to enable role checks.`);
       }
       if (e.auth && e.requireAuth !== false && !(e.scopeClaim && e.payloadKey)) {
         this.logger.warn(`WS event '${e.name}' has auth but no scopeClaim/payloadKey: every authorized subscriber receives ALL messages (no per-user isolation).`);
