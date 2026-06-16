@@ -69,8 +69,32 @@ export class MetadataScannerService implements OnModuleInit {
 
                 const authMetadata = (Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, instance.constructor) || [])
                   .filter((m: any) => m.methodName === method.methodName);
+                // Pair each @BrokerHTTP route to THIS @BrokerAction by explicit `action` name.
+                // Positional/order pairing is unreliable: decorators apply bottom-up and the
+                // @BrokerAction / @BrokerHTTP metadata live in two separate arrays. Rules:
+                //  - single @BrokerAction on the method  -> a route without `action` binds to it;
+                //  - multiple @BrokerAction               -> `action` is required;
+                //  - a missing (multi-action) or unknown `action` -> route dropped + boot error.
+                const actionsForMethod = metadata.filter((m: any) => m.methodName === method.methodName);
+                const multiAction = actionsForMethod.length > 1;
+                const actionNames = new Set(actionsForMethod.map((m: any) => m.action));
+                const logOnce = actionsForMethod[0]?.action === method.action; // avoid duplicate logs per action
                 const httpMetadata = (Reflect.getMetadata(RLB_BROKER_HTTP_METADATA_KEY, instance.constructor) || [])
-                  .filter((m: any) => m.methodName === method.methodName);
+                  .filter((m: any) => m.methodName === method.methodName)
+                  .filter((h: any) => {
+                    if (h.action == null) {
+                      if (multiAction) {
+                        if (logOnce) this.logger.error(`@BrokerHTTP ${h.method} '${h.path}' on '${instance.constructor.name}.${String(method.methodName)}' has no 'action' but the method declares multiple @BrokerAction (${[...actionNames].join(', ')}); route ignored. Add { action } to bind it.`);
+                        return false;
+                      }
+                      return true; // single action -> bind by default
+                    }
+                    if (!actionNames.has(h.action)) {
+                      if (logOnce) this.logger.error(`@BrokerHTTP ${h.method} '${h.path}' on '${instance.constructor.name}.${String(method.methodName)}' references action '${h.action}' not declared by any @BrokerAction on that method (${[...actionNames].join(', ')}); route ignored.`);
+                      return false;
+                    }
+                    return h.action === method.action;
+                  });
 
 
                 this.metadata[method.topic][method.action] = {

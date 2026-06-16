@@ -3,6 +3,8 @@ import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppConfig, BrokerModule, BrokerTopic, GatewayConfig, HandlerAuthConfig, ProxyModule, RabbitMQConfig } from '@open-rlb/nestjs-amqp';
 import yamlConfig from './config/config.loader';
+import { ActionService } from './samples/action.service';
+import { ActionService as AutodiscoveryLogger } from './samples/autodiscovery.service';
 import { EventDemoService } from './samples/event-demo.service';
 import { HandlerService } from './samples/handler.service';
 import { HttpDemoService } from './samples/http-demo.service';
@@ -37,6 +39,6 @@ const unroutableLogger = new Logger('UnroutableMonitor');
       ],
     }),
   ],
-  providers: [HandlerService, HttpDemoService, RpcDemoService, EventDemoService],
+  providers: [HandlerService, HttpDemoService, RpcDemoService, EventDemoService, ActionService, AutodiscoveryLogger],
 })
 export class AppModule { }

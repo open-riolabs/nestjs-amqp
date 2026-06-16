@@ -23,7 +23,22 @@ export function BrokerAction(topic: string, action: string, type?: BrokerActionT
   };
 }
 
-export function BrokerHTTP(method: BrokerHttpMethod, path: string, dataSource?: BrokerHttpDataSource, timeout?: number, parseRaw?: boolean): MethodDecorator {
+export function BrokerHTTP(
+  method: BrokerHttpMethod, path: string, dataSource: BrokerHttpDataSource, options?: {
+    /** Binds this route to a specific @BrokerAction on the same method, by action name.
+     *  Required when the method declares more than one @BrokerAction; with a single action
+     *  it defaults to that action. Makes the http↔action pairing deterministic (decorator
+     *  order/position is NOT used). */
+    action?: string,
+    successStatusCode?: number,
+    timeout?: number,
+    parseRaw?: boolean;
+    binary?: boolean,
+    redirect?: number,
+    headers?: { [k: string]: string | number | boolean; },
+    forwardHeaders?: { [k: string]: string | number | boolean; },
+  }
+): MethodDecorator {
   return (target, propertyKey, descriptor) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_HTTP_METADATA_KEY, target.constructor) || [];
     const params = getParamNames(descriptor.value);
@@ -32,8 +47,7 @@ export function BrokerHTTP(method: BrokerHttpMethod, path: string, dataSource?: 
       method,
       path,
       dataSource,
-      parseRaw,
-      timeout,
+      ...(options || {})
     });
     Reflect.defineMetadata(RLB_BROKER_HTTP_METADATA_KEY, existingMetadata, target.constructor);
   };
