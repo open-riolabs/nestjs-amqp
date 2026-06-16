@@ -109,6 +109,12 @@ export class HttpHandlerService implements OnModuleInit {
     if (path.roles?.length && !path.auth) {
       this.logger.warn(`Path '${path.name || path.path}' declares roles but no 'auth' provider; the role check cannot identify the caller and every request will be denied (403). Set 'auth' to enable the ACL.`);
     }
+    // Boot-time validation: a path that references a non-existent auth provider would
+    // otherwise only reveal the mistake at request time. Surface it now (the request
+    // path itself fails closed with 401 — see HttpAuthHandlerService.processAuthData).
+    if (path.auth && !this.httpAuthHandlerService.findProvider(path.auth)) {
+      this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}'; requests will be denied (401). Check 'auth-providers'.`);
+    }
 
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
     target[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {

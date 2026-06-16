@@ -31,6 +31,27 @@ describe('HttpAuthHandlerService — auth checks', () => {
     });
   });
 
+  describe('mapClaims — claim forwarding', () => {
+    it('fail-safe: accepts the token (success) but forwards NO claims when jwtMap is absent', async () => {
+      const out = make().mapClaims({ name: 'p', type: 'jwks', headerPrefix: 'X-GTW-AUTH-' } as any, { sub: 'u1', email: 'a@b.c', roles: ['x'] });
+      expect(out.success).toBe(true);
+      expect(Object.keys(out)).toEqual(['success']);
+    });
+
+    it('maps only the configured claims (prefixed, uppercased) when jwtMap is present', async () => {
+      const out = make().mapClaims({ name: 'p', type: 'jwks', headerPrefix: 'X-GTW-AUTH-', jwtMap: ['sub:userId'] } as any, { sub: 'u1', email: 'a@b.c' });
+      expect(out['X-GTW-AUTH-USERID']).toBe('u1');
+      expect(out['X-GTW-AUTH-EMAIL']).toBeUndefined();
+    });
+  });
+
+  describe('processAuthData — unknown provider', () => {
+    it('fails closed (success:false) instead of throwing when the path references a missing provider', async () => {
+      const out = await make().processAuthData(req('Bearer x') as any, { name: 'p', auth: 'does-not-exist' } as any);
+      expect(out.success).toBe(false);
+    });
+  });
+
   describe('basic', () => {
     it('passes through (success) when no clientSecret is configured (provider effectively open)', async () => {
       const out = await make().checkBasicAuth(req(basic('admin', '')), { name: 'p', type: 'basic', headerPrefix: 'X-' } as any);

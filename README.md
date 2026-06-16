@@ -298,7 +298,7 @@ auth-providers:
 
 Mapping dei claim: un token con `{ sub: "u_1", roles: [...] }` e `jwtMap: [sub:userId]`, `headerPrefix: X-GTW-AUTH-` produce l'header `X-GTW-AUTH-USERID = u_1` propagato al microservizio. Leggilo con `@BrokerParam('header', 'X-GTW-AUTH-USERID')`.
 
-> **Sicurezza dei provider**: `algorithms` è **obbligatorio** per `jwt`/`jwks` (se omesso la verifica è negata → previene l'algorithm-confusion); per `jwks` solo algoritmi asimmetrici (RS\*/ES\*/PS\*), `HS*`/`none` rifiutati. `str-compare` senza `secret` e `basic` senza `clientSecret` fanno **pass-through** (richiesta considerata autenticata — provider di fatto aperto/disabilitato; usalo consapevolmente). Senza `jwtMap` i claim vengono propagati non mappati: definiscilo sempre.
+> **Sicurezza dei provider**: `algorithms` è **obbligatorio** per `jwt`/`jwks` (se omesso la verifica è negata → previene l'algorithm-confusion); per `jwks` solo algoritmi asimmetrici (RS\*/ES\*/PS\*), `HS*`/`none` rifiutati. `str-compare` senza `secret` e `basic` senza `clientSecret` fanno **pass-through** (richiesta considerata autenticata — provider di fatto aperto/disabilitato; usalo consapevolmente). Senza `jwtMap` **nessun claim viene inoltrato** (il token resta accettato, `success:true`): il gateway fa fail-safe invece di propagare l'intero payload. Definiscilo sempre per inoltrare gli header identità (es. `X-GTW-AUTH-USERID`).
 
 ***REMOVED******REMOVED******REMOVED*** `gateway`
 

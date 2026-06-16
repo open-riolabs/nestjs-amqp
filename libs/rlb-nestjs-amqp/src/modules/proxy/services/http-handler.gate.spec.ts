@@ -23,6 +23,7 @@ const mkService = () => {
   const auth = {
     processAuthData: jest.fn().mockResolvedValue({ success: false }),
     checkRoles: jest.fn().mockResolvedValue(true),
+    findProvider: jest.fn().mockReturnValue({ name: 'p' }),
   };
   const utils = { error2Object: (e: any) => ({ name: e?.name, message: e?.message }) };
   const gatewayConfig: any = { headerPrefix: 'X-GTW-AUTH-', paths: [], events: [] };

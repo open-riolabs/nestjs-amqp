@@ -23,7 +23,13 @@ export class HttpAuthHandlerService {
     let out: ProcessedAuthData = { success: false };
     if (!path?.auth) return out;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
-    if (!authConfig) throw new Error(`Auth provider ${path.auth} not found`);
+    // Unknown provider is a misconfiguration: fail closed (success:false) instead of
+    // throwing, so the request gets a predictable 401 rather than crashing the handler.
+    // The mistake is surfaced loudly at boot by HttpHandlerService.registerPath().
+    if (!authConfig) {
+      this.logger.error(`Auth provider '${path.auth}' referenced by path '${path.name || path.path}' is not configured; denying request (401).`);
+      return out;
+    }
 
     switch (authConfig.type) {
       case 'basic': out = await this.checkBasicAuth(req, authConfig); break;
@@ -56,8 +62,13 @@ export class HttpAuthHandlerService {
   /** Maps a decoded JWT payload to header-prefixed claims using the provider's jwtMap. */
   mapClaims(authConfig: HandlerAuthConfig, decoded: any): ProcessedAuthData {
     if (!decoded) return { success: false };
+    // Fail-safe when no jwtMap is configured: the token is valid (success:true) but we
+    // forward NO claims. Without an explicit map the keys would be the raw, unprefixed
+    // claim names (not the X-GTW-AUTH-* contract the microservices read) — i.e. pure
+    // over-exposure of the whole JWT payload. Declare jwtMap to forward identity headers.
+    // (JwtService already warns about a missing jwtMap at boot.)
     if (!authConfig.jwtMap) {
-      return { ...decoded, success: true };
+      return { success: true };
     }
     const out: ProcessedAuthData = { success: true };
     authConfig.jwtMap.map(o => o.split(':')).forEach(([source, dest]) => {
