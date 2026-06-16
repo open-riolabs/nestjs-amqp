@@ -268,8 +268,6 @@ auth-providers:
     headerPrefix: X-GTW-AUTH-                      ***REMOVED*** prefisso degli header propagati ai microservizi
     uidClaim: USERID                              ***REMOVED*** dest (uppercase) usato come user id per l'ACL
     usernameClaim: USERNAME
-    aclTopic: acl                                 ***REMOVED*** topic RPC interrogato per i ruoli
-    aclAction: can-user-do
 
   - name: gateway-jwt
     type: jwt
@@ -281,8 +279,6 @@ auth-providers:
     headerPrefix: X-GTW-AUTH-
     uidClaim: USERID
     usernameClaim: USERNAME
-    aclTopic: acl
-    aclAction: can-user-do
 
   - name: gateway-basic
     type: basic
@@ -574,7 +570,7 @@ import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrant
 export class AppModule {}
 ```
 
-- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` / `acl-can-user-do-gtw` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl` e imposta negli auth-provider `aclTopic: rlb-acl`.
+- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` / `acl-can-user-do-gtw` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl`. (Il check ruoli del gateway è in-process via `IAclRoleService`, quindi gli auth-provider non richiedono più `aclTopic`/`aclAction`.)
 - **Due verifiche role-based** (servite dalla cache 2-tier, miss → DB → ripopola); input solo `userId` + `roles`, **niente topic/action**:
   - `canUserDoGtw(roles, userId)` — **filtro primario del gateway** (role-based, OR): vero se l'utente ha almeno uno dei ruoli, resource-agnostico. È quello usato da `checkRoles` su `path.roles`. RPC `acl-can-user-do-gtw`.
   - `canUserDo(roles, userId, resourceId)` — **lato microservizio**: vero se un grant **globale** (senza `resourceId`) **oppure** legato a quella risorsa dà all'utente il ruolo (`roles` accetta `string | string[]`). La risorsa è nota solo al ms, che chiama l'RPC `acl-can-user-do` con payload `{ userId, resource, roles }`.

@@ -112,8 +112,8 @@ auth-providers:
     headerPrefix: X-GTW-AUTH-        ***REMOVED*** prefix of headers propagated to microservices
     uidClaim: USERID                 ***REMOVED*** dest used as user id for ACL
     usernameClaim: USERNAME
-    aclTopic: acl                    ***REMOVED*** RPC topic queried for roles
-    aclAction: can-user-do
+    ***REMOVED*** aclTopic / aclAction are DEPRECATED & unused: the gateway role check runs in-process
+    ***REMOVED*** (IAclRoleService.canUserDoGtw) — no RPC topic/action needed.
 ```
 
 Mapping example: token `{ sub: "u_1" }` + `jwtMap: [sub:userId]` + `headerPrefix: X-GTW-AUTH-`
@@ -126,7 +126,8 @@ Types: `jwt` (HS/RS secret), `jwks` (remote keys), `basic` (clientId/clientSecre
 Provider notes: `algorithms` is REQUIRED for `jwt`/`jwks` (omit → denied; `jwks` allows only
 RS*/ES*/PS*, rejects HS*/none). `str-compare` without `secret` and `basic` without
 `clientSecret` PASS THROUGH (request treated as authenticated — provider effectively open).
-Define `jwtMap` to avoid forwarding unmapped claims.
+Define `jwtMap` to forward identity headers: without it NO claims are forwarded (the token is
+still accepted, `success:true`) — fail-safe instead of leaking the whole payload.
 
 ---
 

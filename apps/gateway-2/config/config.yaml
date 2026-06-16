@@ -81,8 +81,6 @@ auth-providers:
     headerPrefix: "X-GTW-AUTH-"
     uidClaim: USERID
     usernameClaim: USERNAME
-    aclTopic: rlb-acl
-    aclAction: gateway-access
     outProp: $auth
     issuer: https://login.riolabs.net/realms/riolabs-dev
     tokenUrl: https://login.riolabs.net/realms/riolabs-dev/protocol/openid-connect/token

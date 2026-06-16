@@ -91,7 +91,9 @@ or WS event. Each item is a real failure mode in this codebase.
 24. **`str-compare`/`basic` PASS THROUGH when their secret is unset.** A `str-compare`
     without `secret` or a `basic` without `clientSecret` treats every request as authenticated
     (provider effectively open/disabled — by design). Set the secret to actually enforce it.
-25. **Define `jwtMap`.** Without it, every token claim is forwarded unmapped (over-exposure).
+25. **Define `jwtMap`.** Without it NO claims are forwarded (the token is still accepted,
+    `success:true`): the gateway fails safe instead of leaking the whole payload. Declare it
+    to forward identity headers (e.g. `X-GTW-AUTH-USERID`).
 
 ***REMOVED******REMOVED*** WebSocket session/transport security
 26. **WS sessions are bounded by the token `exp`.** The connection is closed (`1008`) when the

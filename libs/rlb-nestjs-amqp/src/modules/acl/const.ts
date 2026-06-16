@@ -1,5 +1,6 @@
 /** Broker topic the ACL handlers are bound to. The consumer must declare a matching
- *  topic/queue in its broker config and point auth-provider `aclTopic` to this value. */
+ *  topic/queue in its broker config. (The gateway role check runs in-process via
+ *  IAclRoleService, so auth-providers no longer need an `aclTopic`/`aclAction`.) */
 export const ACL_TOPIC = 'rlb-acl';
 
 export const RLB_ACL_OPTIONS = 'RLB_ACL_OPTIONS';
