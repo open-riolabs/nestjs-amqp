@@ -39,6 +39,12 @@ export class GatewayMetricsService {
     return this.repo.list(route);
   }
 
+  /** Liveness probe for GET /health — a minimal 200 payload, NOT the metrics data. */
+  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.health, 'rpc')
+  async health(): Promise<{ status: string }> {
+    return { status: 'ok' };
+  }
+
   /** Time-series: bucketed aggregates over `bucketMs`-wide windows, optionally filtered. */
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsSeries, 'rpc')
   async series(

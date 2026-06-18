@@ -10,6 +10,9 @@ libs/**/*.d.ts
 apps/**/*.js
 apps/**/*.js.map
 apps/**/*.d.ts
+sample/**/*.js
+sample/**/*.js.map
+sample/**/*.d.ts
 
 ***REMOVED*** Logs
 logs

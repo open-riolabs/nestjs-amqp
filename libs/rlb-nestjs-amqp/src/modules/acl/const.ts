@@ -13,10 +13,8 @@ export const ACL_ACTIONS = {
   canUserDo: 'acl-can-user-do',
   /** Gateway primary filter: user holds at least one of the given roles (resource-agnostic). */
   canUserDoGtw: 'acl-can-user-do-gtw',
-  /** Lists the resources a user can access, grouped by business resource, with their actions. */
+  /** Lists the resources a user can access, grouped by company, with their actions. */
   listResourcesByUser: 'acl-list-resources-by-user',
-  /** Raw list of a user's grants (ungrouped). */
-  listByUser: 'acl-list-by-user',
   grant: 'acl-grant',
   revoke: 'acl-revoke',
   invalidate: 'acl-invalidate',

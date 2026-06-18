@@ -9,15 +9,11 @@ import { AclRole } from '../models';
 export abstract class AclRoleRepository {
   abstract insert(model: AclRole): Promise<AclRole>;
   abstract insertMany(models: AclRole[]): Promise<AclRole[]>;
-  abstract findById(id: string): Promise<AclRole>;
+  /** Lookup by the entity key (name). Roles have no id. */
+  abstract findByName(name: string): Promise<AclRole>;
   abstract findOne(filter: Record<string, any>): Promise<AclRole>;
-  abstract upsertById(id: string, model: Partial<AclRole>): Promise<AclRole>;
   abstract upsertOne(filter: Record<string, any>, model: Partial<AclRole>): Promise<AclRole>;
-  abstract updateById(id: string, model: Partial<AclRole>): Promise<AclRole>;
   abstract updateOne(filter: Record<string, any>, model: Partial<AclRole>): Promise<AclRole>;
-  /** Deep/partial merge ($set semantics) by id. */
-  abstract mergeById(id: string, model: Partial<AclRole>): Promise<AclRole>;
-  abstract removeById(id: string): Promise<AclRole>;
   abstract removeOne(filter: Record<string, any>): Promise<AclRole>;
   abstract filter(filter: Record<string, any>): Promise<AclRole[]>;
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclRole>>;

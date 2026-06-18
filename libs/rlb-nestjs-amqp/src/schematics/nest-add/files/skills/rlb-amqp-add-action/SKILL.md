@@ -12,13 +12,17 @@ First, read the shared reference (schema + gotchas):
 - `.claude/skills/rlb-amqp/references/config-schema.md`
 - `.claude/skills/rlb-amqp/references/gotchas.md`
 
+Authoritative source of truth: `docs/broker.md` (decorators + modes) and the runnable
+`sample/config-sample/calculator.ms` (its `src/app.service.ts` + `config/config.yaml`).
+
 Then locate the project's `config.yaml` (commonly `config/config.yaml`) and the service file.
 
 ***REMOVED******REMOVED*** Inputs to determine (ask only if not inferable)
 
 - **topic** (logical name), **action** (string), **mode** intended: `rpc` (default) or `event`.
 - Payload fields the method needs, and any forwarded headers (e.g. `X-GTW-AUTH-USERID`).
-- Whether to also expose it over HTTP (if yes, see the `rlb-amqp-add-route` skill) or WS.
+- Whether to also expose it over HTTP — inline via `@BrokerHTTP` (auto-publish to a gateway,
+  see Step 1b) or via a `gateway.paths[]` entry (`rlb-amqp-add-route` skill), or over WS.
 
 ***REMOVED******REMOVED*** Step 1 — the handler method
 
@@ -31,7 +35,7 @@ import { BrokerAction, BrokerParam } from '@open-rlb/nestjs-amqp';
 
 @Injectable()
 export class <Domain>ActionService {
-  @BrokerAction('<topic>', '<action>', 'rpc')
+  @BrokerAction('<topic>', '<action>', 'rpc')   // type? = 'rpc' (default) | 'event'
   async <method>(
     @BrokerParam('body', '<field>') field: string,
     @BrokerParam('header', 'X-GTW-AUTH-USERID') userId: string,
@@ -45,6 +49,48 @@ export class <Domain>ActionService {
 Ensure the service is a provider in a module that NestJS loads (the
 `MetadataScannerService` auto-discovers it at boot). Throwing an error whose `name` maps to
 an HTTP status (e.g. `NotFoundError`) yields the right gateway status.
+
+***REMOVED******REMOVED******REMOVED*** `@BrokerAction(topic, action, type?)`
+
+- `topic` must match a `topics:` entry (an `rpc` topic). `action` is the dispatch key.
+- **`(topic, action)` must be unique** across the whole app — all actions of a topic share
+  ONE consumer/queue, dispatched by `action` (gotcha 3).
+- A single method may carry **multiple** `@BrokerAction`s. When it does, any `@BrokerHTTP` /
+  `@BrokerAuth` on that method **must name its `action`** to pair deterministically (decorator
+  order is never used).
+
+***REMOVED******REMOVED******REMOVED*** `@BrokerParam(source, name?, pipe?)` — one source per argument
+
+No object destructuring; declare a separate param per field. A param with no `@BrokerParam`
+defaults to `source: 'body'` keyed by its own name. Optional `pipe` is a `PipeTransform`.
+
+| `source` | Resolves to |
+|---|---|
+| `body` | `payload[name ?? paramName]` — a single body field. |
+| `body-full` | the entire `payload` object. |
+| `header` | `headers[name ?? paramName]` — one AMQP/forwarded header (UPPERCASE+prefixed, gotcha 4). |
+| `tag` | the consumer tag of the delivery. |
+| `action` | the dispatched action string. |
+| `topic` | the topic name. |
+
+***REMOVED******REMOVED*** Step 1b (optional) — `@BrokerHTTP` for route auto-publish
+
+To expose the same handler over HTTP **without** hand-editing the gateway, stack
+`@BrokerHTTP("METHOD", "/path", dataSource, options?)` on top of the `@BrokerAction`. On boot
+the microservice publishes its `@BrokerHTTP` routes as a manifest to the gateway (route
+auto-discovery), which persists + registers them. This requires `broker.routeDiscovery`
+(see `rlb-amqp` reference / `docs/gateway-admin.md`); the gateway must also declare this
+service's topic so it can forward calls.
+
+```ts
+@BrokerAction('calculator', 'sum')
+@BrokerHTTP('POST', '/calculator/sum', 'body')   // dataSource: body | query | params | ...
+async sum(@BrokerParam('body', 'values') values: number[]) {
+  return values.reduce((a, v) => a + v, 0);
+}
+```
+
+(Pattern taken verbatim from `sample/config-sample/calculator.ms/src/app.service.ts`.)
 
 ***REMOVED******REMOVED*** Step 2 — YAML sync (the critical part)
 
@@ -85,6 +131,7 @@ single consumer dispatches by `action`.
 - topic-type exchange ⇒ queue has `routingKey` (gotcha 7)
 - `(topic, action)` unique (gotcha 3)
 - header params read the prefixed/uppercased name (gotcha 4)
+- if multiple `@BrokerAction` on one method ⇒ each `@BrokerHTTP`/`@BrokerAuth` names its `action`
 
 ***REMOVED******REMOVED*** Step 4 — build
 

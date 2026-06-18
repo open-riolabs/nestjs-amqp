@@ -96,6 +96,24 @@ export interface RabbitMQConfig {
   serializer?: MessageSerializer;
 
   replyQueues?: { [key: string]: string; };
+
+  /**
+   * Route auto-discovery — PUBLISHER side (a microservice announcing its @BrokerHTTP routes to the
+   * gateway). Lives INSIDE the broker block so a microservice's whole config is one place. The
+   * `serviceName` doubles as the AMQP `connection_name` when the latter isn't set explicitly, so a
+   * microservice doesn't have to repeat it under connectionManagerOptions. The gateway (consumer)
+   * does NOT use this — it configures route-discovery via GatewayAdminModule instead.
+   */
+  routeDiscovery?: {
+    /** Ownership key for published routes; also used as the AMQP connection_name if none is set. */
+    serviceName?: string;
+    /** Publish the manifest automatically on bootstrap (default true). */
+    publishOnBoot?: boolean;
+    /** Manifest fanout exchange (default 'rlb-route-discovery'). Must match the gateway side. */
+    exchange?: string;
+    /** Manifest work-queue (default 'rlb-route-sync'). Must match the gateway side. */
+    queue?: string;
+  };
 }
 
 export interface ConnectionInitOptions {

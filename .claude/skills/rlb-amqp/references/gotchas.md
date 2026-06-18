@@ -1,104 +1,145 @@
 ***REMOVED*** Gotchas — bug-prone cases checklist
 
-Scan this before adding/changing a topic, queue, exchange, action, route, auth provider
-or WS event. Each item is a real failure mode in this codebase.
+Scan this before adding/changing a topic, queue, exchange, action, route, auth provider,
+WS event, or route-discovery wiring. Each item is a real failure mode in this codebase.
+Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 
 ***REMOVED******REMOVED*** Decorators & handlers
 1. **No destructuring in `@BrokerAction` parameters.** Param→message mapping parses the
-   function source with a regex (`getParamNames`). `fn({a,b})` misaligns indices. Use flat
-   params.
+   function source with a regex (`getParamNames`). `fn({a,b})` misaligns indices → params
+   arrive `undefined`. Use flat params + an explicit `@BrokerParam` name on each.
 2. **Avoid default parameter values.** Only a basic `= value` strip exists
    (`removeDefaultsFromParams`); complex defaults misalign mapping. Always pass an explicit
    `name` to `@BrokerParam`.
-3. **`(topic, action)` must be unique.** All `@BrokerAction` of a topic share ONE
-   consumer/queue, dispatched by `action`. A duplicate `(topic, action)` overwrites the
-   previous one silently.
+3. **`(topic, action)` must be unique.** All `@BrokerAction` of a topic share ONE consumer/queue,
+   dispatched by `action`. A duplicate `(topic, action)` overwrites the previous one silently —
+   no error, the old handler just stops being called.
 4. **Forwarded headers are UPPERCASE + prefixed.** Read `@BrokerParam('header',
-   'X-GTW-AUTH-USERID')`, not `'userId'`.
+   'X-GTW-AUTH-USERID')`, not `'userId'`. The exact name = provider `headerPrefix` + `uidClaim`.
+5. **`handle`/`broadcast` handlers must return `void`.** A return value logs
+   `Subscribe handlers should only return void`. Only `rpc` handlers return data.
+6. **One method, multiple `@BrokerAction`s:** any `@BrokerHTTP` / `@BrokerAuth` on that method
+   MUST name its `action` to pair deterministically — decorator order is never used.
 
 ***REMOVED******REMOVED*** Topic ↔ queue ↔ exchange wiring
-5. **The topic `name` must match everywhere**: `@BrokerAction`, `topics[].name`,
+7. **The topic `name` must match everywhere**: `@BrokerAction`, `topics[].name`,
    `requestData`/`publishMessage`, `gateway.paths[].topic` / `events[]`. Typo →
    `Topic X not found in configuration`.
-6. **`mode: rpc`/`handle` need `topics[].queue` in `broker.queues[]`**, and that queue's
+8. **`mode: rpc`/`handle` need `topics[].queue` in `broker.queues[]`**, and that queue's
    `exchange` in `broker.exchanges[]`. In `handle` a missing queue throws NPE at boot
    (`queue.exchange`).
-7. **Exchange `type: topic` → queue MUST have `routingKey`**, else boot throws
-   `Queue ... has no routing key`.
-8. **`broadcast` + WebSocket gateway require `connection_name`** (`clientProperties`), else
-   throw.
+9. **Exchange `type: topic` → queue MUST have `routingKey`**, else boot throws
+   `Queue ... has no routing key`. (The samples use a `direct` exchange with matching keys.)
+10. **The gateway can only forward to topics it declares.** Route auto-discovery teaches the
+    gateway the HTTP route, NOT how to reach the microservice's broker topic. That topic (+ its
+    queue/exchange) must ALSO exist in the **gateway's own** `broker` config, or the forwarded
+    request fails with `Topic ... not found in configuration`.
+
+***REMOVED******REMOVED*** connection_name (broadcast / WebSocket / route-discovery)
+11. **`broadcast` + WebSocket require `connection_name`** (`clientProperties.connection_name`,
+    or `broker.routeDiscovery.serviceName` which fills it when unset), else throw at boot.
+12. **Every instance needs a DISTINCT `connection_name`.** Sharing it makes RabbitMQ treat the
+    per-instance queues as one consumer group and **round-robin** broadcast/WS messages — reloads
+    land on "every other" instance, WS clients miss events delivered to the other one.
 
 ***REMOVED******REMOVED*** RPC / timeout / errors
-9. **RPC reply routing**: `requestData` resolves `replyTo` from `broker.replyQueues[exchange]`;
-   absent → RabbitMQ direct-reply-to. Wrong exchange key in `replyQueues` → no reply → timeout.
-10. **Handler exceptions don't throw on the consumer**: returned as `{success:false,error}`;
-    `requestData` re-throws to the caller. Gateway status derives from `error.name` — give
-    errors a meaningful `name`.
-11. **Default RPC timeout 10s** (or `broker.defaultRpcTimeout`). Set `timeout` per path /
-    per `requestData` call for slow RPCs.
+13. **Wrong `replyQueues` key → silent timeout.** `requestData` resolves `replyTo` from
+    `broker.replyQueues[exchange]`; absent → RabbitMQ direct-reply-to. Wrong exchange key → no
+    reply routed back → the call just times out.
+14. **Handler exceptions don't crash the consumer.** Returned as `{success:false,error}`;
+    `requestData` re-throws on the caller side. Gateway HTTP status derives from `error.name` —
+    give errors a meaningful `name` (`BadRequestError`, `NotFoundError`, `ConflictError`,
+    `ForbiddenError`, `UnauthorizedError`); anything unrecognized → 500.
+15. **Default RPC timeout 10s** (`broker.defaultRpcTimeout`). Override per route (`paths[].timeout`)
+    or per `requestData` call for slow RPCs.
 
 ***REMOVED******REMOVED*** Gateway HTTP
-12. **`parseRaw: true` needs `NestFactory.create(AppModule, { rawBody: true })`** or `$raw`
-    is `undefined`.
-13. **Route params win over body/query** (re-applied last). Watch key collisions (`:id`
-    vs `body.id`).
-14. **Uploads are in `$files`** (multer `.any()`); buffers are converted to binary strings —
-    handle re-encoding carefully on the consumer side.
+16. **Boolean RPCs return `200` with `true`/`false`, not `204`.** A *defined* result — including
+    falsy `false`/`0`/`""` — is real content, sent as `200` + JSON. Only `null`/`undefined`
+    collapses to `204`. So `GET /acl/check?...` answers `200 false` for "no" — don't treat any
+    2xx as "allowed", read the body. (The old "always 204" bug is fixed.)
+17. **`parseRaw: true` needs `NestFactory.create(AppModule, { rawBody: true })`** or `$raw` is
+    `undefined`.
+18. **Route params win over body/query** (merged in last). Watch key collisions (`:id` vs `body.id`).
+19. **Uploads live in `$files`** (multer `.any()`); buffers are converted to **binary strings** —
+    re-encode carefully on the consumer (`Buffer.from(str, 'binary')`).
+20. **`/health` is a tiny liveness probe.** Action `gw-health` → `{ status: 'ok' }` (a real 200),
+    NOT a metrics dump. Use `/admin/metrics*` (`gw-metrics-*`) for metrics.
 
 ***REMOVED******REMOVED*** Auth / ACL
-15. **`roles` on an HTTP path require an `IAclRoleService`** registered via
-    `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. The
-    gateway check is **role-based** (`canUserDoGtw(path.roles, userId)`): `path.roles` lists
-    ROLE NAMES and the user passes if they hold AT LEAST ONE (resource-agnostic primary
-    filter). The provider only needs `uidClaim` (+ `headerPrefix`) to extract the userId —
-    no topic/action.
-16. **Two role-based ACL checks** on `rlb-acl` (both cached, inputs = userId + roles only):
-    `acl-can-user-do-gtw` → `canUserDoGtw(roles, userId)` (gateway primary filter, OR,
-    resource-agnostic) and `acl-can-user-do` → `canUserDo(roles, userId, resourceId)`
-    (**ms-side**; a global grant OR a grant on that resource satisfies it — the resource is
-    known only to the target ms).
-17. **Auth-providers + gateway config are passed to `ProxyModule`** (`authOptions` /
-    `gatewayOptions`), not `BrokerModule`. `BrokerModule` owns only `options`/`topics`/`appOptions`.
+21. **`roles` require `auth` on the same path/event.** No `auth` → no identity → fails closed
+    (every request `403`, logged at boot). Always pair `roles: [...]` with `auth: <provider>`.
+22. **`roles` require an `IAclRoleService`** registered via `RLB_GTW_ACL_ROLE_SERVICE` in
+    `ProxyModule.forRootAsync({ providers: [...] })`. Missing → deny (403). The gateway check is
+    **role-based, OR, resource-agnostic** (`canUserDoGtw(roles, userId)`): `roles` lists ROLE NAMES,
+    the user passes holding AT LEAST ONE. The provider only needs `uidClaim` (+ `headerPrefix`).
+23. **Two ACL check actions on `rlb-acl`** (both cached, both HTTP GET → `200` true/false):
+    `acl-can-user-do-gtw` → `canUserDoGtw(roles, userId)` (gateway filter, OR, resource-agnostic,
+    `GET /acl/check`) and `acl-can-user-do` → `canUserDo(roles, userId, resource)` (**ms-side**;
+    a global grant OR a grant on that resource passes, `GET /acl/check-resource`).
+24. **Actions, roles & auth-providers are NAME-KEYED. PUT upserts; there is NO POST.** The `name`
+    IS the key (no id). `PUT` creates-or-updates, `GET` lists, `GET .../get?name=` reads one,
+    `DELETE` removes by `name`. The old id-based ACL CRUD and `POST`-create endpoints are GONE.
+    (Gateway-admin **paths** are the exception — they keep id-keyed CRUD and a POST create.)
+25. **`acl-grant` / `acl-revoke` both REQUIRE `userId` + `roles`** (optional `resourceId` +
+    `companyId`). `grant` MERGES roles into the single `(userId, resourceId)` record (idempotent).
+    `revoke` REMOVES exactly those roles and **deletes the record once it has no roles left**.
+    `revoke` without `roles` throws `400 roles are required` — to wipe a grant, revoke all its roles.
+26. **`companyId` is grouping metadata only.** It replaced `resourceBusinessId` and plays NO part
+    in authorization — it only groups resources in `acl-list-resources-by-user`. Targeting is by
+    `(userId, resourceId)` only. Both grant/revoke validate every role exists (unknown → `400`).
+27. **Removed actions:** `acl-list-by-user` and `acl-verify-access` no longer exist. Use
+    `acl-can-user-do` for resource-scoped checks and `acl-list-resources-by-user` to list resources.
+28. **Auth & gateway config go to `ProxyModule`** (`authOptions` / `gatewayOptions`), not
+    `BrokerModule`. `BrokerModule` owns only `options` / `topics` / `appOptions`.
+
+***REMOVED******REMOVED*** Auth providers (hardening)
+29. **JWKS verifies TLS by default.** `httpsAllowUnauthorized: true` only for self-signed dev issuers.
+30. **`algorithms` is REQUIRED for `jwt`/`jwks`.** Omitting denies verification (algorithm-confusion
+    guard). For `jwks` only asymmetric algs are allowed (`RS*`/`ES*`/`PS*`); `HS*`/`none` rejected.
+31. **Define `jwtMap` or NO claims are forwarded.** Without it the token is still accepted
+    (`success:true`) but no identity headers go downstream — fail-safe, not a leak. Declare it to
+    emit `X-GTW-AUTH-USERID` and friends.
+32. **`str-compare`/`basic` PASS THROUGH when their secret is unset — by design.** A `str-compare`
+    with no `secret`, or a `basic` with no `clientSecret`, authenticates EVERY request (effectively
+    open/disabled). Set the secret to enforce it.
+33. **Credential `mechanism` must be `PLAIN` | `EXTERNAL` | `AMQPLAIN`** (case-insensitive). Unknown
+    value leaves SASL `response` unset → AMQP auth fails.
 
 ***REMOVED******REMOVED*** WebSocket
-16. **Auth is per-event, not global.** `events[].auth` names the provider that verifies the
-    connection token AND maps its claims for THAT event (at subscribe time, memoized per
-    provider). `scopeClaim` references the MAPPED claim (with `headerPrefix`, e.g.
-    `X-GTW-AUTH-USERID`), not the raw token claim. `payloadKey` is the event-payload field.
-    `scopeClaim` without `payloadKey` denies everything (safe default). `requireAuth: false`
-    on an event makes `auth` optional (anon allowed, claims mapped if a token is present).
-    `gateway.ws` only carries connection-level limits/heartbeat — no auth fields.
-17. **Don't use a fixed durable queue for WS events.** The lib creates a per-instance
-    exclusive ephemeral queue for fan-out; a shared queue makes instances compete and clients
-    on one instance miss messages.
-18. **Token transport is the subprotocol**: `new WebSocket(url, [token])`. Browsers can't set
-    custom handshake headers.
+34. **Auth is per-event, not global.** `events[].auth` names the provider that verifies the
+    connection token AND maps its claims for THAT event (memoized per provider at subscribe). `scopeClaim`
+    references the MAPPED claim (prefixed, e.g. `X-GTW-AUTH-USERID`), `payloadKey` is the payload
+    field. **`scopeClaim` without `payloadKey` denies everything** (safe default). `requireAuth:false`
+    makes `auth` optional (anon allowed; claims mapped if a token is present). `gateway.ws` carries
+    only connection-level limits/heartbeat — no auth fields.
+35. **Don't bind a WS event to a fixed durable queue.** The lib creates a per-instance exclusive
+    ephemeral queue for fan-out; a shared/durable queue makes instances compete and clients on one
+    instance miss messages delivered to another.
+36. **Token rides in the subprotocol**: `new WebSocket(url, [token])` (browsers can't set handshake
+    headers). The session is bounded by the JWT `exp` — closed with `1008` on expiry, nothing
+    delivered afterward. Long-lived clients need token refresh + reconnect.
+37. **Set `gateway.ws.allowedOrigins`** to reject cross-site handshakes; omitted → all Origins
+    accepted (logged at boot). `maxMessageBytes` (default 16384) drops oversized client frames.
 
-***REMOVED******REMOVED*** Publish / event
-19. **`publishMessage` is `async` — `await` it** for the publisher-confirm guarantee and to
-    catch failures. Un-awaited = fire-and-forget without guarantee.
-20. **`handle`/`broadcast` handlers must return `void`**; a return value logs
-    `Subscribe handlers should only return void`.
+***REMOVED******REMOVED*** Publish / events
+38. **`publishMessage` is `async` — `await` it** for the publisher-confirm guarantee and to catch
+    failures. Un-awaited = fire-and-forget without guarantee. (For an `event`-mode route the gateway
+    awaits the confirm before returning the 2xx — the success status is not optimistic.)
 
-***REMOVED******REMOVED*** TLS / credentials / provider hardening
-21. **JWKS verifies TLS by default.** `httpsAllowUnauthorized: true` only for self-signed dev
-    issuers.
-22. **Credential `mechanism`**: `PLAIN` | `EXTERNAL` | `AMQPLAIN` (case-insensitive). Unknown
-    value leaves `response` unset → auth fails.
-23. **`algorithms` is REQUIRED for `jwt`/`jwks`.** If omitted, verification is denied
-    (algorithm-confusion guard). For `jwks` only asymmetric algs are allowed (RS*/ES*/PS*);
-    `HS*`/`none` are rejected.
-24. **`str-compare`/`basic` PASS THROUGH when their secret is unset.** A `str-compare`
-    without `secret` or a `basic` without `clientSecret` treats every request as authenticated
-    (provider effectively open/disabled — by design). Set the secret to actually enforce it.
-25. **Define `jwtMap`.** Without it NO claims are forwarded (the token is still accepted,
-    `success:true`): the gateway fails safe instead of leaking the whole payload. Declare it
-    to forward identity headers (e.g. `X-GTW-AUTH-USERID`).
-
-***REMOVED******REMOVED*** WebSocket session/transport security
-26. **WS sessions are bounded by the token `exp`.** The connection is closed (`1008`) when the
-    JWT expires; no delivery happens afterward. Long-lived sockets need token refresh +
-    reconnect.
-27. **Set `gateway.ws.allowedOrigins`** to reject cross-site handshakes; if omitted, all
-    Origins are accepted (logged at boot). `maxMessageBytes` (default 16384) drops oversized
-    client frames.
+***REMOVED******REMOVED*** Reload & route auto-discovery
+39. **The only reload action is `gw-reload`** (`GW_RELOAD_ACTION`). The control-topic subscriber
+    rebuilds routes ONLY for `gw-reload`; every other message on the control topic is ignored.
+    Seed then reload: `POST /admin/paths` → `POST /admin/reload` (publishes `gw-reload` on
+    `rlb-gateway-control`). No restart. Concurrent reloads are coalesced into one extra pass.
+40. **Route-discovery config is SPLIT; exchange/queue MUST match on both sides.**
+    - **Publisher (microservice):** `broker.routeDiscovery { serviceName, publishOnBoot, exchange?, queue? }`.
+      `serviceName` is required to publish and also fills `connection_name` when unset.
+    - **Consumer (gateway):** `GatewayAdminModule` `routeDiscovery { exchange?, queue? }` (NEST code,
+      no `serviceName` — the gateway only receives).
+    Both default to `exchange: rlb-route-discovery` / `queue: rlb-route-sync`. Override only to
+    namespace per env — but set the SAME values on BOTH sides or manifests never reach the gateway.
+41. **Topic NAMES `rlb-acl` / `rlb-gateway-admin` / `rlb-gateway-control` and all action strings
+    are decorator-bound and NOT configurable.** Only exchange/queue/routingKey and the
+    route-discovery exchange/queue are. The route-sync handler never throws (logs + acks, no poison
+    loop); an empty manifest soft-disables a service's existing routes (and logs a warning).

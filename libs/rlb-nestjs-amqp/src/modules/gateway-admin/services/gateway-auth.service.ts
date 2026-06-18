@@ -11,27 +11,24 @@ export class GatewayAuthService {
 
   constructor(private readonly repo: AuthProviderRepository) { }
 
-  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authCreate, 'rpc')
-  async create(@BrokerParam('body-full') model: StoredAuthProvider): Promise<StoredAuthProvider> {
-    if (!model?.name) throw new BadRequestError('name is required');
-    if (!model?.type) throw new BadRequestError('type is required');
-    return this.repo.insert(model);
-  }
-
+  // PUT = create-or-update, keyed by `name` (auth-providers have no id). There is no POST.
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authUpdate, 'rpc')
-  async update(@BrokerParam('body', 'id') id: string, @BrokerParam('body-full') model: StoredAuthProvider): Promise<StoredAuthProvider> {
-    if (!id) throw new BadRequestError('id is required');
-    return this.repo.updateById(id, model);
+  async upsert(@BrokerParam('body', 'name') name: string, @BrokerParam('body-full') model: StoredAuthProvider): Promise<StoredAuthProvider> {
+    if (!name) throw new BadRequestError('name is required');
+    if (!model?.type) throw new BadRequestError('type is required');
+    return this.repo.upsertByName(name, model);
   }
 
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authDelete, 'rpc')
-  async remove(@BrokerParam('body', 'id') id: string): Promise<StoredAuthProvider> {
-    return this.repo.removeById(id);
+  async remove(@BrokerParam('body', 'name') name: string): Promise<StoredAuthProvider> {
+    if (!name) throw new BadRequestError('name is required');
+    return this.repo.removeByName(name);
   }
 
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authGet, 'rpc')
-  async get(@BrokerParam('body', 'id') id: string): Promise<StoredAuthProvider> {
-    return this.repo.findById(id);
+  async get(@BrokerParam('body', 'name') name: string): Promise<StoredAuthProvider> {
+    if (!name) throw new BadRequestError('name is required');
+    return this.repo.findByName(name);
   }
 
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authList, 'rpc')

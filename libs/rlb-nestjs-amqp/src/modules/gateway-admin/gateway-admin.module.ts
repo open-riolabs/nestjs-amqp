@@ -1,4 +1,4 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { GatewayAdminModuleOptions } from './config/gateway-admin.config';
 import { RLB_GW_ADMIN_OPTIONS } from './const';
 import { GatewayAuthService } from './services/gateway-auth.service';
@@ -23,6 +23,29 @@ export class GatewayAdminModule {
         ...providers,
         ...SERVICES,
       ],
+      exports: MODULE_EXPORTS,
+    };
+  }
+
+  /**
+   * Async setup: resolve {@link GatewayAdminModuleOptions} (e.g. the consumer-side `routeDiscovery`
+   * exchange/queue) from a factory such as ConfigService. `providers` carries the repository bindings.
+   */
+  static forRootAsync(asyncOptions: {
+    imports?: Type<any>[];
+    inject?: Type<any>[];
+    useFactory: (...args: any[]) => Promise<GatewayAdminModuleOptions> | GatewayAdminModuleOptions;
+    providers?: Provider[];
+  }): DynamicModule {
+    const optionsProvider: Provider = {
+      provide: RLB_GW_ADMIN_OPTIONS,
+      useFactory: asyncOptions.useFactory,
+      inject: asyncOptions.inject || [],
+    };
+    return {
+      module: GatewayAdminModule,
+      imports: asyncOptions.imports || [],
+      providers: [optionsProvider, ...(asyncOptions.providers || []), ...SERVICES],
       exports: MODULE_EXPORTS,
     };
   }

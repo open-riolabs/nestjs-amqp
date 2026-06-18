@@ -1,0 +1,26 @@
+***REMOVED*** compiled output
+/dist
+/node_modules
+/build
+
+***REMOVED*** Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+***REMOVED*** OS
+.DS_Store
+
+***REMOVED*** Tests
+/coverage
+/.nyc_output
+
+***REMOVED*** dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local

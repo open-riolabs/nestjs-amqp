@@ -11,7 +11,7 @@ export const GW_ADMIN_ACTIONS = {
   pathGet: 'gw-path-get',
   pathList: 'gw-path-list',
   pathExport: 'gw-path-export',
-  authCreate: 'gw-auth-create',
+  // Auth-providers are keyed by `name` (no id). PUT upserts by name; there is no POST.
   authUpdate: 'gw-auth-update',
   authDelete: 'gw-auth-delete',
   authGet: 'gw-auth-get',
@@ -21,4 +21,6 @@ export const GW_ADMIN_ACTIONS = {
   metricsGet: 'gw-metrics-get',
   metricsSeries: 'gw-metrics-series',
   metricsPoints: 'gw-metrics-points',
+  /** Liveness probe: returns a tiny { status:'ok' } so /health is a 200, not a data dump. */
+  health: 'gw-health',
 } as const;

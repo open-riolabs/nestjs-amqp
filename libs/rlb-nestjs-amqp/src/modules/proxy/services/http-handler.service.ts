@@ -3,7 +3,7 @@ import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { NextFunction, Request, Response, Router } from "express";
 import { BrokerService } from "../../broker";
-import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
+import { GW_RELOAD_ACTION, RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
@@ -17,6 +17,12 @@ export class HttpHandlerService implements OnModuleInit {
   /** Swappable route table. Mounted once via a stable delegator; rebuilt on reload so
    *  routes can be added/modified/removed at runtime without restarting the process. */
   private dynamicRouter: Router | null = null;
+
+  /** Serializes route reloads: concurrent reload signals must never overlap (overlap could corrupt
+   *  the atomic router swap or race the DB-paths RPC — a likely cause of "reloads every other time").
+   *  While one reload runs, further signals set a pending flag that triggers exactly one more pass. */
+  private reloadInFlight = false;
+  private reloadPending = false;
 
   private readonly logger: Logger;
   private readonly multer: multer.Multer;
@@ -52,15 +58,42 @@ export class HttpHandlerService implements OnModuleInit {
     const reloadTopic = this.gatewayConfig.reloadTopic;
     if (reloadTopic) {
       try {
-        await this.broker.registerHandler(reloadTopic, async () => {
-          this.logger.log(`[RELOAD] signal received on '${reloadTopic}' — rebuilding routes`);
+        await this.broker.registerHandler(reloadTopic, async (msg: any) => {
+          // Only the dedicated reload action rebuilds routes. Any other message on the control topic
+          // (e.g. microservice config / route-discovery signals) is NOT a route reload and is ignored
+          // here — this keeps the HTTP-forced reload decoupled from that traffic.
+          if (msg?.action && msg.action !== GW_RELOAD_ACTION) {
+            this.logger.debug(`[RELOAD] ignoring control message '${msg.action}' (not '${GW_RELOAD_ACTION}')`);
+            return;
+          }
+          this.logger.log(`[RELOAD] '${GW_RELOAD_ACTION}' received on '${reloadTopic}' — rebuilding routes`);
           await this.reload();
         });
-        this.logger.log(`[RELOAD] listening for route-reload signals on topic '${reloadTopic}'`);
+        this.logger.log(`[RELOAD] listening for '${GW_RELOAD_ACTION}' signals on topic '${reloadTopic}'`);
       } catch (error) {
         this.logger.warn(`[RELOAD] could not subscribe to reload topic '${reloadTopic}': ${error?.message}`);
       }
     }
+  }
+
+  /**
+   * Public reload entry point. Coalesces concurrent reload signals so two reloads never run at the
+   * same time: while one is in flight, extra calls just mark a pending pass and return immediately;
+   * exactly one more reload runs afterwards. Prevents the overlap that made automatic reloads flaky.
+   */
+  async reload(): Promise<number> {
+    if (this.reloadInFlight) { this.reloadPending = true; return -1; }
+    this.reloadInFlight = true;
+    let result = 0;
+    try {
+      do {
+        this.reloadPending = false;
+        result = await this.doReload();
+      } while (this.reloadPending);
+    } finally {
+      this.reloadInFlight = false;
+    }
+    return result;
   }
 
   /**
@@ -69,7 +102,7 @@ export class HttpHandlerService implements OnModuleInit {
    * added paths appear, removed paths disappear, and modified paths are re-registered.
    * Returns the number of routes successfully registered.
    */
-  async reload(): Promise<number> {
+  private async doReload(): Promise<number> {
     const extPath: PathDefinition[] = [];
     if (this.gatewayConfig.loadConfig?.paths) {
       try {

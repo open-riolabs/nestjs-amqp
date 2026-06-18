@@ -22,6 +22,7 @@
     "nest-add": "npx schematics ./dist/schematics/collection.json:nest-add project --name=Pet --no-dry-run"
   },
   "dependencies": {
+    "@inquirer/prompts": "^7.10.1",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.26",
     "@nestjs/config": "^4.0.4",
@@ -41,6 +42,9 @@
   "devDependencies": {
     "@angular-devkit/core": "^22.0.1",
     "@angular-devkit/schematics": "^22.0.1",
+    "@nestjs/mongoose": "^11.0.4",
+    "@types/js-yaml": "^4.0.9",
+    "mongoose": "^8.19.3",
     "@nestjs/cli": "^11.0.23",
     "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.1.26",

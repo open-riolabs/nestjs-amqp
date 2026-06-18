@@ -4,9 +4,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug gateway-2 (self-contained)",
+      "name": "Debug gateway-in-memory (in-memory stores)",
       "args": [
-        "${workspaceFolder}/apps/gateway-2/src/main.ts"
+        "${workspaceFolder}/sample/config-sample/gateway-in-memory/src/main.ts"
       ],
       "runtimeArgs": [
         "--nolazy",
@@ -23,7 +23,56 @@
         "PORT": "3000"
       },
       "sourceMaps": true,
-      "cwd": "${workspaceFolder}",
+      "cwd": "${workspaceFolder}/sample/config-sample/gateway-in-memory",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug gateway-db (MongoDB)",
+      "args": [
+        "${workspaceFolder}/sample/config-sample/gateway-db/src/main.ts"
+      ],
+      "runtimeArgs": [
+        "--nolazy",
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.debug.json",
+        "TS_NODE_TRANSPILE_ONLY": "true",
+        "TZ": "UTC",
+        "PORT": "3002"
+      },
+      "sourceMaps": true,
+      "cwd": "${workspaceFolder}/sample/config-sample/gateway-db",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug calculator.ms (microservice)",
+      "args": [
+        "${workspaceFolder}/sample/config-sample/calculator.ms/src/main.ts"
+      ],
+      "runtimeArgs": [
+        "--nolazy",
+        "-r",
+        "ts-node/register",
+        "-r",
+        "tsconfig-paths/register"
+      ],
+      "env": {
+        "NODE_ENV": "development",
+        "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.debug.json",
+        "TS_NODE_TRANSPILE_ONLY": "true",
+        "TZ": "UTC"
+      },
+      "sourceMaps": true,
+      "cwd": "${workspaceFolder}/sample/config-sample/calculator.ms",
       "console": "integratedTerminal"
     },
     {
@@ -54,10 +103,11 @@
   ],
   "compounds": [
     {
-      "name": "Debug both gateways",
+      "name": "Debug all samples",
       "configurations": [
-        "Debug gateway-2 (self-contained)",
-        "Debug gateway (basic example)"
+        "Debug gateway-in-memory (in-memory stores)",
+        "Debug gateway-db (MongoDB)",
+        "Debug calculator.ms (microservice)"
       ],
       "stopAll": true
     }

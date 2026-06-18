@@ -19,12 +19,16 @@ export class AclManagementService {
     private readonly cache: AclCacheService,
   ) { }
 
+  // grant and revoke are DUAL operations on the same key — the (userId, resourceId) grant — with the
+  // same params: userId (required), roles (required), resourceId (optional), companyId (optional,
+  // grouping-only metadata). grant ADDS roles to the pair (creating the record if absent); revoke
+  // REMOVES them (deleting the record once no roles remain).
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.grant, 'rpc')
   async grant(
     @BrokerParam('body', 'userId') userId: string,
     @BrokerParam('body', 'roles') roles: string[],
     @BrokerParam('body', 'resourceId') resourceId?: string,
-    @BrokerParam('body', 'resourceBusinessId') resourceBusinessId?: string,
+    @BrokerParam('body', 'companyId') companyId?: string,
     @BrokerParam('body', 'friendlyName') friendlyName?: string,
   ): Promise<AclGrant> {
     if (!userId) throw new BadRequestError('userId is required');
@@ -38,11 +42,11 @@ export class AclManagementService {
       const merged = Array.from(new Set([...(existing.roles || []), ...roles]));
       result = await this.grants.updateById(existing._id!, {
         roles: merged,
-        resourceBusinessId: resourceBusinessId ?? existing.resourceBusinessId,
+        companyId: companyId ?? existing.companyId,
         friendlyName: friendlyName ?? existing.friendlyName,
       });
     } else {
-      result = await this.grants.insert({ userId, roles: Array.from(new Set(roles)), resourceId, resourceBusinessId, friendlyName });
+      result = await this.grants.insert({ userId, roles: Array.from(new Set(roles)), resourceId, companyId, friendlyName });
     }
     await this.cache.invalidate(userId);
     return result;
@@ -51,23 +55,20 @@ export class AclManagementService {
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.revoke, 'rpc')
   async revoke(
     @BrokerParam('body', 'userId') userId: string,
+    @BrokerParam('body', 'roles') roles: string[],
     @BrokerParam('body', 'resourceId') resourceId?: string,
-    @BrokerParam('body', 'roles') roles?: string[],
+    @BrokerParam('body', 'companyId') companyId?: string,
   ): Promise<AclGrant | null> {
     if (!userId) throw new BadRequestError('userId is required');
+    if (!roles?.length) throw new BadRequestError('roles are required');
     const existing = await this.findGrant(userId, resourceId);
     if (!existing) return null;
-    let result: AclGrant | null;
-    if (roles?.length) {
-      // Remove only the given roles; keep the grant while any remain, delete it once empty.
-      const remaining = (existing.roles || []).filter((r) => !roles.includes(r));
-      result = remaining.length
-        ? await this.grants.updateById(existing._id!, { roles: remaining })
-        : await this.grants.removeById(existing._id!);
-    } else {
-      // No roles specified → revoke the whole grant for that (userId, resourceId).
-      result = await this.grants.removeById(existing._id!);
-    }
+    // Remove the given roles from the (userId, resourceId) grant; keep the record while any role
+    // remains, delete it once empty. companyId is grouping-only metadata (no effect on targeting).
+    const remaining = (existing.roles || []).filter((r) => !roles.includes(r));
+    const result = remaining.length
+      ? await this.grants.updateById(existing._id!, { roles: remaining })
+      : await this.grants.removeById(existing._id!);
     await this.cache.invalidate(userId);
     return result;
   }
@@ -111,7 +112,7 @@ export class AclManagementService {
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionGet, 'rpc')
   async getAction(@BrokerParam('body', 'name') name: string): Promise<AclAction> {
     if (!name) throw new BadRequestError('name is required');
-    return this.actions.findOne({ name });
+    return this.actions.findByName(name);
   }
 
   // PUT = create-or-update, keyed by `name` (roles have no separate id — the name IS the key). A
@@ -152,7 +153,7 @@ export class AclManagementService {
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleGet, 'rpc')
   async getRole(@BrokerParam('body', 'name') name: string): Promise<AclRole> {
     if (!name) throw new BadRequestError('name is required');
-    return this.roles.findOne({ name });
+    return this.roles.findByName(name);
   }
 
   async getActionsByNames(names: string[]): Promise<string[]> {

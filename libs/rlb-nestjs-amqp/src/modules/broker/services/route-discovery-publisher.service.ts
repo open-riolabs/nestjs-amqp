@@ -38,14 +38,17 @@ export class RouteDiscoveryPublisherService implements OnApplicationBootstrap {
     }
     const routes = buildPathDefinitionsFromMeta(this.autoDiscovery?.meta || {});
     const manifest: RouteManifest = { service, routes };
+    // Configurable (default to the shared constants); the gateway must use the SAME names.
+    const exchange = this.config?.exchange || ROUTE_DISCOVERY_EXCHANGE;
+    const queue = this.config?.queue || ROUTE_SYNC_QUEUE;
     try {
       // Ensure the durable topology exists BEFORE publishing, so the manifest is never lost even
       // if the gateway consumer hasn't subscribed yet (the durable queue buffers it).
-      await this.amqp.channel.assertExchange(ROUTE_DISCOVERY_EXCHANGE, 'fanout', { durable: true });
-      await this.amqp.channel.assertQueue(ROUTE_SYNC_QUEUE, { durable: true, exclusive: false, autoDelete: false });
-      await this.amqp.channel.bindQueue(ROUTE_SYNC_QUEUE, ROUTE_DISCOVERY_EXCHANGE, '');
-      const ok = await this.amqp.publish(ROUTE_DISCOVERY_EXCHANGE, '', manifest, { persistent: true });
-      this.logger.log(`[route-discovery] published manifest for '${service}': ${routes.length} route(s)`);
+      await this.amqp.channel.assertExchange(exchange, 'fanout', { durable: true });
+      await this.amqp.channel.assertQueue(queue, { durable: true, exclusive: false, autoDelete: false });
+      await this.amqp.channel.bindQueue(queue, exchange, '');
+      const ok = await this.amqp.publish(exchange, '', manifest, { persistent: true });
+      this.logger.log(`[route-discovery] published manifest for '${service}' to '${exchange}': ${routes.length} route(s)`);
       return ok;
     } catch (e) {
       this.logger.error(`[route-discovery] publish failed: ${(e as Error)?.message}`);

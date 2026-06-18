@@ -1,0 +1,274 @@
+***REMOVED*** =============================================================================
+***REMOVED*** broker.yaml — REFERENCE template for @open-rlb/nestjs-amqp
+***REMOVED*** =============================================================================
+***REMOVED*** A heavily-annotated reference of the `broker:` (RabbitMQConfig) and `topics:`
+***REMOVED*** (BrokerTopic[]) blocks, with EVERY option documented (purpose + default).
+***REMOVED***
+***REMOVED*** This is a TEMPLATE, not a runnable config for one specific app — it shows the
+***REMOVED*** full surface area in one place. Copy the pieces you need and delete the rest;
+***REMOVED*** a real service only declares the exchanges/queues/topics it actually uses
+***REMOVED*** (see the runnable examples under calculator.ms/ and gateway-in-memory/).
+***REMOVED***
+***REMOVED*** These two blocks map to the first two arguments of
+***REMOVED***   BrokerModule.forRoot(broker, topics, app?)
+***REMOVED***
+***REMOVED*** Conventions used in this file:
+***REMOVED***   - amqp://localhost:5672/           placeholder broker URI (vhost after the
+***REMOVED***                                      last slash; empty here = default vhost)
+***REMOVED***   - https://auth.example.com/...     placeholder issuer/JWKS (not used here)
+***REMOVED***   - REPLACE_ME                       any environment-specific value
+***REMOVED***
+***REMOVED*** WHAT IS / ISN'T CONFIGURABLE
+***REMOVED***   - Topic NAMES (e.g. rlb-acl, rlb-gateway-admin, rlb-gateway-control) are
+***REMOVED***     DECORATOR-BOUND constants in the library — they are NOT free to rename.
+***REMOVED***     If you consume those built-in modules, the `topics[].name` MUST match the
+***REMOVED***     constant the decorators use. For your OWN topics you choose the name.
+***REMOVED***   - ACTION strings (e.g. acl-action-update, gw-path-export, gw-reload) are
+***REMOVED***     likewise decorator-bound on @BrokerAction and NOT configurable here.
+***REMOVED***   - exchange / queue / routingKey, and the route-discovery exchange/queue, ARE
+***REMOVED***     configurable — pick whatever names suit your broker/topology.
+***REMOVED*** =============================================================================
+
+broker:
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** name — free-form label for the connection (cosmetic). Optional.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  name: "rabbitmq"
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** uri — AMQP connection URI. REQUIRED.
+  ***REMOVED*** Everything after the last "/" is the vhost (empty => default vhost "/").
+  ***REMOVED*** guest/guest only authenticates from localhost — use real credentials (below)
+  ***REMOVED*** for any remote broker.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  uri: "amqp://localhost:5672/"
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** defaultSubscribeErrorBehavior — what the connection does when a SUBSCRIBE
+  ***REMOVED*** handler throws (the consumer/decorator path). One of: ack | nack | requeue.
+  ***REMOVED*** "ack"  => swallow the failed message (don't redeliver).
+  ***REMOVED*** Library default when unset is REQUEUE; the samples set "ack".
+  ***REMOVED*** Per-topic override: topics[].errorBehavior.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  defaultSubscribeErrorBehavior: "ack"
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** defaultPublishErrorBehavior — behavior when a publish is rejected.
+  ***REMOVED*** "reject" surfaces the failure to the caller (publisher confirms reject on
+  ***REMOVED*** nack). Mirrors the samples.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  defaultPublishErrorBehavior: "reject"
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** prefetchCount — DEFAULT channel prefetch (max unacked messages in flight per
+  ***REMOVED*** channel). Tunes throughput vs. fairness across handlers. Optional; if unset
+  ***REMOVED*** the connection-manager default applies. Per-channel overrides exist via the
+  ***REMOVED*** `channels` map (not shown here).
+  ***REMOVED*** ---------------------------------------------------------------------------
+  prefetchCount: 10
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** defaultRpcTimeout — default RPC wait in ms before requestData() rejects.
+  ***REMOVED*** Resolution order at call time: explicit arg -> topic -> this -> 10000.
+  ***REMOVED*** Optional.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  defaultRpcTimeout: 10000
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** routeDiscovery — PUBLISHER-side route auto-discovery. OPTIONAL.
+  ***REMOVED*** A microservice announces its @BrokerHTTP routes to the gateway over AMQP.
+  ***REMOVED*** It lives INSIDE the broker block (broker.routeDiscovery) so a microservice's
+  ***REMOVED*** whole identity is configured in one place.
+  ***REMOVED***
+  ***REMOVED*** NOTE: the GATEWAY (the CONSUMER of route manifests) does NOT use this — it
+  ***REMOVED*** configures its side via GatewayAdminModule. Only publishing microservices
+  ***REMOVED*** set broker.routeDiscovery.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  routeDiscovery:
+    ***REMOVED*** serviceName — ownership key the gateway uses to group/replace THIS
+    ***REMOVED*** service's routes. ALSO promotes to the AMQP connection_name when no
+    ***REMOVED*** explicit clientProperties.connection_name is set below (an explicit
+    ***REMOVED*** connection_name always wins). Required to actually publish.
+    serviceName: REPLACE_ME-service
+
+    ***REMOVED*** publishOnBoot — announce the route manifest automatically at bootstrap.
+    ***REMOVED*** Default: true.
+    publishOnBoot: true
+
+    ***REMOVED*** exchange — fanout exchange the manifests are published to. Default:
+    ***REMOVED*** "rlb-route-discovery". CONFIGURABLE, but the SAME value must be set on the
+    ***REMOVED*** gateway side (override only to namespace route-discovery per env/cluster).
+    exchange: rlb-route-discovery
+
+    ***REMOVED*** queue — durable shared work-queue the gateway(s) consume manifests from
+    ***REMOVED*** (competing consumers). Default: "rlb-route-sync". Must match the gateway.
+    queue: rlb-route-sync
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** connectionManagerOptions — passed to amqp-connection-manager. OPTIONAL.
+  ***REMOVED*** Holds heartbeat/reconnect cadence and the underlying amqplib connectionOptions
+  ***REMOVED*** (credentials + clientProperties.connection_name).
+  ***REMOVED*** ---------------------------------------------------------------------------
+  connectionManagerOptions:
+    ***REMOVED*** heartbeatIntervalInSeconds — AMQP heartbeat. 0 disables. Common: 60.
+    heartbeatIntervalInSeconds: 60
+    ***REMOVED*** reconnectTimeInSeconds — delay between reconnect attempts after a drop.
+    reconnectTimeInSeconds: 60
+
+    connectionOptions:
+      ***REMOVED*** clientProperties.connection_name — the name this connection shows up as
+      ***REMOVED*** in the RabbitMQ management UI. IMPORTANT for `broadcast` topics: the
+      ***REMOVED*** per-instance broadcast queue is `${topic}-${connection_name}`, so every
+      ***REMOVED*** instance MUST have a DISTINCT connection_name (the broker throws on boot
+      ***REMOVED*** if a broadcast topic is declared and connection_name is missing).
+      ***REMOVED*** If omitted, routeDiscovery.serviceName is promoted to connection_name.
+      clientProperties:
+        connection_name: "REPLACE_ME-instance-1"
+
+      ***REMOVED*** credentials — used when the URI doesn't carry user:pass, or to pick a
+      ***REMOVED*** specific SASL mechanism. Replace guest/guest for any remote broker.
+      credentials:
+        mechanism: PLAIN
+        username: REPLACE_ME
+        password: REPLACE_ME
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** connectionInitOptions — whether to BLOCK on a healthy connection at boot.
+  ***REMOVED*** OPTIONAL. Defaults: wait=true, timeout=5000 (ms), reject=true.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  connectionInitOptions:
+    wait: true        ***REMOVED*** block until connected (or timeout)
+    timeout: 5000     ***REMOVED*** ms to wait for a healthy connection
+    reject: true      ***REMOVED*** throw on timeout (false => continue, treat as non-fatal)
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** exchanges — exchanges to assert on connect. OPTIONAL (but you need at least
+  ***REMOVED*** one to route messages). Each entry:
+  ***REMOVED***   name                       exchange name (CONFIGURABLE).
+  ***REMOVED***   type                       direct | topic | fanout | headers.
+  ***REMOVED***   createExchangeIfNotExists  assert it if missing (true) vs. assume present.
+  ***REMOVED***   options                    amqplib AssertExchange options.
+  ***REMOVED***     durable    survive a broker restart (recommended true).
+  ***REMOVED***     autoDelete delete when the last queue unbinds.
+  ***REMOVED***     internal   not publishable to directly by clients.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  exchanges:
+    - name: rlb
+      type: direct
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        internal: false
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** queues — queues to assert and bind on connect. OPTIONAL. Each entry:
+  ***REMOVED***   name                    queue name (CONFIGURABLE).
+  ***REMOVED***   exchange                exchange to bind to (must exist / be declared above).
+  ***REMOVED***   routingKey              binding/routing key (direct exchange => exact match).
+  ***REMOVED***   createQueueIfNotExists  assert it if missing.
+  ***REMOVED***   options                 amqplib AssertQueue options.
+  ***REMOVED***     durable    survive a broker restart (pairs with persistent publishes).
+  ***REMOVED***     autoDelete delete when the last consumer disconnects.
+  ***REMOVED***     exclusive  restrict to the declaring connection.
+  ***REMOVED*** NOTE: do NOT declare the per-instance queue for a `broadcast` topic here —
+  ***REMOVED*** the broker asserts `${topic}-${connection_name}` for you at subscribe time.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  queues:
+    ***REMOVED*** RPC/handle backing queue (request/response or plain consume).
+    - name: rlb-acl
+      exchange: rlb
+      routingKey: rlb-acl
+      createQueueIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
+    - name: rlb-gateway-admin
+      exchange: rlb
+      routingKey: rlb-gateway-admin
+      createQueueIfNotExists: true
+      options:
+        durable: true
+
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** replyQueues — OPTIONAL. `{ [exchangeName]: replyQueueName }`. By default RPC
+  ***REMOVED*** uses RabbitMQ direct-reply-to (a fast per-request pseudo-queue). Map a fixed
+  ***REMOVED*** reply queue per exchange here to use that instead; when an entry exists for
+  ***REMOVED*** the request's exchange, its replyTo is used. Leave commented to use
+  ***REMOVED*** direct-reply-to.
+  ***REMOVED*** ---------------------------------------------------------------------------
+  ***REMOVED*** replyQueues:
+  ***REMOVED***   rlb: rlb-reply
+
+***REMOVED*** =============================================================================
+***REMOVED*** topics: — BrokerTopic[]. The second forRoot argument.
+***REMOVED*** Each topic names a logical channel and binds it to one of FOUR modes. The mode
+***REMOVED*** decides how the broker wires it and what the decorators / BrokerService do.
+***REMOVED***
+***REMOVED*** Common fields:
+***REMOVED***   name          logical topic name. For built-in modules this MUST equal the
+***REMOVED***                 decorator-bound constant; for your own topics, your choice.
+***REMOVED***   mode          rpc | event | broadcast | handle.
+***REMOVED***   queue         queue name (rpc / handle).
+***REMOVED***   exchange      exchange name.
+***REMOVED***   routingKey    routing key (broadcast / topic exchanges).
+***REMOVED***   errorBehavior per-topic override of defaultSubscribeErrorBehavior
+***REMOVED***                 (decorator path). Default: REQUEUE.
+***REMOVED***   mandatory     publish with AMQP `mandatory` (unroutable => returned).
+***REMOVED***                 Default: false. Applies to event/broadcast and the rpc request.
+***REMOVED***   persistent    publish with delivery-mode 2 (survives broker restart IF the
+***REMOVED***                 target queue is durable). Default: false.
+***REMOVED***   toObservable  (handle only) stream incoming messages onto
+***REMOVED***                 BrokerService.events$ instead of a handler fn. Default: false.
+***REMOVED*** =============================================================================
+topics:
+  ***REMOVED*** --- 1) rpc -----------------------------------------------------------------
+  ***REMOVED*** WHEN: request/response. The microservice registers an RPC consumer on
+  ***REMOVED*** `queue`; callers use requestData() and await a reply. This is ALSO the mode
+  ***REMOVED*** used by decorator-discovered @BrokerAction handlers. Requires queue or
+  ***REMOVED*** exchange.
+  - name: rlb-acl
+    mode: rpc
+    queue: rlb-acl
+    exchange: rlb
+    routingKey: rlb-acl
+    ***REMOVED*** errorBehavior: ack     ***REMOVED*** optional per-topic override
+    ***REMOVED*** persistent: false      ***REMOVED*** optional
+    ***REMOVED*** mandatory: false       ***REMOVED*** optional
+
+  ***REMOVED*** --- 2) event ---------------------------------------------------------------
+  ***REMOVED*** WHEN: fire-and-forget publish. No consumer is asserted for the topic itself;
+  ***REMOVED*** you publish to its exchange/routingKey with publishMessage() and the broker
+  ***REMOVED*** delivers it to whatever is bound. The publish resolves on publisher-confirm
+  ***REMOVED*** (broker accepted it), NOT when something consumes it.
+  - name: audit
+    mode: event
+    exchange: rlb
+    routingKey: audit
+    ***REMOVED*** mandatory: true        ***REMOVED*** optional: get unroutable messages returned
+
+  ***REMOVED*** --- 3) handle --------------------------------------------------------------
+  ***REMOVED*** WHEN: a durable consumer that runs a handler with NO reply. Looks up `queue`
+  ***REMOVED*** (+ its exchange/routingKey) and subscribes via registerHandler(); or set
+  ***REMOVED*** toObservable: true to stream onto BrokerService.events$ instead.
+  - name: notifications
+    mode: handle
+    queue: notifications
+    exchange: rlb
+    routingKey: notifications
+    toObservable: false      ***REMOVED*** true => emit onto events$ instead of a handler fn
+
+  ***REMOVED*** --- 4) broadcast -----------------------------------------------------------
+  ***REMOVED*** WHEN: fan-out so EVERY running instance gets its own copy (e.g. the gateway's
+  ***REMOVED*** runtime route-reload control topic). The consumer asserts a PER-INSTANCE
+  ***REMOVED*** queue named `${topic}-${connection_name}` bound to exchange/routingKey.
+  ***REMOVED*** REQUIRES a DISTINCT connection_name per instance (set under
+  ***REMOVED*** connectionManagerOptions.connectionOptions.clientProperties.connection_name,
+  ***REMOVED*** or promoted from routeDiscovery.serviceName) — the broker throws on boot if
+  ***REMOVED*** connection_name is missing. NOTE: rlb-gateway-control is a decorator-bound
+  ***REMOVED*** topic name and is NOT renamable when consuming the built-in gateway module.
+  - name: rlb-gateway-control
+    mode: broadcast
+    exchange: rlb
+    routingKey: rlb-gateway-control

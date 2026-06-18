@@ -4,7 +4,7 @@ import { BrokerAction, BrokerParam } from '../../broker';
 import { IAclRoleService } from '../../proxy/services/acl.service';
 import { AclCacheService } from '../cache/acl-cache.service';
 import { ACL_ACTIONS, ACL_TOPIC } from '../const';
-import { AclGrant, AclResourceGroup } from '../models';
+import { AclResourceGroup } from '../models';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
 import { AclRoleRepository } from '../repository/acl-role.repository';
 
@@ -83,14 +83,14 @@ export class AclService implements IAclRoleService {
       const acls = await this.grants.filter({ userId });
       const grouped: Record<string, AclResourceGroup> = {};
       for (const item of acls || []) {
-        const businessId = item.resourceBusinessId ?? '';
-        if (!grouped[businessId]) {
-          grouped[businessId] = { resourceBusinessId: item.resourceBusinessId, resources: [] };
+        const companyKey = item.companyId ?? '';
+        if (!grouped[companyKey]) {
+          grouped[companyKey] = { companyId: item.companyId, resources: [] };
         }
-        let resource = grouped[businessId].resources.find((r) => r.resourceId === item.resourceId);
+        let resource = grouped[companyKey].resources.find((r) => r.resourceId === item.resourceId);
         if (!resource) {
           resource = { resourceId: item.resourceId, actions: [], friendlyName: item.friendlyName };
-          grouped[businessId].resources.push(resource);
+          grouped[companyKey].resources.push(resource);
         }
         const roleNames = Array.isArray(item.roles) ? item.roles : [item.roles];
         const actions = await this.roles.getActionsByNames(roleNames);
@@ -98,16 +98,6 @@ export class AclService implements IAclRoleService {
         resource.actions = Array.from(new Set(resource.actions));
       }
       return Object.values(grouped);
-    } catch (error) {
-      this.logger.error(error);
-      throw error;
-    }
-  }
-
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.listByUser, 'rpc')
-  async listByUser(@BrokerParam('body', 'userId') userId: string): Promise<AclGrant[]> {
-    try {
-      return await this.grants.filter({ userId });
     } catch (error) {
       this.logger.error(error);
       throw error;

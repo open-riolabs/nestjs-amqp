@@ -61,7 +61,7 @@ export class BrokerService implements OnModuleInit {
           this.logger.warn(`Broadcast Topic ${topic.name} not added to pool. Exchange and routing key are required`);
           continue;
         }
-        const cname = this.brokerConfig.connectionManagerOptions.connectionOptions?.clientProperties?.connection_name;
+        const cname = this.brokerConfig.connectionManagerOptions?.connectionOptions?.clientProperties?.connection_name;
         if (!cname) {
           throw new Error(`Client name is required for topic exchange`);
         }

@@ -1,8 +1,10 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { AmqpConnection } from '../../../amqp-lib';
 import { BrokerService, RouteManifest } from '../../broker';
-import { RLB_AMQP_GATEWAY_OPTIONS, ROUTE_DISCOVERY_EXCHANGE, ROUTE_SYNC_QUEUE } from '../../broker/const';
+import { GW_RELOAD_ACTION, RLB_AMQP_GATEWAY_OPTIONS, ROUTE_DISCOVERY_EXCHANGE, ROUTE_SYNC_QUEUE } from '../../broker/const';
 import { GatewayConfig } from '../../proxy/config/path-definition.config';
+import { GatewayAdminModuleOptions } from '../config/gateway-admin.config';
+import { RLB_GW_ADMIN_OPTIONS } from '../const';
 import { RouteSyncLogEntry } from '../models';
 import { HttpPathRepository } from '../repository/http-path.repository';
 import { RouteSyncLogRepository } from '../repository/route-sync-log.repository';
@@ -26,23 +28,28 @@ export class RouteSyncService implements OnApplicationBootstrap {
     private readonly paths: HttpPathRepository,
     private readonly logs: RouteSyncLogRepository,
     @Inject(RLB_AMQP_GATEWAY_OPTIONS) private readonly gatewayConfig: GatewayConfig,
+    // Consumer-side route-discovery config (exchange/queue), supplied via GatewayAdminModule. The
+    // names MUST match the publishers' broker.routeDiscovery. Optional → defaults to the constants.
+    @Optional() @Inject(RLB_GW_ADMIN_OPTIONS) private readonly adminOptions?: GatewayAdminModuleOptions,
   ) { }
 
   async onApplicationBootstrap() {
+    const exchange = this.adminOptions?.routeDiscovery?.exchange || ROUTE_DISCOVERY_EXCHANGE;
+    const queue = this.adminOptions?.routeDiscovery?.queue || ROUTE_SYNC_QUEUE;
     try {
-      await this.amqp.channel.assertExchange(ROUTE_DISCOVERY_EXCHANGE, 'fanout', { durable: true });
+      await this.amqp.channel.assertExchange(exchange, 'fanout', { durable: true });
       await this.amqp.createSubscriber<RouteManifest>(
         async (msg: RouteManifest) => { await this.handle(msg); },
         {
-          queue: ROUTE_SYNC_QUEUE,
-          exchange: ROUTE_DISCOVERY_EXCHANGE,
+          queue,
+          exchange,
           routingKey: '',
           createQueueIfNotExists: true,
           queueOptions: { durable: true, exclusive: false, autoDelete: false },
         },
-        ROUTE_SYNC_QUEUE,
+        queue,
       );
-      this.logger.log(`[route-sync] listening on '${ROUTE_SYNC_QUEUE}' (exchange '${ROUTE_DISCOVERY_EXCHANGE}', competing consumers)`);
+      this.logger.log(`[route-sync] listening on '${queue}' (exchange '${exchange}', competing consumers)`);
     } catch (e) {
       this.logger.error(`[route-sync] subscribe failed: ${(e as Error)?.message}`);
     }
@@ -118,7 +125,10 @@ export class RouteSyncService implements OnApplicationBootstrap {
       this.logger.warn('[route-sync] no gateway.reloadTopic configured; routes persisted but instances will not auto-reload.');
       return;
     }
-    try { await this.broker.publishMessage(topic, 'route-sync', {}); }
+    // Use the canonical reload action so the gateway's control subscriber accepts it (it now
+    // ignores any non-'gw-reload' control message). The route-sync's OWN logic (diff/apply/journal)
+    // stays in handle() above — this call only asks the gateway to rebuild its routes.
+    try { await this.broker.publishMessage(topic, GW_RELOAD_ACTION, {}); }
     catch (e) { this.logger.error(`[route-sync] reload broadcast failed: ${(e as Error)?.message}`); }
   }
 }

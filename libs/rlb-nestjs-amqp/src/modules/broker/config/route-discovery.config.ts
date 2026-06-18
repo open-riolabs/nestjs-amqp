@@ -4,6 +4,18 @@ export interface RouteDiscoveryConfig {
   serviceName?: string;
   /** Publish the manifest automatically on application bootstrap (default true). */
   publishOnBoot?: boolean;
+  /**
+   * Fanout exchange the route manifests are published to / consumed from. Default
+   * `ROUTE_DISCOVERY_EXCHANGE` ('rlb-route-discovery'). Override to namespace route-discovery per
+   * environment/cluster on a shared broker — the SAME value MUST be set on the publishing
+   * microservices AND on the gateway (they agree on it via this config, not a hardcoded constant).
+   */
+  exchange?: string;
+  /**
+   * Durable, shared work-queue the gateway(s) consume manifests from (competing consumers). Default
+   * `ROUTE_SYNC_QUEUE` ('rlb-route-sync'). Must match between the publishers and the gateway.
+   */
+  queue?: string;
 }
 
 /**

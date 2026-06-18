@@ -9,17 +9,13 @@ import { AclAction } from '../models';
 export abstract class AclActionRepository {
   abstract insert(model: AclAction): Promise<AclAction>;
   abstract insertMany(models: AclAction[]): Promise<AclAction[]>;
-  abstract findById(id: string): Promise<AclAction>;
+  /** Lookup by the entity key (name). Actions have no id. */
+  abstract findByName(name: string): Promise<AclAction>;
   abstract findOne(filter: Record<string, any>): Promise<AclAction>;
-  abstract upsertById(id: string, model: Partial<AclAction>): Promise<AclAction>;
   abstract upsertOne(filter: Record<string, any>, model: Partial<AclAction>): Promise<AclAction>;
-  abstract updateById(id: string, model: Partial<AclAction>): Promise<AclAction>;
   abstract updateOne(filter: Record<string, any>, model: Partial<AclAction>): Promise<AclAction>;
-  /** Deep/partial merge ($set semantics) by id. */
-  abstract mergeById(id: string, model: Partial<AclAction>): Promise<AclAction>;
   /** Deep/partial merge ($set semantics) by filter. */
   abstract mergeOne(filter: Record<string, any>, model: Partial<AclAction>): Promise<AclAction>;
-  abstract removeById(id: string): Promise<AclAction>;
   abstract removeOne(filter: Record<string, any>): Promise<AclAction>;
   abstract removeMany(filter: Record<string, any>): Promise<number>;
   abstract filter(filter: Record<string, any>): Promise<AclAction[]>;

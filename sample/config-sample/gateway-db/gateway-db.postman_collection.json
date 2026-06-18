@@ -1,0 +1,543 @@
+{
+  "info": {
+    "name": "gateway-db (MongoDB sample) — ACL / Grant / Path / Stats",
+    "description": "Runnable playlist for the Mongo-backed gateway (gateway-db sample) against http://localhost:3000 with a a Keycloak (demo realm) login.\n\nFOLDERS\n- ACL   : actions CRUD (name-keyed: PUT upserts, GET list/get, DELETE by name).\n- Roles : roles CRUD (name-keyed).\n- Grant : grant + revoke (dual; roles required) + resources + canUserDo (resource) + canUserDoGtw (no resource).\n- Path  : gateway-admin DB routes CRUD + runtime reload.\n- Stats : metrics (counters, time-series, raw points).\n- Auth  : auth-providers CRUD (name-keyed: create/list/get/update/delete).\n- Misc  : health, protected, paths export, manual metrics track.\n\nRUN ORDER: the top-level Login runs FIRST (stores {{token}} and decodes the subject into {{userId}}), then the folders top-to-bottom. ACL/Roles seed the actions+roles the Grant folder needs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "kcTokenUrl", "value": "https://auth.example.com/realms/demo/protocol/openid-connect/token" },
+    { "key": "kcClientId", "value": "demo-client" },
+    { "key": "kcUsername", "value": "user@example.com" },
+    { "key": "kcPassword", "value": "REPLACE_ME" },
+    { "key": "token", "value": "" },
+    { "key": "userId", "value": "00000000-0000-0000-0000-000000000000" },
+    { "key": "lastPathId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Login (Keycloak password grant) — run first",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('login ok (200)', function () { pm.expect(pm.response.code).to.eql(200); });",
+          "var j = pm.response.json();",
+          "pm.collectionVariables.set('token', j.access_token);",
+          "function dec(t){ var s=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'); var x=(typeof atob!=='undefined')?atob(s):Buffer.from(s,'base64').toString('binary'); return JSON.parse(x); }",
+          "var p; try { p = dec(j.access_token); } catch (e) {}",
+          "// Fail loud: grants/checks (below) and /protected MUST use the SAME identity. If the sub can't be decoded we must NOT silently fall back to the default userId.",
+          "pm.test('decoded the token subject (sub -> userId)', function () { pm.expect(p && p.sub, 'JWT sub').to.be.ok; });",
+          "if (p && p.sub) { pm.collectionVariables.set('userId', p.sub); console.log('logged in, userId =', p.sub); }"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": { "mode": "urlencoded", "urlencoded": [
+          { "key": "grant_type", "value": "password" },
+          { "key": "client_id", "value": "{{kcClientId}}" },
+          { "key": "username", "value": "{{kcUsername}}" },
+          { "key": "password", "value": "{{kcPassword}}" },
+          { "key": "scope", "value": "openid profile" }
+        ] },
+        "url": { "raw": "{{kcTokenUrl}}", "host": ["{{kcTokenUrl}}"] }
+      }
+    },
+    {
+      "name": "ACL",
+      "description": "Actions CRUD. Actions are keyed by NAME (no id): PUT creates-or-updates, GET lists, GET /get?name= reads one, DELETE removes by name. Seeds gateway-access / admin-access for the Roles + Grant folders.",
+      "item": [
+        {
+          "name": "UPSERT · PUT /acl/actions  (gateway-access seed)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('upserted', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gateway-access\",\n  \"description\": \"Access the protected HTTP routes\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "UPSERT · PUT /acl/actions  (admin-access seed)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('upserted', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"admin-access\",\n  \"description\": \"Access the admin/management endpoints\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "LIST · GET /acl/actions",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });",
+            "pm.test('gateway-access present', function () { pm.expect(JSON.stringify(pm.response.json())).to.include('gateway-access'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/actions?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["acl", "actions"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "GET · GET /acl/actions/get?name=gateway-access  (one by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + the action', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(JSON.stringify(pm.response.json())).to.include('gateway-access'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/actions/get?name=gateway-access", "host": ["{{baseUrl}}"], "path": ["acl", "actions", "get"], "query": [{ "key": "name", "value": "gateway-access" }] }
+          }
+        },
+        {
+          "name": "UPSERT · PUT /acl/actions  (temp-action — create)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('created via PUT', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-action\",\n  \"description\": \"throwaway\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        },
+        {
+          "name": "DELETE · DELETE /acl/actions  (temp-action by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+          ] } } ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-action\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/actions", "host": ["{{baseUrl}}"], "path": ["acl", "actions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "description": "Roles CRUD. Roles are keyed by NAME (no id): PUT upserts, GET lists, GET /get?name= reads one, DELETE removes by name. Seeds user / admin (referencing the seeded actions) for the Grant folder.",
+      "item": [
+        {
+          "name": "UPSERT · PUT /acl/roles  (user -> [gateway-access])",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('upserted', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"user\",\n  \"description\": \"Standard user\",\n  \"actions\": [\"gateway-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "UPSERT · PUT /acl/roles  (admin -> [gateway-access, admin-access])",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('upserted', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"admin\",\n  \"description\": \"Administrator\",\n  \"actions\": [\"gateway-access\", \"admin-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "LIST · GET /acl/roles",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/roles?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["acl", "roles"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "GET · GET /acl/roles/get?name=user  (one by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + the role', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(JSON.stringify(pm.response.json())).to.include('user'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/roles/get?name=user", "host": ["{{baseUrl}}"], "path": ["acl", "roles", "get"], "query": [{ "key": "name", "value": "user" }] }
+          }
+        },
+        {
+          "name": "UPSERT · PUT /acl/roles  (temp-role — create)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('created via PUT', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-role\",\n  \"description\": \"throwaway\",\n  \"actions\": [\"gateway-access\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        },
+        {
+          "name": "DELETE · DELETE /acl/roles  (temp-role by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+          ] } } ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"temp-role\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/roles", "host": ["{{baseUrl}}"], "path": ["acl", "roles"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Grant",
+      "description": "Grant a global [user] role and a [admin] role scoped to doc-1 (with a companyId, grouping-only), then exercise the checks: canUserDoGtw (no resource) and canUserDo (resource doc-1), list the user's resources, and revoke the [admin] role from doc-1. grant and revoke are DUAL: same params (userId+roles required, resourceId+companyId optional) — grant adds roles to the (userId, resourceId) pair, revoke removes them and deletes the record once empty. The global [user] grant survives for the Misc /protected check.",
+      "item": [
+        {
+          "name": "GRANT · POST /acl/grants  ({{userId}} -> [user], global)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('granted', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"user\"],\n  \"friendlyName\": \"{{kcUsername}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        },
+        {
+          "name": "GRANT · POST /acl/grants  ({{userId}} -> [admin] ON doc-1, companyId=acme)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('granted on doc-1', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resourceId\": \"doc-1\",\n  \"companyId\": \"acme\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        },
+        {
+          "name": "canUserDoGtw · GET /acl/check  (roles=[user], NO resource -> TRUE)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + true', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text().trim()).to.match(/^true/); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&roles=user", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "user" }] }
+          }
+        },
+        {
+          "name": "canUserDo · GET /acl/check-resource  (roles=[admin], resource=doc-1 -> TRUE)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + true', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text().trim()).to.match(/^true/); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-1", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-1" }] }
+          }
+        },
+        {
+          "name": "canUserDo · GET /acl/check-resource  (roles=[admin], resource=doc-2 -> FALSE)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + false (not granted on doc-2)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-2" }] }
+          }
+        },
+        {
+          "name": "resources · GET /acl/resources  (my resources, by token identity)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + array', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });",
+            "console.log('resources:', pm.response.text());"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/acl/resources", "host": ["{{baseUrl}}"], "path": ["acl", "resources"] }
+          }
+        },
+        {
+          "name": "REVOKE · DELETE /acl/grants  (remove [admin] from doc-1 → record emptied & deleted; keep global [user])",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('revoked', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+          ] } } ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resourceId\": \"doc-1\"\n}" },
+            "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Path",
+      "description": "Gateway-admin DB routes: full CRUD on a throwaway /db/echo route (id-keyed) plus a runtime reload broadcast. Reload is async (broker round-trip) — on a transient miss just re-send. Run on a fresh DB (or let this folder finish its DELETE): a leftover ENABLED db-echo makes CREATE return 409 (duplicate method+path).",
+      "item": [
+        {
+          "name": "CREATE · POST /admin/paths  (/db/echo)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "var b = pm.response.json(); if (b && b._id) { pm.collectionVariables.set('lastPathId', b._id); }",
+            "pm.test('created', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });",
+            "pm.test('CREATE returned _id (drives the id-keyed GET/UPDATE/DELETE below)', function () { pm.expect(b && b._id, 'response must expose _id').to.be.ok; });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"db-echo\",\n  \"method\": \"GET\",\n  \"path\": \"/db/echo\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
+          }
+        },
+        {
+          "name": "LIST · GET /admin/paths",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/paths?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["admin", "paths"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "GET · GET /admin/paths/get?id=  (single by id)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + db-echo', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(JSON.stringify(pm.response.json())).to.include('db-echo'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/paths/get?id={{lastPathId}}", "host": ["{{baseUrl}}"], "path": ["admin", "paths", "get"], "query": [{ "key": "id", "value": "{{lastPathId}}" }] }
+          }
+        },
+        {
+          "name": "UPDATE · PUT /admin/paths  (edit by id)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('updated (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{lastPathId}}\",\n  \"name\": \"db-echo\",\n  \"method\": \"GET\",\n  \"path\": \"/db/echo\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
+          }
+        },
+        {
+          "name": "RELOAD · POST /admin/reload  (rebuild routes)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('reload accepted (event -> 2xx)', function () { pm.expect(pm.response.code).to.be.oneOf([200,202,204]); });",
+            "var t0 = Date.now(); while (Date.now() - t0 < 1000) {}"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/admin/reload", "host": ["{{baseUrl}}"], "path": ["admin", "reload"] }
+          }
+        },
+        {
+          "name": "DELETE · DELETE /admin/paths  (by id)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+          ] } } ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{lastPathId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
+          }
+        },
+        {
+          "name": "RELOAD · POST /admin/reload  (drop the route again)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('reload accepted', function () { pm.expect(pm.response.code).to.be.oneOf([200,202,204]); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/admin/reload", "host": ["{{baseUrl}}"], "path": ["admin", "reload"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stats",
+      "description": "Gateway metrics, auto-collected after every request (gateway.metrics). Counters per route, bucketed time-series, and raw data points.",
+      "item": [
+        {
+          "name": "GET /admin/metrics  (counters / avg per route)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + array', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });",
+            "console.log('routes:', (pm.response.json() || []).map(function (m) { return m.method + ' ' + m.route + ' x' + m.count; }).join(', '));"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/metrics", "host": ["{{baseUrl}}"], "path": ["admin", "metrics"] }
+          }
+        },
+        {
+          "name": "GET /admin/metrics/series?bucketMs=60000  (time-series)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + array of buckets', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/metrics/series?bucketMs=60000", "host": ["{{baseUrl}}"], "path": ["admin", "metrics", "series"], "query": [{ "key": "bucketMs", "value": "60000" }] }
+          }
+        },
+        {
+          "name": "GET /admin/metrics/points?limit=50  (raw data points)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + array of points', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.json()).to.be.an('array'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/metrics/points?limit=50", "host": ["{{baseUrl}}"], "path": ["admin", "metrics", "points"], "query": [{ "key": "limit", "value": "50" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Auth-providers CRUD (gateway-admin, name-keyed). PUT upserts by name (there is NO POST), GET lists, GET /get?name= reads one, DELETE removes by name.",
+      "item": [
+        {
+          "name": "UPSERT · PUT /admin/auth  (extra-jwks — create)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('upserted (PUT creates-or-updates by name)', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"extra-jwks\",\n  \"type\": \"jwks\",\n  \"headerPrefix\": \"X-GTW-AUTH-\",\n  \"uidClaim\": \"USERID\",\n  \"jwtMap\": [\"sub:userId\"],\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/auth", "host": ["{{baseUrl}}"], "path": ["admin", "auth"] }
+          }
+        },
+        {
+          "name": "LIST · GET /admin/auth",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/auth?page=1&limit=50", "host": ["{{baseUrl}}"], "path": ["admin", "auth"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "50" }] }
+          }
+        },
+        {
+          "name": "GET · GET /admin/auth/get?name=  (single by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + extra-jwks', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(JSON.stringify(pm.response.json())).to.include('extra-jwks'); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/auth/get?name=extra-jwks", "host": ["{{baseUrl}}"], "path": ["admin", "auth", "get"], "query": [{ "key": "name", "value": "extra-jwks" }] }
+          }
+        },
+        {
+          "name": "UPSERT · PUT /admin/auth  (extra-jwks — update, idempotent by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('updated in place (200/201, no duplicate)', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
+          ] } } ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"extra-jwks\",\n  \"type\": \"jwks\",\n  \"headerPrefix\": \"X-GTW-AUTH-\",\n  \"uidClaim\": \"USERID\",\n  \"jwtMap\": [\"sub:userId\"],\n  \"enabled\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/auth", "host": ["{{baseUrl}}"], "path": ["admin", "auth"] }
+          }
+        },
+        {
+          "name": "DELETE · DELETE /admin/auth  (by name)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
+          ] } } ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"extra-jwks\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/auth", "host": ["{{baseUrl}}"], "path": ["admin", "auth"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Misc",
+      "description": "Everything else: health (200, no data), the protected route (Keycloak token + role gate), the DB paths export, and a manual metrics track event.",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('up (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "GET /protected  (token + role gate: user holds [user] -> 200)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Allowed (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/protected", "host": ["{{baseUrl}}"], "path": ["protected"] }
+          }
+        },
+        {
+          "name": "GET /protected  (401 — no token)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Unauthorized (401)', function () { pm.expect(pm.response.code).to.eql(401); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/protected", "host": ["{{baseUrl}}"], "path": ["protected"] }
+          }
+        },
+        {
+          "name": "GET /admin/paths/export  (ordered PathDefinition[] used by loadConfig)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.expect(pm.response.code).to.eql(200); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/admin/paths/export", "host": ["{{baseUrl}}"], "path": ["admin", "paths", "export"] }
+          }
+        },
+        {
+          "name": "POST /admin/metrics/track  (manual track event)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('accepted (event -> 2xx)', function () { pm.expect(pm.response.code).to.be.oneOf([200,202,204]); });"
+          ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"method\": \"GET\",\n  \"route\": \"/manual\",\n  \"status\": 200,\n  \"durationMs\": 5\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/metrics/track", "host": ["{{baseUrl}}"], "path": ["admin", "metrics", "track"] }
+          }
+        }
+      ]
+    }
+  ]
+}

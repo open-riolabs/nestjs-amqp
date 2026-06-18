@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/gateway-2/src",
+  "sourceRoot": "sample/config-sample/gateway-in-memory/src",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": false,
-    "tsConfigPath": "apps/gateway-2/tsconfig.app.json"
+    "tsConfigPath": "sample/config-sample/gateway-in-memory/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/gateway-2",
+  "root": "sample/config-sample/gateway-in-memory",
   "projects": {
     "gateway": {
       "type": "application",
@@ -19,13 +19,31 @@
         "tsConfigPath": "apps/gateway/tsconfig.app.json"
       }
     },
-    "gateway-2": {
+    "gateway-in-memory": {
       "type": "application",
-      "root": "apps/gateway-2",
+      "root": "sample/config-sample/gateway-in-memory",
       "entryFile": "main",
-      "sourceRoot": "apps/gateway-2/src",
+      "sourceRoot": "sample/config-sample/gateway-in-memory/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/gateway-2/tsconfig.app.json"
+        "tsConfigPath": "sample/config-sample/gateway-in-memory/tsconfig.app.json"
+      }
+    },
+    "gateway-db": {
+      "type": "application",
+      "root": "sample/config-sample/gateway-db",
+      "entryFile": "main",
+      "sourceRoot": "sample/config-sample/gateway-db/src",
+      "compilerOptions": {
+        "tsConfigPath": "sample/config-sample/gateway-db/tsconfig.app.json"
+      }
+    },
+    "calculator.ms": {
+      "type": "application",
+      "root": "sample/config-sample/calculator.ms",
+      "entryFile": "main",
+      "sourceRoot": "sample/config-sample/calculator.ms/src",
+      "compilerOptions": {
+        "tsConfigPath": "sample/config-sample/calculator.ms/tsconfig.app.json"
       }
     },
     "rlb-nestjs-amqp": {

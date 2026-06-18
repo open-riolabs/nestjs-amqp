@@ -1,5 +1,7 @@
 ***REMOVED*** @open-rlb/nestjs-amqp
 
+> 📖 **Full English documentation:** [`docs/`](./docs/README.md) — paginated guides for the Broker, Gateway, ACL and Gateway-admin modules, plus Getting Started and Troubleshooting. (This README is the older Italian overview.)
+
 Libreria **NestJS** che fornisce un'astrazione di alto livello su **RabbitMQ/AMQP**, più un **API Gateway HTTP/WebSocket** che traduce le richieste esterne in messaggi sul broker.
 
 È il cuore di un'architettura a microservizi event-driven: i servizi comunicano tra loro via RabbitMQ con semplici decoratori, e un gateway espone tutto al mondo esterno via HTTP/WS, il tutto guidato dalla configurazione YAML.
@@ -531,7 +533,7 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 
 ***REMOVED******REMOVED*** Moduli opzionali `AclModule` e `GatewayAdminModule` (persistenza fornita dal consumer)
 
-Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **La lib non dipende da Mongo/Redis**: definisce i servizi/cache + i **contratti repository (classi astratte)** e l'interfaccia `AclCacheStore`; **il consumer fornisce le implementazioni** (es. Mongo + Redis). Esempio completo e funzionante: **[`apps/gateway-2`](apps/gateway-2)** — per restare autonomo usa **repository in-RAM** (`InMemory*Repository`) e una **cache L2 in-RAM** (`InMemoryAclStore`), così gira solo con RabbitMQ; in produzione si rimpiazzano con implementazioni Mongo/Redis senza toccare la lib.
+Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **La lib non dipende da Mongo/Redis**: definisce i servizi/cache + i **contratti repository (classi astratte)** e l'interfaccia `AclCacheStore`; **il consumer fornisce le implementazioni** (es. Mongo + Redis). Esempio completo e funzionante: **[`sample/config-sample/gateway-in-memory`](sample/config-sample/gateway-in-memory)** — per restare autonomo usa **repository in-RAM** (`InMemory*Repository`) e una **cache L2 in-RAM** (`InMemoryAclStore`), così gira solo con RabbitMQ; in produzione si rimpiazzano con implementazioni Mongo/Redis senza toccare la lib.
 
 ***REMOVED******REMOVED******REMOVED*** `AclModule` — ACL DB-backed con cache 2-livelli
 
@@ -575,7 +577,7 @@ export class AppModule {}
   - `canUserDoGtw(roles, userId)` — **filtro primario del gateway** (role-based, OR): vero se l'utente ha almeno uno dei ruoli, resource-agnostico. È quello usato da `checkRoles` su `path.roles`. RPC `acl-can-user-do-gtw`.
   - `canUserDo(roles, userId, resourceId)` — **lato microservizio**: vero se un grant **globale** (senza `resourceId`) **oppure** legato a quella risorsa dà all'utente il ruolo (`roles` accetta `string | string[]`). La risorsa è nota solo al ms, che chiama l'RPC `acl-can-user-do` con payload `{ userId, resource, roles }`.
 - **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
-- **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-2` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
+- **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-in-memory` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
 
 ***REMOVED******REMOVED******REMOVED*** `GatewayAdminModule` — CRUD rotte/auth + liste + metriche
 

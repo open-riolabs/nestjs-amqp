@@ -1,11 +1,10 @@
-export interface AclAction<Id = string> {
-  _id?: Id;
+// Actions & roles have NO id — `name` is the sole identity (the key).
+export interface AclAction {
   name: string;
   description?: string;
 }
 
-export interface AclRole<Id = string> {
-  _id?: Id;
+export interface AclRole {
   name: string;
   description?: string;
   actions: string[];
@@ -13,10 +12,12 @@ export interface AclRole<Id = string> {
 
 export interface AclGrant<Id = string> {
   _id?: Id;
-  resourceBusinessId?: string;
-  friendlyName?: string;
   userId: string;
   resourceId?: string;
+  /** Grouping-only metadata: the company the resource(s) belong to. NOT part of any authz
+   *  decision — used solely to group resources in listResourcesByUser. */
+  companyId?: string;
+  friendlyName?: string;
   roles: string[];
 }
 
@@ -31,6 +32,7 @@ export interface AclResource {
 /** Resources a user can access, grouped by business resource (returned by
  *  AclService.listResourcesByUser). */
 export interface AclResourceGroup {
-  resourceBusinessId?: string;
+  /** The company the grouped resources belong to (grouping-only). */
+  companyId?: string;
   resources: AclResource[];
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/schema",
-  "$id": "SchematicsHandlebar",
+  "$id": "SchematicsNestAddRlbAmqp",
   "title": "Init Schema",
   "type": "object",
   "properties": {
@@ -17,17 +17,46 @@
         "$source": "projectName"
       }
     },
-    "gateway": {
+    "gatewayConfig": {
       "type": "boolean",
-      "default": true,
-      "description": "Enable gateway mode (ProxyModule/HttpModule + gateway YAML + WS adapter in main.ts).",
-      "x-prompt": "Enable gateway mode (HTTP/WebSocket)?"
+      "description": "Create a gateway (HTTP/WebSocket) configuration. Prompted interactively when omitted; defaults to false (a plain microservice) in non-interactive runs."
+    },
+    "features": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Features to include. Gateway (gatewayConfig=true): acl, gateway-admin, route-reception. Microservice (gatewayConfig=false): auto-config-publish. Prompted interactively when omitted."
+    },
+    "exchange": {
+      "type": "string",
+      "description": "Main AMQP exchange backing the ACL / gateway-admin queues. Default: rlb."
+    },
+    "aclQueue": {
+      "type": "string",
+      "description": "Queue backing the (fixed) rlb-acl topic. Default: rlb-acl."
+    },
+    "adminQueue": {
+      "type": "string",
+      "description": "Queue backing the (fixed) rlb-gateway-admin topic. Default: rlb-gateway-admin."
+    },
+    "controlTopic": {
+      "type": "string",
+      "description": "Broadcast control/reload topic name. Default: rlb-gateway-control."
+    },
+    "routeExchange": {
+      "type": "string",
+      "description": "Route auto-discovery fanout exchange (must match between publisher and gateway). Default: rlb-route-discovery."
+    },
+    "routeQueue": {
+      "type": "string",
+      "description": "Route-sync durable queue (gateway consumer side). Default: rlb-route-sync."
+    },
+    "serviceName": {
+      "type": "string",
+      "description": "Service name used for route auto-publish (route ownership + AMQP connection_name). Default: the project name."
     },
     "skills": {
       "type": "boolean",
-      "default": true,
-      "description": "Copy the Claude skill files into .claude/skills.",
-      "x-prompt": "Copy the Claude skills into the project?"
+      "description": "Copy the Claude skill files into .claude/skills. Prompted when omitted; defaults to true."
     }
   }
 }

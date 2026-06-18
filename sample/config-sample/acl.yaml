@@ -1,0 +1,229 @@
+***REMOVED*** =============================================================================
+***REMOVED*** ACL reference — wiring the @open-rlb/nestjs-amqp ACL module over the gateway
+***REMOVED*** =============================================================================
+***REMOVED***
+***REMOVED*** This file is an ANNOTATED REFERENCE, not a drop-in config. It documents the two
+***REMOVED*** things you need to expose ACL over an HTTP gateway:
+***REMOVED***   1. a broker topic + backing queue for the fixed ACL topic `rlb-acl`, and
+***REMOVED***   2. the gateway.paths[] entries that surface ACL management, grants and checks.
+***REMOVED***
+***REMOVED*** Fill the placeholders with your own values:
+***REMOVED***   amqp://localhost:5672/                          AMQP connection URI
+***REMOVED***   https://auth.example.com/realms/demo            issuer / token / jwks base
+***REMOVED***   REPLACE_ME                                      anything secret/host-specific
+***REMOVED***
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** WHAT IS DECORATOR-BOUND (NOT configurable)
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** The ACL handlers are bound in the library to ONE topic NAME and a fixed set of
+***REMOVED*** ACTION strings. These are NOT config keys — your YAML must reference them
+***REMOVED*** literally and exactly:
+***REMOVED***
+***REMOVED***   topic NAME : rlb-acl                  (ACL_TOPIC)
+***REMOVED***   actions    : acl-action-list, acl-action-get, acl-action-update,
+***REMOVED***                acl-action-delete, acl-role-list, acl-role-get,
+***REMOVED***                acl-role-update, acl-role-delete, acl-grant, acl-revoke,
+***REMOVED***                acl-can-user-do-gtw, acl-can-user-do,
+***REMOVED***                acl-list-resources-by-user, acl-invalidate
+***REMOVED***
+***REMOVED*** What IS configurable: the broker exchange / queue / routingKey that carry the
+***REMOVED*** topic, and each gateway path's name / HTTP method / path / dataSource / auth.
+***REMOVED***
+***REMOVED*** REMOVED actions: `acl-list-by-user` and `acl-verify-access` no longer exist.
+***REMOVED*** Use `acl-can-user-do` for resource-scoped checks and
+***REMOVED*** `acl-list-resources-by-user` to enumerate a user's resources.
+***REMOVED***
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** THE ACL MODEL IN ONE SCREEN
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** ACL is built from three name-keyed entities and a small set of checks:
+***REMOVED***
+***REMOVED*** * Actions and Roles are NAME-KEYED — there is no separate id and NO POST:
+***REMOVED***     - PUT   upserts by `name` (create-or-update, idempotent)
+***REMOVED***     - GET   on the collection lists (paginated; ?page=&limit=)
+***REMOVED***     - GET   .../get?name=  reads exactly one by name
+***REMOVED***     - DELETE removes by `name` (body: { name })
+***REMOVED***   A Role bundles Action names; on upsert every referenced action must already
+***REMOVED***   exist or the call fails 400.
+***REMOVED***
+***REMOVED*** * Grants are DUAL operations on the single record per (userId, resourceId):
+***REMOVED***     - acl-grant   merges roles into the pair (idempotent; creates if absent)
+***REMOVED***     - acl-revoke  removes roles from the pair, deleting the record once empty
+***REMOVED***   Both REQUIRE `userId` + `roles`. `resourceId` and `companyId` are OPTIONAL;
+***REMOVED***   `companyId` is grouping-only metadata and plays NO part in authorization.
+***REMOVED***   Both validate that every supplied role already exists (unknown role -> 400).
+***REMOVED***
+***REMOVED*** * Checks are GETs that return HTTP 200 with a JSON `true`/`false` body — a
+***REMOVED***   `false` is real content, only null/undefined collapses to 204:
+***REMOVED***     - acl-can-user-do-gtw  resource-AGNOSTIC; the gateway's primary role
+***REMOVED***                            filter. true if the user holds >= 1 of the roles.
+***REMOVED***     - acl-can-user-do      resource-SCOPED; true if a global grant OR a grant
+***REMOVED***                            bound to that exact resource gives a matching role.
+***REMOVED***                            Normally called over the broker by the owning MS.
+***REMOVED***   Both return false (never throw) on missing input or internal error.
+***REMOVED***
+***REMOVED*** * acl-list-resources-by-user is AUTH-GATED: it reads `userId` from the
+***REMOVED***   forwarded X-GTW-AUTH-USERID header (so the path needs `auth`, no roles) and
+***REMOVED***   lists the caller's accessible resources grouped by companyId.
+***REMOVED***
+***REMOVED*** =============================================================================
+
+
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** 1) BROKER FRAGMENT — declare the `rlb-acl` topic + its backing queue
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** The topic NAME `rlb-acl` is fixed (ACL_TOPIC) and must match exactly. The
+***REMOVED*** exchange / queue / routingKey ARE yours to choose — keep them consistent
+***REMOVED*** across the queue, the topic, and every gateway path that targets the topic.
+broker:
+  name: "rabbitmq"
+  uri: "amqp://localhost:5672/"
+
+  exchanges:
+    - name: rlb
+      type: direct
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+
+  queues:
+    ***REMOVED*** Queue consumed by the ACL backend handlers (AclService / AclManagementService).
+    - name: rlb-acl
+      exchange: rlb
+      routingKey: rlb-acl
+      createQueueIfNotExists: true
+      options:
+        durable: true
+
+topics:
+  ***REMOVED*** Topic the ACL @BrokerAction handlers bind to (ACL_TOPIC = 'rlb-acl').
+  ***REMOVED*** rpc mode: each HTTP call waits for the handler's reply.
+  - name: rlb-acl
+    mode: rpc
+    queue: rlb-acl
+    exchange: rlb
+    routingKey: rlb-acl
+
+
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** 2) GATEWAY PATHS — expose the ACL actions over HTTP
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** Mirrors the shipped gateway-in-memory sample exactly. Every path forwards to
+***REMOVED*** the `rlb-acl` topic in `rpc` mode; only the `action` string differs, and each
+***REMOVED*** action MUST be one of the decorator-bound ACL_ACTIONS above.
+***REMOVED***
+***REMOVED*** `name` is a free label (route id). `action` is the fixed library string.
+gateway:
+  mode: gateway
+  paths:
+    ***REMOVED*** --- ACL management: actions (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
+    - name: acl-action-list
+      method: GET
+      path: /acl/actions
+      dataSource: query
+      topic: rlb-acl
+      action: acl-action-list
+      mode: rpc
+    - name: acl-action-get        ***REMOVED*** query: ?name=
+      method: GET
+      path: /acl/actions/get
+      dataSource: query
+      topic: rlb-acl
+      action: acl-action-get
+      mode: rpc
+    - name: acl-action-upsert     ***REMOVED*** PUT creates-or-updates by name. body: { name, description? }
+      method: PUT
+      path: /acl/actions
+      dataSource: body
+      topic: rlb-acl
+      action: acl-action-update
+      mode: rpc
+    - name: acl-action-delete     ***REMOVED*** body: { name }
+      method: DELETE
+      path: /acl/actions
+      dataSource: body
+      topic: rlb-acl
+      action: acl-action-delete
+      mode: rpc
+
+    ***REMOVED*** --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
+    - name: acl-role-list
+      method: GET
+      path: /acl/roles
+      dataSource: query
+      topic: rlb-acl
+      action: acl-role-list
+      mode: rpc
+    - name: acl-role-get          ***REMOVED*** query: ?name=
+      method: GET
+      path: /acl/roles/get
+      dataSource: query
+      topic: rlb-acl
+      action: acl-role-get
+      mode: rpc
+    - name: acl-role-upsert       ***REMOVED*** PUT creates-or-updates by name. body: { name, actions, description? }
+      method: PUT
+      path: /acl/roles
+      dataSource: body
+      topic: rlb-acl
+      action: acl-role-update
+      mode: rpc
+    - name: acl-role-delete       ***REMOVED*** body: { name }
+      method: DELETE
+      path: /acl/roles
+      dataSource: body
+      topic: rlb-acl
+      action: acl-role-delete
+      mode: rpc
+
+    ***REMOVED*** --- ACL grants (per-user; resourceId optional; userId + roles required) ---
+    ***REMOVED*** acl-grant / acl-revoke are dual ops on the single (userId, resourceId) record.
+    - name: acl-grant
+      method: POST
+      path: /acl/grants
+      dataSource: body
+      topic: rlb-acl
+      action: acl-grant
+      mode: rpc
+    - name: acl-revoke
+      method: DELETE
+      path: /acl/grants
+      dataSource: body
+      topic: rlb-acl
+      action: acl-revoke
+      mode: rpc
+
+    ***REMOVED*** --- ACL checks (exposed over HTTP for the demo; normally called over the broker) ---
+    ***REMOVED*** Gateway-style primary filter {userId, roles}: true if the user holds at least one role.
+    ***REMOVED*** A read -> GET; query: ?userId=&roles=user&roles=admin. Returns 200 with `true`/`false`.
+    - name: acl-check-gtw
+      method: GET
+      path: /acl/check
+      dataSource: query
+      topic: rlb-acl
+      action: acl-can-user-do-gtw
+      mode: rpc
+    ***REMOVED*** MS-side resource-scoped check {userId, roles, resource}: true if a global grant OR a
+    ***REMOVED*** grant bound to that resource gives the user a role. A read -> GET; query:
+    ***REMOVED*** ?userId=&roles=admin&resource=doc-1. Returns 200 with `true`/`false`.
+    - name: acl-check-resource
+      method: GET
+      path: /acl/check-resource
+      dataSource: query
+      topic: rlb-acl
+      action: acl-can-user-do
+      mode: rpc
+    ***REMOVED*** Authenticated: lists the caller's accessible resources (grouped by companyId).
+    ***REMOVED*** Reads userId from the forwarded X-GTW-AUTH-USERID header -> needs `auth` (no roles).
+    ***REMOVED*** Replace `gateway-jwks` with the name of an auth-provider you define elsewhere
+    ***REMOVED*** (e.g. issuer https://auth.example.com/realms/demo).
+    - name: acl-list-resources-by-user
+      method: GET
+      path: /acl/resources
+      dataSource: query
+      topic: rlb-acl
+      action: acl-list-resources-by-user
+      mode: rpc
+      auth: gateway-jwks
+
+  events: []

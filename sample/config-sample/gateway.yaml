@@ -1,0 +1,332 @@
+***REMOVED*** =============================================================================
+***REMOVED*** @open-rlb/nestjs-amqp — GATEWAY reference (HTTP + WebSocket proxy)
+***REMOVED*** =============================================================================
+***REMOVED*** This file documents the two top-level blocks that configure the gateway:
+***REMOVED***
+***REMOVED***   gateway:         the HTTP/WebSocket proxy (ProxyModule / GatewayConfig)
+***REMOVED***   auth-providers:  named token validators referenced by paths and events
+***REMOVED***
+***REMOVED*** It is a REFERENCE: every field is commented and every value is a safe
+***REMOVED*** placeholder. Copy the pieces you need into your real config.yaml.
+***REMOVED***
+***REMOVED*** The gateway turns broker actions into a public surface: it maps HTTP routes
+***REMOVED*** to a broker topic/action (forwarding the call and relaying the reply) and
+***REMOVED*** fans broker events out to WebSocket clients.
+***REMOVED***
+***REMOVED*** NAMING RULES — read before changing anything:
+***REMOVED***   * Topic NAMES (rlb-acl, rlb-gateway-admin, rlb-gateway-control) and ACTION
+***REMOVED***     strings (acl-action-update, gw-path-export, gw-reload, gw-metrics-track,
+***REMOVED***     ...) are DECORATOR-BOUND on the backend handlers and are NOT configurable.
+***REMOVED***     They must match the @BrokerAction decorators exactly.
+***REMOVED***   * What IS configurable: exchange / queue / routingKey on the broker side,
+***REMOVED***     and the route-discovery exchange/queue (broker.routeDiscovery) — none of
+***REMOVED***     which appear in this file; see the broker reference for those.
+***REMOVED*** =============================================================================
+
+
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** auth-providers:  HandlerAuthConfig[]  (top-level, NOT under gateway)
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** A named list of token validators. A gateway path references one by name via
+***REMOVED*** `auth:`; a WebSocket event references one via its own `auth:`. Each provider
+***REMOVED*** both VALIDATES the incoming token and MAPS its claims into forwarded headers.
+***REMOVED***
+***REMOVED*** type values:
+***REMOVED***   jwt          verify a Bearer JWT with a shared HS secret (`secret`)
+***REMOVED***   jwks         verify a Bearer JWT against a JWKS endpoint (`jwksUri`)
+***REMOVED***   basic        verify HTTP Basic against clientId/clientSecret
+***REMOVED***   str-compare  compare the raw Authorization header to `secret`
+***REMOVED***   none         no validation
+***REMOVED***
+***REMOVED*** NOTE: `usernameClaim` is deprecated and intentionally omitted here.
+auth-providers:
+  ***REMOVED*** ---- one fully-commented JWKS provider (e.g. Keycloak / OIDC) -------------
+  - name: gateway-jwks               ***REMOVED*** referenced by path.auth / event.auth
+    type: jwks                       ***REMOVED*** verify Bearer JWT against a JWKS endpoint
+
+    ***REMOVED*** Prefix for the claim headers this provider injects downstream. Mapped
+    ***REMOVED*** claims become <headerPrefix><DEST>; the user id becomes <headerPrefix>USERID.
+    ***REMOVED*** Request headers can NEVER override these (anti-spoofing).
+    headerPrefix: "X-GTW-AUTH-"
+
+    ***REMOVED*** Claim that becomes the user-id header (<headerPrefix>USERID). REQUIRED for
+    ***REMOVED*** any path/event that declares `roles` — the role check resolves identity
+    ***REMOVED*** from this claim.
+    uidClaim: sub
+
+    ***REMOVED*** Claim → forwarded-header mapping, as 'source:dest' pairs. Each decoded
+    ***REMOVED*** claim <source> is exposed as <headerPrefix><DEST>.
+    ***REMOVED*** WITHOUT jwtMap the token is accepted but NO claims are forwarded.
+    jwtMap:
+      - sub:userId                   ***REMOVED*** -> X-GTW-AUTH-USERID
+      - email:email                  ***REMOVED*** -> X-GTW-AUTH-EMAIL
+      - preferred_username:username  ***REMOVED*** -> X-GTW-AUTH-USERNAME
+      - roles:roles                  ***REMOVED*** -> X-GTW-AUTH-ROLES
+
+    ***REMOVED*** Allowed signing algorithms for the JWT.
+    algorithms:
+      - RS256
+
+    ***REMOVED*** Expected token issuer (must match the `iss` claim).
+    issuer: https://auth.example.com/realms/demo
+
+    ***REMOVED*** JWKS endpoint used for signing-key discovery (jwks type).
+    jwksUri: https://auth.example.com/realms/demo/protocol/openid-connect/certs
+
+    ***REMOVED*** --- optional extras (validate against your IdP / leave unset) ---
+    ***REMOVED*** audience: my-api                  ***REMOVED*** expected `aud` claim, if you enforce it
+    ***REMOVED*** tokenUrl: https://auth.example.com/realms/demo/protocol/openid-connect/token
+    ***REMOVED*** clientId: demo-client
+    ***REMOVED*** clientSecret: REPLACE_ME          ***REMOVED*** used by `basic` type as the password
+    ***REMOVED*** httpsAllowUnauthorized: false     ***REMOVED*** accept self-signed TLS on jwksUri (dev only)
+    ***REMOVED*** scopes:                           ***REMOVED*** OIDC scopes, when fetching tokens
+    ***REMOVED***   - openid
+    ***REMOVED***   - profile
+
+  ***REMOVED*** ---- other provider shapes, for reference (uncomment / adapt) -------------
+  ***REMOVED*** HS256-signed JWT verified with a shared secret:
+  ***REMOVED*** - name: gateway-hs
+  ***REMOVED***   type: jwt
+  ***REMOVED***   headerPrefix: "X-GTW-AUTH-"
+  ***REMOVED***   uidClaim: sub
+  ***REMOVED***   secret: REPLACE_ME               ***REMOVED*** HS shared secret
+  ***REMOVED***   algorithms: [HS256]
+  ***REMOVED***   issuer: https://auth.example.com/realms/demo
+  ***REMOVED***   jwtMap:
+  ***REMOVED***     - sub:userId
+  ***REMOVED***
+  ***REMOVED*** HTTP Basic (clientId = username, clientSecret = password). A `basic`
+  ***REMOVED*** provider WITHOUT clientSecret passes through as authenticated (open):
+  ***REMOVED*** - name: gateway-basic
+  ***REMOVED***   type: basic
+  ***REMOVED***   headerPrefix: "X-GTW-AUTH-"
+  ***REMOVED***   clientId: demo-user
+  ***REMOVED***   clientSecret: REPLACE_ME
+  ***REMOVED***
+  ***REMOVED*** str-compare: the raw Authorization header is compared to `secret` and
+  ***REMOVED*** mapped to <prefix>TOKEN. Without `secret` it passes through:
+  ***REMOVED*** - name: gateway-token
+  ***REMOVED***   type: str-compare
+  ***REMOVED***   headerPrefix: "X-GTW-AUTH-"
+  ***REMOVED***   secret: REPLACE_ME
+
+
+***REMOVED*** -----------------------------------------------------------------------------
+***REMOVED*** gateway:  GatewayConfig
+***REMOVED*** -----------------------------------------------------------------------------
+gateway:
+  ***REMOVED*** Operating mode of this app instance. The gateway runs as a proxy.
+  mode: gateway
+
+  ***REMOVED*** Prefix applied to FORWARDED REQUEST headers (the `forwardHeaders` map on a
+  ***REMOVED*** path). NOTE: this is separate from a provider's `headerPrefix`, which
+  ***REMOVED*** governs the auth-claim headers.
+  headerPrefix: "X-FWD-"
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** paths:  PathDefinition[]   — HTTP routes
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** Each entry maps an HTTP method+path to a broker topic/action.
+  ***REMOVED***
+  ***REMOVED*** THE AUTH GATE (evaluated per request):
+  ***REMOVED***   1. allowAnonymous: true        -> gate skipped; a valid token (if present)
+  ***REMOVED***                                     still has claims mapped & forwarded.
+  ***REMOVED***   2. auth set, no roles          -> authentication only (401 if invalid).
+  ***REMOVED***   3. auth + roles                -> authenticate, then in-process role check
+  ***REMOVED***                                     canUserDoGtw(roles, userId): pass if the
+  ***REMOVED***                                     user holds AT LEAST ONE role, else 403.
+  ***REMOVED***   Declaring `roles` WITHOUT `auth` fails closed (every request 403).
+  ***REMOVED***
+  ***REMOVED*** RESPONSE / STATUS MAPPING (rpc mode):
+  ***REMOVED***   * A DEFINED reply (including falsy false / 0 / "") -> 200 with body.
+  ***REMOVED***   * null / undefined                                 -> 204 No Content.
+  ***REMOVED***     (So a boolean-check route returns 200 with body `false`, NOT 204.)
+  ***REMOVED***   Broker error `name` -> HTTP status:
+  ***REMOVED***     BadRequestError / InvalidParamsErrror -> 400
+  ***REMOVED***     UnauthorizedError                     -> 401
+  ***REMOVED***     ForbiddenError                        -> 403
+  ***REMOVED***     NotFoundError                         -> 404
+  ***REMOVED***     ConflictError                         -> 409
+  ***REMOVED***     (anything else)                       -> 500
+  ***REMOVED*** RESPONSE / STATUS MAPPING (event mode):
+  ***REMOVED***   * successful publish -> successStatusCode || 202
+  ***REMOVED***   * publish failure    -> 503
+  ***REMOVED***
+  ***REMOVED*** dataSource — how the forwarded payload is assembled (req.params always merged):
+  ***REMOVED***   body         { ...params, ...body }
+  ***REMOVED***   query        { ...params, ...query }
+  ***REMOVED***   params       { ...params }
+  ***REMOVED***   body-query   { ...params, ...query, ...body }   (body wins)
+  ***REMOVED***   query-body   { ...params, ...body, ...query }   (query wins)
+  paths:
+
+    ***REMOVED*** ---- (1) Minimal public RPC route ---------------------------------------
+    ***REMOVED*** GET /health -> rlb-gateway-admin / gw-health, no auth.
+    - name: health                 ***REMOVED*** logical name (logs + metrics)
+      method: GET                  ***REMOVED*** HTTP verb
+      path: /health               ***REMOVED*** Express path (may include :params)
+      dataSource: query           ***REMOVED*** forward the query string as the payload
+      topic: rlb-gateway-admin    ***REMOVED*** DECORATOR-BOUND topic name (not configurable)
+      action: gw-health           ***REMOVED*** DECORATOR-BOUND action string (not configurable)
+      mode: rpc                   ***REMOVED*** wait for the broker reply and relay it
+
+    ***REMOVED*** ---- (2) Rich RPC route exercising every PathDefinition field -----------
+    ***REMOVED*** GET /reports/:id -> rlb-gateway-admin / gw-metrics-get.
+    ***REMOVED*** Authenticated + role-gated, with header forwarding, custom timeout, etc.
+    - name: report-download
+      method: GET
+      path: /reports/:id          ***REMOVED*** :id is merged into the payload via params
+      dataSource: query-body      ***REMOVED*** query wins over body wins over... (params always)
+      topic: rlb-gateway-admin
+      action: gw-metrics-get
+      mode: rpc
+
+      auth: gateway-jwks          ***REMOVED*** provider name from auth-providers above
+      roles: [user, admin]        ***REMOVED*** caller must hold at least ONE of these roles
+      allowAnonymous: false       ***REMOVED*** explicit: do NOT skip the gate (default behavior)
+
+      timeout: 15000              ***REMOVED*** RPC timeout in ms (rpc mode only)
+
+      ***REMOVED*** Treat a raw (non-JSON) RPC reply as base64 and emit it as a binary body
+      ***REMOVED*** (e.g. a generated PDF/image). Pairs with successStatusCode/headers.
+      binary: true
+
+      ***REMOVED*** Override the success status. Default is 200 (rpc) / 202 (event) /
+      ***REMOVED*** 204 (empty rpc reply). Here we keep an explicit 200.
+      successStatusCode: 200
+
+      ***REMOVED*** Static response headers added to every reply on this route.
+      headers:
+        Cache-Control: no-store
+        X-Report-Kind: metrics
+
+      ***REMOVED*** Copy named REQUEST headers downstream to the microservice. Each entry is
+      ***REMOVED*** <destHeader>: <sourceHeader>; the dest is prefixed by gateway.headerPrefix.
+      ***REMOVED*** Here request header `X-Request-Id` is forwarded as `X-FWD-X-Trace-Id`.
+      forwardHeaders:
+        X-Trace-Id: X-Request-Id
+
+    ***REMOVED*** ---- (3) Event route (fire-and-forget) with raw body + redirect ---------
+    ***REMOVED*** POST /webhooks/ingest -> rlb-gateway-admin / gw-metrics-track (event mode).
+    ***REMOVED*** `event` mode does not wait for a reply; a successful publish returns 202
+    ***REMOVED*** (or successStatusCode), a publish failure returns 503.
+    - name: webhook-ingest
+      method: POST
+      path: /webhooks/ingest
+      dataSource: body
+      topic: rlb-gateway-admin
+      action: gw-metrics-track    ***REMOVED*** DECORATOR-BOUND action string (not configurable)
+      mode: event
+
+      allowAnonymous: true        ***REMOVED*** public route: skip the auth/role gate
+
+      ***REMOVED*** Expose the raw, unparsed request body to the handler as `$raw`.
+      ***REMOVED*** REQUIRES the app to bootstrap with NestFactory.create(AppModule,{rawBody:true}).
+      parseRaw: true
+
+      ***REMOVED*** Status returned on a successful publish (overrides the 202 default).
+      successStatusCode: 204
+
+      ***REMOVED*** `redirect` is meaningful on rpc routes: when set, the gateway issues an
+      ***REMOVED*** HTTP redirect with this status using the reply as the Location. Shown
+      ***REMOVED*** here only as a field reference (it has no effect in event mode):
+      ***REMOVED*** redirect: 302
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** loadConfig:  DB-backed routes / events merged with the YAML ones above
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** On (re)load the gateway RPCs these topic/action pairs to pull routes stored
+  ***REMOVED*** in a database, then merges them with the static `paths` / `events`. Seed via
+  ***REMOVED*** the admin CRUD routes, then trigger a reload (see reloadTopic).
+  ***REMOVED*** topic/action below are DECORATOR-BOUND (gateway-admin handlers).
+  loadConfig:
+    paths:
+      topic: rlb-gateway-admin
+      action: gw-path-export      ***REMOVED*** RPC that exports DB-stored HTTP routes
+    ***REMOVED*** Optional: pull DB-stored WebSocket events on boot too.
+    ***REMOVED*** events:
+    ***REMOVED***   topic: rlb-gateway-admin
+    ***REMOVED***   action: gw-event-export
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** reloadTopic:  runtime route rebuild
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** Broadcast control topic the gateway subscribes to. A message carrying the
+  ***REMOVED*** action `gw-reload` (the literal string GW_RELOAD_ACTION — NOT configurable)
+  ***REMOVED*** rebuilds the route table at runtime without a restart. Use a `broadcast`
+  ***REMOVED*** topic so EVERY gateway instance reloads. The topic NAME below maps to a
+  ***REMOVED*** configurable broker topic, but the trigger action `gw-reload` does not.
+  reloadTopic: rlb-gateway-control
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** metrics:  per-call metrics sink
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** When set, the gateway fires a fire-and-forget track event after EVERY served
+  ***REMOVED*** HTTP request (method/route/name/status/durationMs). Point it at the
+  ***REMOVED*** gateway-admin metrics handler. Omit the whole block to disable.
+  ***REMOVED*** topic/action are DECORATOR-BOUND (not configurable).
+  metrics:
+    topic: rlb-gateway-admin
+    action: gw-metrics-track
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** ws:  WebSocketGatewayOptions — connection-level limits & heartbeat
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** CONNECTION-level only. Authentication/authorization is declared PER-EVENT
+  ***REMOVED*** (auth/requireAuth/roles/scopeClaim under each events[] entry), not here.
+  ws:
+    maxConnections: 1000             ***REMOVED*** max concurrent connections this instance accepts
+    maxSubscriptionsPerClient: 50    ***REMOVED*** max active subscriptions per connected client
+    heartbeatIntervalMs: 30000       ***REMOVED*** ping/pong interval (default 30000); also drops
+                                     ***REMOVED*** dead sockets and expired-token sessions
+    maxMessageBytes: 16384           ***REMOVED*** max inbound client message size in bytes
+                                     ***REMOVED*** (default 16384); larger frames are dropped
+    allowedOrigins:                  ***REMOVED*** accepted Origin headers for the WS handshake;
+      - https://app.example.com      ***REMOVED*** when omitted, ALL origins are accepted (logged)
+
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** events:  WebSocketEvent[] — broker exchange -> client stream / webhook
+  ***REMOVED*** ===========================================================================
+  ***REMOVED*** Each event binds a broker exchange/routingKey to a named client-facing
+  ***REMOVED*** event. Clients subscribe by `name`; messages arrive as `on<Name>` (the name
+  ***REMOVED*** with its first letter capitalized, e.g. chat -> onChat).
+  ***REMOVED***
+  ***REMOVED*** type:
+  ***REMOVED***   ws    a client-facing WebSocket stream
+  ***REMOVED***   mqtt  (reserved)
+  ***REMOVED***   http  forward each broker message to a webhook (url/method/headers/timeout)
+  ***REMOVED***
+  ***REMOVED*** The exchange / routingKey here ARE configurable broker coordinates.
+  events:
+
+    ***REMOVED*** ---- (a) Authenticated, per-user-scoped WS stream -----------------------
+    - name: chat                     ***REMOVED*** clients subscribe to "chat"; receive "onChat"
+      type: ws
+      exchange: rlb                  ***REMOVED*** broker exchange to bind (configurable)
+      routingKey: chat.messages      ***REMOVED*** routing key for this stream (configurable)
+
+      auth: gateway-jwks             ***REMOVED*** verify the connection token at subscribe time
+      requireAuth: true              ***REMOVED*** require a valid token (default true when auth set);
+                                     ***REMOVED*** set false to allow anonymous subscribers while
+                                     ***REMOVED*** still mapping claims for authenticated ones
+      roles: [user]                  ***REMOVED*** role check via the ACL service (needs auth)
+
+      ***REMOVED*** Per-user isolation: the server only forwards a message when
+      ***REMOVED*** payload[payloadKey] equals the authenticated client's scopeClaim value.
+      ***REMOVED*** Prevents a client from receiving other users' data via a crafted filter.
+      scopeClaim: userId             ***REMOVED*** claim taken from the verified token
+      payloadKey: userId             ***REMOVED*** key compared against it inside the message
+
+    ***REMOVED*** ---- (b) Webhook (http-type) event --------------------------------------
+    ***REMOVED*** Forwards each broker message to an external HTTP endpoint instead of to
+    ***REMOVED*** WS clients. The url/method/headers/timeout fields apply to http events.
+    - name: order-events
+      type: http
+      exchange: rlb
+      routingKey: orders.created
+      url: https://hooks.example.com/orders   ***REMOVED*** webhook target (REPLACE_ME)
+      method: POST
+      headers:
+        Authorization: "Bearer REPLACE_ME"
+        Content-Type: application/json
+      timeout: 5000                  ***REMOVED*** webhook request timeout in ms

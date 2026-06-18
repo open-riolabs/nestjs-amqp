@@ -8,6 +8,11 @@ export const RLB_BROKER_HTTP_METADATA_KEY = 'rlb-broker:http';
 export const RLB_BROKER_AUTH_METADATA_KEY = 'rlb-broker:auth';
 export const RLB_BROKER_PARAM_METADATA_KEY = 'rlb-broker:param';
 
+/** The ONLY control-topic action that forces the gateway to rebuild its HTTP routes. The control
+ *  topic may carry other message types (e.g. microservice config signals); the gateway ignores
+ *  everything except this action, so an HTTP-forced reload stays decoupled from that traffic. */
+export const GW_RELOAD_ACTION = 'gw-reload';
+
 /** Route auto-discovery (a microservice announces its HTTP routes to the gateway). */
 export const RLB_ROUTE_DISCOVERY_OPTIONS = 'RLB_ROUTE_DISCOVERY_OPTIONS';
 /** Dedicated durable exchange microservices publish their route manifests to. */
