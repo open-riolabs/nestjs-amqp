@@ -114,25 +114,4 @@ export class AclService implements IAclRoleService {
     }
   }
 
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.verifyAccess, 'rpc')
-  async verifyAccess(
-    @BrokerParam('body', 'userId') userId: string,
-    @BrokerParam('body', 'resourceId') resourceId: string,
-    @BrokerParam('body', 'action') action: string,
-    @BrokerParam('body', 'resourceBusinessId') resourceBusinessId?: string,
-    @BrokerParam('body', 'productId') productId?: string,
-  ): Promise<boolean> {
-    try {
-      const businessId = resourceBusinessId ?? productId;
-      const filter = {
-        userId,
-        resourceId,
-        ...(businessId !== undefined ? { resourceBusinessId: businessId } : {}),
-      };
-      return await this.grants.checkActions(filter, action);
-    } catch (error) {
-      this.logger.error(error);
-      throw error;
-    }
-  }
 }

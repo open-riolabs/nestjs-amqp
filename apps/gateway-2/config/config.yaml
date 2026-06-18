@@ -126,14 +126,7 @@ gateway:
       action: gw-metrics-get
       mode: rpc
 
-    ***REMOVED*** --- ACL management: actions (full CRUD) ---
-    - name: acl-action-create
-      method: POST
-      path: /acl/actions
-      dataSource: body
-      topic: rlb-acl
-      action: acl-action-create
-      mode: rpc
+    ***REMOVED*** --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
     - name: acl-action-list
       method: GET
       path: /acl/actions
@@ -141,14 +134,21 @@ gateway:
       topic: rlb-acl
       action: acl-action-list
       mode: rpc
-    - name: acl-action-update     ***REMOVED*** body: { id, name?, description? }
+    - name: acl-action-get        ***REMOVED*** query: ?name=
+      method: GET
+      path: /acl/actions/get
+      dataSource: query
+      topic: rlb-acl
+      action: acl-action-get
+      mode: rpc
+    - name: acl-action-upsert     ***REMOVED*** PUT creates-or-updates by name. body: { name, description? }
       method: PUT
       path: /acl/actions
       dataSource: body
       topic: rlb-acl
       action: acl-action-update
       mode: rpc
-    - name: acl-action-delete     ***REMOVED*** body: { id }
+    - name: acl-action-delete     ***REMOVED*** body: { name }
       method: DELETE
       path: /acl/actions
       dataSource: body
@@ -156,14 +156,7 @@ gateway:
       action: acl-action-delete
       mode: rpc
 
-    ***REMOVED*** --- ACL management: roles (full CRUD + get) ---
-    - name: acl-role-create
-      method: POST
-      path: /acl/roles
-      dataSource: body
-      topic: rlb-acl
-      action: acl-role-create
-      mode: rpc
+    ***REMOVED*** --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
     - name: acl-role-list
       method: GET
       path: /acl/roles
@@ -178,7 +171,7 @@ gateway:
       topic: rlb-acl
       action: acl-role-get
       mode: rpc
-    - name: acl-role-update       ***REMOVED*** body: { name, actions?, description? }
+    - name: acl-role-upsert       ***REMOVED*** PUT creates-or-updates by name. body: { name, actions, description? }
       method: PUT
       path: /acl/roles
       dataSource: body
@@ -211,19 +204,21 @@ gateway:
 
     ***REMOVED*** --- ACL checks (exposed over HTTP for the demo; normally called over the broker) ---
     ***REMOVED*** Gateway-style primary filter {userId, roles}: true if the user holds at least one role.
+    ***REMOVED*** A read → GET; query: ?userId=&roles=user&roles=admin. Returns 200 with `true`/`false`.
     - name: acl-check-gtw
-      method: POST
+      method: GET
       path: /acl/check
-      dataSource: body
+      dataSource: query
       topic: rlb-acl
       action: acl-can-user-do-gtw
       mode: rpc
     ***REMOVED*** MS-side resource-scoped check {userId, roles, resource}: true if a global grant OR a
-    ***REMOVED*** grant bound to that resource gives the user a role.
+    ***REMOVED*** grant bound to that resource gives the user a role. A read → GET; query:
+    ***REMOVED*** ?userId=&roles=admin&resource=doc-1. Returns 200 with `true`/`false`.
     - name: acl-check-resource
-      method: POST
+      method: GET
       path: /acl/check-resource
-      dataSource: body
+      dataSource: query
       topic: rlb-acl
       action: acl-can-user-do
       mode: rpc
@@ -244,14 +239,6 @@ gateway:
       dataSource: body
       topic: rlb-acl
       action: acl-list-by-user
-      mode: rpc
-    ***REMOVED*** Action check scoped to a resource. body: { userId, resourceId, action, resourceBusinessId? }
-    - name: acl-verify-access
-      method: POST
-      path: /acl/verify
-      dataSource: body
-      topic: rlb-acl
-      action: acl-verify-access
       mode: rpc
 
     ***REMOVED*** --- gateway-admin: manage DB routes / auth-providers / metrics ---
@@ -276,6 +263,20 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-export
       mode: rpc
+    - name: gw-path-update        ***REMOVED*** body: { id, name, method, path, topic, action, mode, ... }
+      method: PUT
+      path: /admin/paths
+      dataSource: body
+      topic: rlb-gateway-admin
+      action: gw-path-update
+      mode: rpc
+    - name: gw-path-get           ***REMOVED*** query: ?id=
+      method: GET
+      path: /admin/paths/get
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-path-get
+      mode: rpc
     - name: gw-path-delete
       method: DELETE
       path: /admin/paths
@@ -296,6 +297,20 @@ gateway:
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-list
+      mode: rpc
+    - name: gw-auth-update        ***REMOVED*** body: { id, name, type, ... }
+      method: PUT
+      path: /admin/auth
+      dataSource: body
+      topic: rlb-gateway-admin
+      action: gw-auth-update
+      mode: rpc
+    - name: gw-auth-get           ***REMOVED*** query: ?id=
+      method: GET
+      path: /admin/auth/get
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-auth-get
       mode: rpc
     - name: gw-auth-delete
       method: DELETE

@@ -17,16 +17,14 @@ export const ACL_ACTIONS = {
   listResourcesByUser: 'acl-list-resources-by-user',
   /** Raw list of a user's grants (ungrouped). */
   listByUser: 'acl-list-by-user',
-  /** Action-based check scoped to a specific resource (+ business resource). */
-  verifyAccess: 'acl-verify-access',
   grant: 'acl-grant',
   revoke: 'acl-revoke',
   invalidate: 'acl-invalidate',
-  actionCreate: 'acl-action-create',
+  // Actions & roles are keyed by `name` (no separate id). PUT upserts by name; there is no POST.
   actionUpdate: 'acl-action-update',
   actionDelete: 'acl-action-delete',
   actionList: 'acl-action-list',
-  roleCreate: 'acl-role-create',
+  actionGet: 'acl-action-get',
   roleUpdate: 'acl-role-update',
   roleDelete: 'acl-role-delete',
   roleList: 'acl-role-list',

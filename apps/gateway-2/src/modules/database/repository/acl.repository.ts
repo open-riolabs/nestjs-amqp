@@ -67,9 +67,6 @@ export class InMemoryAclRoleRepository extends AclRoleRepository {
 export class InMemoryAclGrantRepository extends AclGrantRepository {
   private readonly col = new InMemoryCollection<AclGrant>();
 
-  // Needs role data to resolve role -> actions (legacy did this with a $lookup).
-  constructor(private readonly roles: InMemoryAclRoleRepository) { super(); }
-
   async insert(model: AclGrant): Promise<AclGrant> { return this.col.insert(model); }
   async findById(id: string): Promise<AclGrant> { return this.col.findById(id)!; }
   async findOne(filter: Record<string, any>): Promise<AclGrant> { return this.col.findOne(filter)!; }
@@ -80,14 +77,4 @@ export class InMemoryAclGrantRepository extends AclGrantRepository {
   async removeOne(filter: Record<string, any>): Promise<AclGrant> { return this.col.removeOne(filter)!; }
   async filter(filter: Record<string, any>): Promise<AclGrant[]> { return this.col.filter(filter); }
   async filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclGrant>> { return this.col.paginate(filter, page1(page), lim10(limit)); }
-
-  async checkActions(filter: Record<string, any>, actions: string | string[]): Promise<boolean> {
-    const requested = typeof actions === 'string' ? [actions] : actions;
-    if (!requested?.length) throw new Error('Actions is required');
-    const grants = this.col.filter(filter);
-    if (!grants.length) return false;
-    const roleNames = [...new Set(grants.flatMap((g) => g.roles || []))];
-    const allowed = new Set(await this.roles.getActionsByNames(roleNames));
-    return requested.every((a) => allowed.has(a));
-  }
 }

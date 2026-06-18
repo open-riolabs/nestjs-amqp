@@ -17,9 +17,4 @@ export abstract class AclGrantRepository {
   abstract removeOne(filter: Record<string, any>): Promise<AclGrant>;
   abstract filter(filter: Record<string, any>): Promise<AclGrant[]>;
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclGrant>>;
-  /**
-   * True when at least one matching grant gives the user every requested action
-   * (via the actions of its roles).
-   */
-  abstract checkActions(filter: Record<string, any>, actions: string | string[]): Promise<boolean>;
 }

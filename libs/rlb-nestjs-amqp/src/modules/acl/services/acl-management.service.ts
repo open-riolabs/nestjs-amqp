@@ -78,31 +78,24 @@ export class AclManagementService {
     return (all || []).find((g) => (g.resourceId ?? null) === (resourceId ?? null));
   }
 
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionCreate, 'rpc')
-  async createAction(
+  // PUT = create-or-update, keyed by `name` (actions have no separate id — the name IS the key).
+  // Idempotent: PUTting the same action twice updates it in place rather than creating a duplicate.
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionUpdate, 'rpc')
+  async upsertAction(
     @BrokerParam('body', 'name') name: string,
     @BrokerParam('body', 'description') description?: string,
   ): Promise<AclAction> {
     if (!name) throw new BadRequestError('name is required');
-    const created = await this.actions.insert({ name, description });
+    const model: Partial<AclAction> = { name, ...(description !== undefined ? { description } : {}) };
+    const result = await this.actions.upsertOne({ name }, model);
     await this.cache.invalidate();
-    return created;
-  }
-
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionUpdate, 'rpc')
-  async updateAction(
-    @BrokerParam('body', 'id') id: string,
-    @BrokerParam('body-full') model: Partial<AclAction>,
-  ): Promise<AclAction> {
-    if (!id) throw new BadRequestError('id is required');
-    const updated = await this.actions.updateById(id, model);
-    await this.cache.invalidate();
-    return updated;
+    return result;
   }
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionDelete, 'rpc')
-  async deleteAction(@BrokerParam('body', 'id') id: string): Promise<AclAction> {
-    const removed = await this.actions.removeById(id);
+  async deleteAction(@BrokerParam('body', 'name') name: string): Promise<AclAction> {
+    if (!name) throw new BadRequestError('name is required');
+    const removed = await this.actions.removeOne({ name });
     await this.cache.invalidate();
     return removed;
   }
@@ -115,8 +108,16 @@ export class AclManagementService {
     return this.actions.filterPaginated({}, Number(page) || 1, Number(limit) || 10);
   }
 
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleCreate, 'rpc')
-  async createRole(
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionGet, 'rpc')
+  async getAction(@BrokerParam('body', 'name') name: string): Promise<AclAction> {
+    if (!name) throw new BadRequestError('name is required');
+    return this.actions.findOne({ name });
+  }
+
+  // PUT = create-or-update, keyed by `name` (roles have no separate id — the name IS the key). A
+  // role is fully described by name + actions, so PUT replaces them; idempotent on repeat.
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleUpdate, 'rpc')
+  async upsertRole(
     @BrokerParam('body', 'name') name: string,
     @BrokerParam('body', 'actions') actions: string[],
     @BrokerParam('body', 'description') description?: string,
@@ -124,25 +125,17 @@ export class AclManagementService {
     if (!name) throw new BadRequestError('name is required');
     if (!actions?.length) throw new BadRequestError('actions are required');
     await this.assertActionsExist(actions);
-    const created = await this.roles.insert({ name, description, actions });
+    const model: Partial<AclRole> = { name, actions, ...(description !== undefined ? { description } : {}) };
+    const result = await this.roles.upsertOne({ name }, model);
     await this.cache.invalidate();
-    return created;
-  }
-
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleUpdate, 'rpc')
-  async updateRole(
-    @BrokerParam('body', 'name') name: string,
-    @BrokerParam('body-full') model: Partial<AclRole>,
-  ): Promise<AclRole> {
-    if (!name) throw new BadRequestError('name is required');
-    if (model?.actions?.length) await this.assertActionsExist(model.actions);
-    const updated = await this.roles.updateOne({ name }, model);
-    await this.cache.invalidate();
-    return updated;
+    return result;
   }
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleDelete, 'rpc')
   async deleteRole(@BrokerParam('body', 'name') name: string): Promise<AclRole> {
+    // Guard a missing name: removeOne({ name: undefined }) would match an arbitrary role
+    // (the filter value is ignored) and silently delete it. Fail with 400 instead.
+    if (!name) throw new BadRequestError('name is required');
     const removed = await this.roles.removeOne({ name });
     await this.cache.invalidate();
     return removed;

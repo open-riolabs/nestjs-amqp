@@ -204,7 +204,10 @@ export class HttpHandlerService implements OnModuleInit {
         } else if (path.mode === "rpc") {
           try {
             const resp = await this.broker.requestData(path.topic, path.action, data, { ...httpHeaders, ...authHeaders, "X-GTW-METHOD": req.method, "X-GTW-PATH": path.path }, path.timeout);
-            if (resp) {
+            // A DEFINED result (incl. the falsy `false`/`0`/`''`) is real content → 200 + body.
+            // Only null/undefined means "nothing to return" → 204. This is why a boolean check
+            // (e.g. /acl/check) now answers `200 false` instead of an empty `204 No Content`.
+            if (resp !== undefined && resp !== null) {
               if (path.redirect) {
                 res.redirect(path.redirect, resp);
                 this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | REDIRECT '${path.redirect}'`);
