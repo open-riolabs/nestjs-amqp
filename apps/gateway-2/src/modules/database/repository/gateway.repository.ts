@@ -3,8 +3,12 @@ import {
   AuthProviderRepository,
   HandlerAuthConfig,
   HttpMetric,
+  HttpMetricPoint,
   HttpMetricRepository,
   HttpPathRepository,
+  MetricQuery,
+  MetricSeriesBucket,
+  MetricSeriesQuery,
   PaginationModel,
   PathDefinition,
   StoredAuthProvider,
@@ -12,6 +16,16 @@ import {
   TrackCallInput,
 } from '@open-rlb/nestjs-amqp';
 import { InMemoryCollection } from './in-memory-collection';
+
+/** True when a metric point matches the query's method/route/name + [from,to] time window. */
+function matchPoint(p: HttpMetricPoint, q: MetricQuery): boolean {
+  if (q.method && p.method !== q.method) return false;
+  if (q.route && p.route !== q.route) return false;
+  if (q.name && p.name !== q.name) return false;
+  if (q.from != null && p.ts < q.from) return false;
+  if (q.to != null && p.ts > q.to) return false;
+  return true;
+}
 
 /** Drops persistence-only fields (_id, enabled) from a stored doc. */
 function toPlain<T extends { _id?: string; enabled?: boolean }>(doc: T): Omit<T, '_id' | 'enabled'> {
@@ -36,6 +50,10 @@ export class InMemoryHttpPathRepository extends HttpPathRepository {
     return this.col.all()
       .filter((p) => p.enabled !== false)
       .map((p) => toPlain(p) as PathDefinition);
+  }
+
+  async filter(filter: Record<string, any>): Promise<StoredHttpPath[]> {
+    return this.col.filter(filter);
   }
 }
 
@@ -62,6 +80,7 @@ export class InMemoryAuthProviderRepository extends AuthProviderRepository {
 @Injectable()
 export class InMemoryHttpMetricRepository extends HttpMetricRepository {
   private readonly col = new InMemoryCollection<HttpMetric>();
+  private readonly pointsCol = new InMemoryCollection<HttpMetricPoint>();
 
   async increment(input: TrackCallInput): Promise<void> {
     if (!input?.method || !input?.route) return;
@@ -97,5 +116,35 @@ export class InMemoryHttpMetricRepository extends HttpMetricRepository {
   async list(route?: string): Promise<(HttpMetric & { avgDurationMs: number; })[]> {
     const rows = route ? this.col.filter({ route }) : this.col.all();
     return rows.map((m) => ({ ...m, avgDurationMs: m.count > 0 ? Math.round(m.totalDurationMs / m.count) : 0 }));
+  }
+
+  async record(point: HttpMetricPoint): Promise<void> {
+    if (!point?.method || !point?.route) return;
+    this.pointsCol.insert({ ...point, ts: point.ts ?? Date.now() });
+  }
+
+  async points(query: MetricQuery): Promise<HttpMetricPoint[]> {
+    const rows = this.pointsCol.all().filter((p) => matchPoint(p, query)).sort((a, b) => b.ts - a.ts);
+    return query.limit ? rows.slice(0, query.limit) : rows;
+  }
+
+  async series(query: MetricSeriesQuery): Promise<MetricSeriesBucket[]> {
+    const width = query.bucketMs > 0 ? query.bucketMs : 60_000;
+    const buckets = new Map<number, MetricSeriesBucket>();
+    for (const p of this.pointsCol.all()) {
+      if (!matchPoint(p, query)) continue;
+      const start = Math.floor(p.ts / width) * width;
+      let b = buckets.get(start);
+      if (!b) { b = { bucketStart: start, count: 0, errorCount: 0, totalDurationMs: 0, avgDurationMs: 0 }; buckets.set(start, b); }
+      b.count++;
+      if ((p.status ?? 0) >= 400) b.errorCount++;
+      const d = p.durationMs ?? 0;
+      b.totalDurationMs += d;
+      b.minDurationMs = b.minDurationMs == null ? d : Math.min(b.minDurationMs, d);
+      b.maxDurationMs = b.maxDurationMs == null ? d : Math.max(b.maxDurationMs, d);
+    }
+    const out = [...buckets.values()].sort((a, b) => a.bucketStart - b.bucketStart);
+    for (const b of out) b.avgDurationMs = b.count > 0 ? Math.round(b.totalDurationMs / b.count) : 0;
+    return out;
   }
 }

@@ -1,7 +1,15 @@
 import { PaginationModel } from '../../../common';
 import { PathDefinition } from '../../proxy/config/path-definition.config';
 
-export type StoredHttpPath = Partial<PathDefinition> & { _id?: string; enabled?: boolean; };
+export type StoredHttpPath = Partial<PathDefinition> & {
+  _id?: string;
+  enabled?: boolean;
+  /** Owning service id for routes published via route auto-discovery (null/absent for
+   *  manually-managed rows). The route-sync only ever touches rows of the same owner. */
+  owner?: string;
+  /** Stable identity `METHOD path` — used by route-sync for upsert/diff. */
+  routeKey?: string;
+};
 
 /** Repository contract for stored HTTP gateway paths. Implemented by the consuming app. */
 export abstract class HttpPathRepository {
@@ -13,4 +21,17 @@ export abstract class HttpPathRepository {
   /** Enabled paths mapped to plain PathDefinition objects (no _id/enabled). */
   abstract listEnabled(): Promise<PathDefinition[]>;
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<StoredHttpPath>>;
+  /** Simple (unpaginated) list by filter — mirrors the other repositories' `filter`. */
+  abstract filter(filter: Record<string, any>): Promise<StoredHttpPath[]>;
+
+  /** All rows owned by `owner` (route auto-discovery). Concrete default over `filter`. */
+  findByOwner(owner: string): Promise<StoredHttpPath[]> {
+    return this.filter({ owner });
+  }
+
+  /** All rows matching this routeKey, in ANY enabled state (used for cross-owner collision
+   *  detection — a soft-disabled route still belongs to its owner). Concrete default over `filter`. */
+  findByRouteKey(routeKey: string): Promise<StoredHttpPath[]> {
+    return this.filter({ routeKey });
+  }
 }

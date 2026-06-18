@@ -19,4 +19,6 @@ export const GW_ADMIN_ACTIONS = {
   authExport: 'gw-auth-export',
   metricsTrack: 'gw-metrics-track',
   metricsGet: 'gw-metrics-get',
+  metricsSeries: 'gw-metrics-series',
+  metricsPoints: 'gw-metrics-points',
 } as const;

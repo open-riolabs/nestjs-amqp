@@ -7,3 +7,10 @@ export const RLB_BROKER_METHOD_METADATA_KEY = 'rlb-broker:method';
 export const RLB_BROKER_HTTP_METADATA_KEY = 'rlb-broker:http';
 export const RLB_BROKER_AUTH_METADATA_KEY = 'rlb-broker:auth';
 export const RLB_BROKER_PARAM_METADATA_KEY = 'rlb-broker:param';
+
+/** Route auto-discovery (a microservice announces its HTTP routes to the gateway). */
+export const RLB_ROUTE_DISCOVERY_OPTIONS = 'RLB_ROUTE_DISCOVERY_OPTIONS';
+/** Dedicated durable exchange microservices publish their route manifests to. */
+export const ROUTE_DISCOVERY_EXCHANGE = 'rlb-route-discovery';
+/** Durable, NON-exclusive shared work-queue the gateway(s) consume from (competing consumers). */
+export const ROUTE_SYNC_QUEUE = 'rlb-route-sync';

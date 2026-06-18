@@ -2,11 +2,13 @@ import { ConfigurableModuleBuilder, DynamicModule, Global, Module, Provider, Typ
 import { AmqpConnection } from '@open-rlb/nestjs-amqp/amqp-lib';
 import { RabbitMQConfig } from '../../amqp-lib/config/rabbitmq.config';
 import { BrokerTopic } from './config/topics.config';
-import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_TOPIC_CONNECTION } from './const';
+import { RouteDiscoveryConfig } from './config/route-discovery.config';
+import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_TOPIC_CONNECTION, RLB_ROUTE_DISCOVERY_OPTIONS } from './const';
 import { AutoDiscoveryService } from './services/auto-discovery.service';
 import { BrokerService } from './services/broker.service';
 import { HandlerRegistryService } from './services/handler-registry.service';
 import { MetadataScannerService } from './services/metadata-scanner.service';
+import { RouteDiscoveryPublisherService } from './services/route-discovery-publisher.service';
 import { ShutdownStateService } from './services/shutdown-state.service';
 import { AppConfig, UtilsService } from './services/utils.service';
 export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
@@ -21,6 +23,7 @@ export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
     MetadataScannerService,
     ShutdownStateService,
     AutoDiscoveryService,
+    RouteDiscoveryPublisherService,
     UtilsService
   ],
   exports: [
@@ -28,6 +31,7 @@ export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
     UtilsService,
     BrokerService,
     AutoDiscoveryService,
+    RouteDiscoveryPublisherService,
     ShutdownStateService
   ],
 })
@@ -36,6 +40,7 @@ export class BrokerModule {
     options: RabbitMQConfig,
     topics: BrokerTopic[],
     appOptions?: AppConfig,
+    routeDiscovery?: RouteDiscoveryConfig,
   ): DynamicModule {
 
     if (!options) {
@@ -49,6 +54,7 @@ export class BrokerModule {
     const amqpOptionsProvider: Provider = { provide: RLB_AMQP_BROKER_OPTIONS, useValue: options };
     const topicOptionsProvider: Provider = { provide: RLB_AMQP_TOPIC_CONNECTION, useValue: topics };
     const appOptionsProvider: Provider = { provide: RLB_AMQP_APP_OPTIONS, useValue: appOptions };
+    const routeDiscoveryProvider: Provider = { provide: RLB_ROUTE_DISCOVERY_OPTIONS, useValue: routeDiscovery };
 
     return {
       module: BrokerModule,
@@ -56,11 +62,13 @@ export class BrokerModule {
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
+        routeDiscoveryProvider,
       ],
       exports: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
+        routeDiscoveryProvider,
       ],
     };
   }
@@ -70,10 +78,12 @@ export class BrokerModule {
       options: RabbitMQConfig;
       topics: BrokerTopic[];
       appOptions?: AppConfig;
+      routeDiscovery?: RouteDiscoveryConfig;
     }> | {
       options: RabbitMQConfig;
       topics: BrokerTopic[];
       appOptions?: AppConfig;
+      routeDiscovery?: RouteDiscoveryConfig;
     },
     inject?: Type<any>[],
     imports?: Type<any>[];
@@ -105,17 +115,28 @@ export class BrokerModule {
       inject: asyncOptions.inject || [],
     };
 
+    const routeDiscoveryProvider: Provider = {
+      provide: RLB_ROUTE_DISCOVERY_OPTIONS,
+      useFactory: async (...args: any[]) => {
+        const result = await asyncOptions.useFactory(...args);
+        return result.routeDiscovery;
+      },
+      inject: asyncOptions.inject || [],
+    };
+
     return {
       module: BrokerModule,
       providers: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
+        routeDiscoveryProvider,
       ],
       exports: [
         amqpOptionsProvider,
         topicOptionsProvider,
         appOptionsProvider,
+        routeDiscoveryProvider,
       ],
     };
   }

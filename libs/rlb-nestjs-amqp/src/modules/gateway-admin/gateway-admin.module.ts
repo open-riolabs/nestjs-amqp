@@ -4,8 +4,9 @@ import { RLB_GW_ADMIN_OPTIONS } from './const';
 import { GatewayAuthService } from './services/gateway-auth.service';
 import { GatewayMetricsService } from './services/gateway-metrics.service';
 import { GatewayPathService } from './services/gateway-path.service';
+import { RouteSyncService } from './services/route-sync.service';
 
-const SERVICES: Provider[] = [GatewayPathService, GatewayAuthService, GatewayMetricsService];
+const SERVICES: Provider[] = [GatewayPathService, GatewayAuthService, GatewayMetricsService, RouteSyncService];
 const MODULE_EXPORTS = [GatewayPathService, GatewayAuthService, GatewayMetricsService];
 
 @Module({})

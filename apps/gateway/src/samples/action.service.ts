@@ -24,13 +24,16 @@ export class ActionService {
     return "ok";
   }
 
-  // --- Example 2: ONE method, TWO actions, TWO routes bound by name ---------
-  // The method handles two distinct (topic, action) pairs. Each @BrokerHTTP
-  // names its target `action`, so the http<->action pairing is deterministic
-  // (decorator order is NOT used): POST /orders -> order.create,
-  // GET /orders/quote -> order.quote.
+  // --- Example 2: ONE method, TWO actions, per-action auth + routes ---------
+  // The method handles two distinct (topic, action) pairs. Both @BrokerAuth and
+  // @BrokerHTTP name their target `action`, so each pairing is deterministic
+  // (decorator order is NOT used):
+  //   order.create -> auth 'orders-write' (role orders.write) + POST /orders
+  //   order.quote  -> auth 'orders-read'  (public)            + GET  /orders/quote
   @BrokerAction('orders', 'order.create', 'rpc')
   @BrokerAction('orders', 'order.quote', 'rpc')
+  @BrokerAuth('orders-write', false, ['orders.write'], 'order.create')
+  @BrokerAuth('orders-read', true, [], 'order.quote')
   @BrokerHTTP('POST', '/orders', 'body', { action: 'order.create' })
   @BrokerHTTP('GET', '/orders/quote', 'query', { action: 'order.quote', successStatusCode: 200 })
   orders(

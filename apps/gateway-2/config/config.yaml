@@ -44,6 +44,13 @@ broker:
       createQueueIfNotExists: true
       options:
         durable: true
+    ***REMOVED*** Queue for the route-discovery demo microservice (RouteDiscoveryDemoService).
+    - name: demo-ms
+      exchange: rlb
+      routingKey: demo-ms
+      createQueueIfNotExists: true
+      options:
+        durable: true
 
   ***REMOVED*** replyQueues:
   ***REMOVED***   rlb: rlb-reply
@@ -68,6 +75,12 @@ topics:
     mode: broadcast
     exchange: rlb
     routingKey: rlb-gateway-control
+  ***REMOVED*** Topic the route-discovery demo microservice binds its @BrokerAction handlers to.
+  - name: demo-ms
+    mode: rpc
+    queue: demo-ms
+    exchange: rlb
+    routingKey: demo-ms
 
 auth-providers:
   - name: gateway-jwks
@@ -93,6 +106,13 @@ auth-providers:
     scopes:
       - openid
       - profile
+
+***REMOVED*** Route auto-discovery: this app also plays the demo microservice and announces its
+***REMOVED*** decorator-discovered routes to the gateway on boot. The publisher lives in BrokerModule;
+***REMOVED*** this config is threaded into it via BrokerModule.forRootAsync.
+routeDiscovery:
+  serviceName: demo-ms
+  publishOnBoot: true
 
 gateway:
   mode: gateway
@@ -290,6 +310,20 @@ gateway:
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-metrics-get
+      mode: rpc
+    - name: gw-metrics-series
+      method: GET
+      path: /admin/metrics/series
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-series
+      mode: rpc
+    - name: gw-metrics-points
+      method: GET
+      path: /admin/metrics/points
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-points
       mode: rpc
     - name: gw-metrics-track
       method: POST

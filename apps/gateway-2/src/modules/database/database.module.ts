@@ -9,6 +9,7 @@ import {
   InMemoryHttpMetricRepository,
   InMemoryHttpPathRepository,
 } from './repository/gateway.repository';
+import { InMemoryRouteSyncLogRepository } from './repository/route-sync.repository';
 
 // Concrete in-memory repositories (the example has no external DB). They are bound to the
 // lib's abstract repository tokens in app.module via `useExisting`.
@@ -19,6 +20,7 @@ const REPOSITORIES = [
   InMemoryHttpPathRepository,
   InMemoryAuthProviderRepository,
   InMemoryHttpMetricRepository,
+  InMemoryRouteSyncLogRepository,
 ];
 
 /**

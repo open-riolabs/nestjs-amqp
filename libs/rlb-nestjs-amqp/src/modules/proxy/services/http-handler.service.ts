@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { NextFunction, Request, Response, Router } from "express";
@@ -7,6 +7,7 @@ import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/con
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
+import { GatewayMetricPoint, GatewayMetricsHook, RLB_GTW_METRICS_HOOK } from "./metrics-hook";
 import multer = require('multer');
 
 @Injectable()
@@ -27,6 +28,7 @@ export class HttpHandlerService implements OnModuleInit {
     private readonly httpAuthHandlerService: HttpAuthHandlerService,
     @Inject(RLB_AMQP_APP_OPTIONS) private readonly appConfig: AppConfig,
     @Inject(RLB_AMQP_GATEWAY_OPTIONS) private readonly gatewayConfig: GatewayConfig,
+    @Optional() @Inject(RLB_GTW_METRICS_HOOK) private readonly metricsHook?: GatewayMetricsHook,
   ) {
     this.logger = new Logger(HttpHandlerService.name);
     this.multer = multer({
@@ -95,9 +97,9 @@ export class HttpHandlerService implements OnModuleInit {
 
   /**
    * Registers one path. When `router` is omitted the path is appended live to the current
-   * dynamic router (used by RemoteConfigService for pushed single-path config); reload()
-   * passes the router it is building. Note: a subsequent reload() rebuilds from YAML+DB
-   * and drops live-appended paths that aren't part of that config.
+   * dynamic router (live single-path registration); reload() passes the router it is building.
+   * Note: a subsequent reload() rebuilds from YAML+DB and drops live-appended paths that aren't
+   * part of that config.
    */
   registerPath(path: PathDefinition, router?: Router) {
     if (!path.method) throw new Error("Method is required for path definition");
@@ -228,6 +230,7 @@ export class HttpHandlerService implements OnModuleInit {
           } catch (error) {
             switch (error.name) {
               case "BadRequestError": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
+              case "ConflictError": res.status(409).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
               case "ForbiddenError": res.status(403).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
               case "InvalidParamsErrror": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
               case "NotFoundError": res.status(404).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
@@ -253,27 +256,44 @@ export class HttpHandlerService implements OnModuleInit {
   }
 
   /**
-   * Emits one fire-and-forget metrics track event per request, after the response is
-   * flushed, when `gateway.metrics` is configured (i.e. the metrics module is enabled).
-   * Never throws and never delays the response: failures are logged at debug level.
+   * Per-request metrics hook point. ONCE per served request, after the response is flushed, the
+   * gateway builds a {@link GatewayMetricPoint} and dispatches it to (1) the broker sink, when
+   * `gateway.metrics` is configured, and (2) an in-proxy {@link GatewayMetricsHook} (e.g. an
+   * InfluxDB writer), when one is registered under `RLB_GTW_METRICS_HOOK`. Fire-and-forget: never
+   * throws, never delays the response; failures are logged at debug level.
    */
   private trackMetrics(req: Request, res: Response, path: PathDefinition) {
     const sink = this.gatewayConfig.metrics;
-    if (!sink?.topic || !sink?.action) return;
+    const hasBrokerSink = !!(sink?.topic && sink?.action);
+    if (!hasBrokerSink && !this.metricsHook) return;
     const startedAt = Date.now();
     res.once('finish', () => {
-      const payload = {
+      const finishedAt = Date.now();
+      const point: GatewayMetricPoint = {
+        ts: finishedAt,
         method: req.method,
         route: path.path,
         name: path.name,
         topic: path.topic,
         action: path.action,
+        mode: path.mode,
         status: res.statusCode,
-        durationMs: Date.now() - startedAt,
+        durationMs: finishedAt - startedAt,
       };
-      // Fire-and-forget: do not await; a failing metrics sink must not affect requests.
-      this.broker.publishMessage(sink.topic, sink.action, payload)
-        .catch((error) => this.logger.debug(`[METRICS] track failed for '${path.path}': ${error?.message}`));
+      // (1) broker sink — feeds the gateway-admin metrics handler when gateway.metrics is set.
+      if (hasBrokerSink) {
+        this.broker.publishMessage(sink.topic, sink.action, point)
+          .catch((error) => this.logger.debug(`[METRICS] broker track failed for '${path.path}': ${error?.message}`));
+      }
+      // (2) in-proxy hook — e.g. write straight to a time-series DB. Isolated from (1).
+      if (this.metricsHook) {
+        try {
+          Promise.resolve(this.metricsHook.track(point))
+            .catch((error) => this.logger.debug(`[METRICS] hook failed for '${path.path}': ${error?.message}`));
+        } catch (error) {
+          this.logger.debug(`[METRICS] hook threw for '${path.path}': ${(error as Error)?.message}`);
+        }
+      }
     });
   }
 

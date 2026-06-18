@@ -20,6 +20,8 @@ import {
   RabbitMQConfig,
   RLB_ACL_CACHE_STORE,
   RLB_GTW_ACL_ROLE_SERVICE,
+  RLB_GTW_METRICS_HOOK,
+  RouteSyncLogRepository,
 } from '@open-rlb/nestjs-amqp';
 import { InMemoryAclStore } from './cache/in-memory-acl-store';
 import yamlConfig from './config/config.loader';
@@ -34,6 +36,9 @@ import {
   InMemoryHttpMetricRepository,
   InMemoryHttpPathRepository,
 } from './modules/database/repository/gateway.repository';
+import { InMemoryRouteSyncLogRepository } from './modules/database/repository/route-sync.repository';
+import { InfluxMetricsHook } from './metrics/influx-metrics-hook';
+import { RouteDiscoveryDemoService } from './samples/route-discovery-demo.service';
 
 @Module({
   imports: [
@@ -47,6 +52,7 @@ import {
         options: config.get<RabbitMQConfig>('broker') as RabbitMQConfig,
         topics: config.get<BrokerTopic[]>('topics'),
         appOptions: config.get<AppConfig>('app'),
+        routeDiscovery: config.get('routeDiscovery'),
       }),
     }),
     ProxyModule.forRootAsync({
@@ -56,7 +62,11 @@ import {
         authOptions: config.get<HandlerAuthConfig[]>('auth-providers'),
         gatewayOptions: config.get<GatewayConfig>('gateway'),
       }),
-      providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }],
+      providers: [
+        { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
+        // Example in-proxy metrics hook → InfluxDB (no-op until INFLUX_URL/TOKEN/ORG env are set).
+        { provide: RLB_GTW_METRICS_HOOK, useClass: InfluxMetricsHook },
+      ],
     }),
     AclModule.forRoot(
       [
@@ -72,7 +82,12 @@ import {
       { provide: HttpPathRepository, useExisting: InMemoryHttpPathRepository },
       { provide: AuthProviderRepository, useExisting: InMemoryAuthProviderRepository },
       { provide: HttpMetricRepository, useExisting: InMemoryHttpMetricRepository },
+      // Route auto-discovery (gateway side): RouteSyncService is wired by GatewayAdminModule;
+      // the journal log collection is consumer-provided. The publisher side lives in BrokerModule
+      // (a microservice announcing itself), activated by the top-level `routeDiscovery` config.
+      { provide: RouteSyncLogRepository, useExisting: InMemoryRouteSyncLogRepository },
     ]),
   ],
+  providers: [RouteDiscoveryDemoService],
 })
 export class AppModule { }

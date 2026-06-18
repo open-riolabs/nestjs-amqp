@@ -1,7 +1,7 @@
 /**
  * Error classes whose `name` matches the status mapping in the gateway HTTP handler
  * (BadRequestError→400, UnauthorizedError→401, ForbiddenError→403, NotFoundError→404,
- * InvalidParamsErrror→400). Throw these from handlers to drive the gateway response code.
+ * ConflictError→409, InvalidParamsErrror→400). Throw these from handlers to drive the response code.
  */
 export class BrokerHttpError extends Error {
   constructor(message?: string) {
@@ -14,5 +14,6 @@ export class BadRequestError extends BrokerHttpError { }
 export class UnauthorizedError extends BrokerHttpError { }
 export class ForbiddenError extends BrokerHttpError { }
 export class NotFoundError extends BrokerHttpError { }
+export class ConflictError extends BrokerHttpError { }
 // Name kept intentionally (matches the gateway switch which uses this exact spelling).
 export class InvalidParamsErrror extends BrokerHttpError { }

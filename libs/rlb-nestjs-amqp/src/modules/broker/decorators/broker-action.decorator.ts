@@ -53,7 +53,10 @@ export function BrokerHTTP(
   };
 }
 
-export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: string[]): MethodDecorator {
+// `action` binds this auth to a specific @BrokerAction on the same method (by name), exactly
+// like @BrokerHTTP. Required when the method declares more than one @BrokerAction; with a single
+// action it defaults to that action. Makes the auth<->action pairing deterministic (not order-based).
+export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: string[], action?: string): MethodDecorator {
   return (target, propertyKey, descriptor) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, target.constructor) || [];
     const params = getParamNames(descriptor.value);
@@ -62,6 +65,7 @@ export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: s
       authName,
       allowAnonymous,
       roles,
+      action,
     });
     Reflect.defineMetadata(RLB_BROKER_AUTH_METADATA_KEY, existingMetadata, target.constructor);
   };
