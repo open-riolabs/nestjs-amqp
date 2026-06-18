@@ -93,9 +93,21 @@ export class HttpAuthHandlerService {
   async checkRolesForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }, roles?: string | string[]): Promise<boolean> {
     const list = Array.isArray(roles) ? roles : (roles ? [roles] : []);
     if (!list.length) return true;
-    if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') throw new Error(`Auth provider ${authConfig.name} is not a JWT or JWKS provider`);
-    if (!authConfig.uidClaim) throw new Error(`Auth provider ${authConfig.name} has no uid claim defined`);
-    if (!this.aclRoleService) throw new Error(`ACL Role Service not found. Please check AppModule.`);
+    // Misconfiguration → log loudly and DENY (403). Never throw: a thrown error here escapes the
+    // route handler as an unhandled rejection → a generic 500 (or worse, a hang). Denying keeps
+    // the gateway predictable while the boot-time validation + this log point at the fix.
+    if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') {
+      this.logger.error(`Auth provider '${authConfig.name}' is not a JWT/JWKS provider; cannot run role checks → denying.`);
+      return false;
+    }
+    if (!authConfig.uidClaim) {
+      this.logger.error(`Auth provider '${authConfig.name}' has no 'uidClaim' configured; cannot identify the user → denying. Set uidClaim (e.g. USERID).`);
+      return false;
+    }
+    if (!this.aclRoleService) {
+      this.logger.error(`ACL Role Service not found (RLB_GTW_ACL_ROLE_SERVICE not registered) but a path requires roles → denying.`);
+      return false;
+    }
     if (!claims) return false;
     const userId = claims[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
     if (!userId) return false;
@@ -171,7 +183,10 @@ export class HttpAuthHandlerService {
     // roles MUST declare `auth` (mirrors the WebSocket event behaviour).
     if (!path?.auth) return false;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
-    if (!authConfig) throw new Error(`Auth provider ${path.auth} not found`);
+    if (!authConfig) {
+      this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}' → denying role check.`);
+      return false;
+    }
     return this.checkRolesForClaims(authConfig, data, path.roles);
   }
 }

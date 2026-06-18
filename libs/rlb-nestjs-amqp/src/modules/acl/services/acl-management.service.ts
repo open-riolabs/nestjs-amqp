@@ -30,20 +30,52 @@ export class AclManagementService {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
     await this.assertRolesExist(roles);
-    const grant = await this.grants.insert({ userId, roles, resourceId, resourceBusinessId: resourceBusinessId, friendlyName });
+    // ONE grant per (userId, resourceId): create it if absent, otherwise MERGE the roles into
+    // the existing one. Idempotent — re-granting the same roles never produces a duplicate doc.
+    const existing = await this.findGrant(userId, resourceId);
+    let result: AclGrant;
+    if (existing) {
+      const merged = Array.from(new Set([...(existing.roles || []), ...roles]));
+      result = await this.grants.updateById(existing._id!, {
+        roles: merged,
+        resourceBusinessId: resourceBusinessId ?? existing.resourceBusinessId,
+        friendlyName: friendlyName ?? existing.friendlyName,
+      });
+    } else {
+      result = await this.grants.insert({ userId, roles: Array.from(new Set(roles)), resourceId, resourceBusinessId, friendlyName });
+    }
     await this.cache.invalidate(userId);
-    return grant;
+    return result;
   }
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.revoke, 'rpc')
   async revoke(
     @BrokerParam('body', 'userId') userId: string,
     @BrokerParam('body', 'resourceId') resourceId?: string,
-  ): Promise<AclGrant> {
+    @BrokerParam('body', 'roles') roles?: string[],
+  ): Promise<AclGrant | null> {
     if (!userId) throw new BadRequestError('userId is required');
-    const removed = await this.grants.removeOne({ userId, ...(resourceId !== undefined ? { resourceId } : {}) });
+    const existing = await this.findGrant(userId, resourceId);
+    if (!existing) return null;
+    let result: AclGrant | null;
+    if (roles?.length) {
+      // Remove only the given roles; keep the grant while any remain, delete it once empty.
+      const remaining = (existing.roles || []).filter((r) => !roles.includes(r));
+      result = remaining.length
+        ? await this.grants.updateById(existing._id!, { roles: remaining })
+        : await this.grants.removeById(existing._id!);
+    } else {
+      // No roles specified → revoke the whole grant for that (userId, resourceId).
+      result = await this.grants.removeById(existing._id!);
+    }
     await this.cache.invalidate(userId);
-    return removed;
+    return result;
+  }
+
+  /** The single grant for (userId, resourceId), treating absent/null resourceId as equivalent. */
+  private async findGrant(userId: string, resourceId?: string): Promise<AclGrant | undefined> {
+    const all = await this.grants.filter({ userId });
+    return (all || []).find((g) => (g.resourceId ?? null) === (resourceId ?? null));
   }
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionCreate, 'rpc')

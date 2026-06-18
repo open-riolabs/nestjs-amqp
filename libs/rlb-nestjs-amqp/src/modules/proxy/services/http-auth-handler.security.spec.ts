@@ -94,9 +94,20 @@ describe('HttpAuthHandlerService — role-based ACL (checkRoles, HTTP path)', ()
     expect(acl.canUserDoGtw).not.toHaveBeenCalled();
   });
 
-  it('throws when roles are required but no ACL role service is registered', async () => {
-    await expect(makeWithAcl(undefined).checkRoles({ 'X-GTW-AUTH-USERID': 'u1' }, path()))
-      .rejects.toThrow(/ACL Role Service not found/);
+  it('denies (does NOT throw) when no ACL role service is registered', async () => {
+    await expect(makeWithAcl(undefined).checkRoles({ 'X-GTW-AUTH-USERID': 'u1' }, path())).resolves.toBe(false);
+  });
+
+  it('denies (does NOT throw) when the provider has no uidClaim', async () => {
+    const acl = { canUserDoGtw: jest.fn(), canUserDo: jest.fn() };
+    const noUid = { name: 'p', type: 'jwks', headerPrefix: 'X-GTW-AUTH-' } as any; // uidClaim missing
+    await expect(makeWithAcl(acl, [noUid]).checkRoles({ 'X-GTW-AUTH-USERID': 'u1' }, path())).resolves.toBe(false);
+    expect(acl.canUserDoGtw).not.toHaveBeenCalled();
+  });
+
+  it('denies (does NOT throw) when the path references an unknown provider', async () => {
+    const acl = { canUserDoGtw: jest.fn(), canUserDo: jest.fn() };
+    await expect(makeWithAcl(acl, []).checkRoles({ 'X-GTW-AUTH-USERID': 'u1' }, path())).resolves.toBe(false);
   });
 
   it('denies when claims carry no userId (no canUserDoGtw call)', async () => {
