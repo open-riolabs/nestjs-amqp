@@ -274,11 +274,26 @@ export class MetadataScannerService implements OnModuleInit {
           type: this.metadata[p][j].type,
           auth: structuredClone(this.metadata[p][j].auth),
           http: structuredClone(this.metadata[p][j].http),
-          params: structuredClone(this.metadata[p][j].params),
+          // `params` can carry a runtime `pipe` (a PipeTransform — e.g. a ValidationPipe whose
+          // exceptionFactory is a function), which structuredClone cannot clone (DataCloneError).
+          // metaInfo is only used for route discovery / introspection and never needs the pipe.
+          params: this.cloneParamsWithoutPipe(this.metadata[p][j].params),
         };
       }
     }
     return r;
+  }
+
+  /** Shallow-clones the params map, dropping the non-serializable `pipe` from each entry. */
+  private cloneParamsWithoutPipe(params: any): any {
+    if (!params || typeof params !== 'object') return params;
+    const out: any = {};
+    for (const key of Object.keys(params)) {
+      const { pipe, ...rest } = params[key] || {};
+      void pipe;
+      out[key] = { ...rest };
+    }
+    return out;
   }
 
 }
