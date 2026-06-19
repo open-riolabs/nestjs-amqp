@@ -5,6 +5,7 @@ import 'reflect-metadata';
 import { isObservable, lastValueFrom, Observable } from 'rxjs';
 import { AmqpConnection, Nack } from '../../../amqp-lib';
 import { BrokerConfig } from '../config/broker.config';
+import { pairAuthToRoutes } from '../config/decorator-paths';
 import { BrokerTopic } from '../config/topics.config';
 import { RLB_AMQP_APP_OPTIONS, RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_TOPIC_CONNECTION, RLB_BROKER_AUTH_METADATA_KEY, RLB_BROKER_HTTP_METADATA_KEY, RLB_BROKER_METHOD_METADATA_KEY, RLB_BROKER_PARAM_METADATA_KEY } from '../const';
 import { ActionPayload, MangedFunctionExecutor } from '../data/events/messages';
@@ -32,8 +33,10 @@ export class MetadataScannerService implements OnModuleInit {
         service?: any;
         method?: Function;
         type?: string;
-        auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, roles?: string[]; }[];
-        http?: { method: BrokerHttpMethod; path: string; dataSource?: BrokerParamSource; parseRaw?: boolean; timeout?: number; }[];
+        auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, roles?: string[], httpName?: string; }[];
+        // `name` comes from the @BrokerHTTP options; `auth`/`allowAnonymous`/`roles` are resolved
+        // onto each route by resolveAuthForRoutes (paired to a @BrokerAuth by name).
+        http?: { method: BrokerHttpMethod; path: string; dataSource?: BrokerParamSource; name?: string; parseRaw?: boolean; timeout?: number; auth?: string; allowAnonymous?: boolean; roles?: string[]; }[];
         params?: { [key: string]: { source: BrokerParamSource, name?: string; pipe?: PipeTransform; }; };
       };
     };
@@ -67,25 +70,28 @@ export class MetadataScannerService implements OnModuleInit {
                 }
                 const paramMetadata = Reflect.getMetadata(RLB_BROKER_PARAM_METADATA_KEY, instance, method.methodName) || [];
 
-                // Pair @BrokerAuth / @BrokerHTTP to THIS @BrokerAction by explicit `action` name
-                // (see pairToAction). Positional/order pairing is unreliable: decorators apply
-                // bottom-up and each kind lives in its own metadata array.
+                // @BrokerHTTP routes bind to THIS @BrokerAction (by explicit `action`, or the single
+                // action by default — see pairToAction). @BrokerAuth then pairs PER ROUTE to a
+                // specific @BrokerHTTP by name (resolveAuthForRoutes), decoupled from the action.
                 const actionsForMethod = metadata.filter((m: any) => m.methodName === method.methodName);
-                const authMetadata = this.pairToAction(
-                  Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, instance.constructor) || [],
-                  method, actionsForMethod, instance.constructor.name, 'auth',
-                );
+                const allHttpForMethod = (Reflect.getMetadata(RLB_BROKER_HTTP_METADATA_KEY, instance.constructor) || [])
+                  .filter((e: any) => e.methodName === method.methodName);
+                const allAuthForMethod = (Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, instance.constructor) || [])
+                  .filter((e: any) => e.methodName === method.methodName);
                 const httpMetadata = this.pairToAction(
                   Reflect.getMetadata(RLB_BROKER_HTTP_METADATA_KEY, instance.constructor) || [],
                   method, actionsForMethod, instance.constructor.name, 'http',
                 );
-
+                const where = `'${instance.constructor.name}.${String(method.methodName)}'`;
+                const logOnce = actionsForMethod[0]?.action === method.action;
+                const authWarnings = pairAuthToRoutes(allHttpForMethod, allAuthForMethod, where);
+                if (logOnce) authWarnings.forEach((w) => this.logger.warn(w));
 
                 this.metadata[method.topic][method.action] = {
                   service: instance,
                   method: instance[method.methodName],
                   type: method.type,
-                  auth: [...authMetadata],
+                  auth: [...allAuthForMethod],
                   http: [...httpMetadata],
                   params: this.removeDefaultsFromParams(method.params as string[] || []).reduce((acc, param, index) => {
                     const meta = Object.assign({}, paramMetadata.find((p: any) => p.index === index) || { source: 'body' });
@@ -210,9 +216,9 @@ export class MetadataScannerService implements OnModuleInit {
   }
 
   /**
-   * Pairs @BrokerAuth / @BrokerHTTP entries to a specific @BrokerAction on the same method, by
-   * explicit `action` name. With a single @BrokerAction an entry without `action` binds to it;
-   * with several, `action` is required and a missing/unknown one is dropped with a boot error.
+   * Pairs @BrokerHTTP entries to a specific @BrokerAction on the same method, by explicit `action`
+   * name. With a single @BrokerAction an entry without `action` binds to it; with several, `action`
+   * is required and a missing/unknown one is dropped with a boot error.
    */
   private pairToAction(
     allEntries: any[],

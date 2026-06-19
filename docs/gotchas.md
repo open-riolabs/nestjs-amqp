@@ -182,6 +182,27 @@ resources.
 options are passed as `authOptions` / `gatewayOptions` on `ProxyModule`. `BrokerModule` owns only
 `options` / `topics` / `appOptions`.
 
+**Decorator auth is per ROUTE, paired by name — not per-action.** `@BrokerAuth(authName,
+allowAnonymous?, roles?, httpName?)` stays DECOUPLED from `@BrokerHTTP(method, path, dataSource,
+{ name? })`: it pairs to a specific route by `httpName` === that route's `name`. A method with a
+SINGLE `@BrokerHTTP` auto-pairs — no `name`/`httpName` needed. A method with MULTIPLE `@BrokerHTTP`
+REQUIRES each route to set `name` and each `@BrokerAuth` to set a matching `httpName`; an
+`@BrokerAuth` whose `httpName` is missing or matches no route is NOT applied and logs a **warning at
+microservice startup**, leaving that route PUBLIC. Two HTTP paths for the SAME action can now carry
+DIFFERENT auth — pair each to its route by name. (`@BrokerAuth`'s 4th arg is `httpName`, a route
+name; it is no longer an `action`. The `@BrokerHTTP`↔`@BrokerAction` pairing is separate and
+unchanged: `@BrokerHTTP`'s `action` option disambiguates when a method declares multiple
+`@BrokerAction`.)
+
+```ts
+// Two routes, same action, different auth — each auth pairs by route name.
+@BrokerAction('booking', 'get-booking')
+@BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
+@BrokerAuth('cust-jwks', true, undefined, 'get-booking')
+@BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
+@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')
+```
+
 ---
 
 ***REMOVED******REMOVED*** Auth providers (hardening)

@@ -18,8 +18,17 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
    'X-GTW-AUTH-USERID')`, not `'userId'`. The exact name = provider `headerPrefix` + `uidClaim`.
 5. **`handle`/`broadcast` handlers must return `void`.** A return value logs
    `Subscribe handlers should only return void`. Only `rpc` handlers return data.
-6. **One method, multiple `@BrokerAction`s:** any `@BrokerHTTP` / `@BrokerAuth` on that method
-   MUST name its `action` to pair deterministically — decorator order is never used.
+6. **Two independent pairings on a method — `action` (http↔action) and `httpName` (auth↔route).**
+   Decorator order is never used; pair by name.
+   - **`@BrokerHTTP` ↔ `@BrokerAction`** via the `action` option: a method with multiple
+     `@BrokerAction`s requires each `@BrokerHTTP` to name its `action`; with one action it defaults.
+   - **`@BrokerAuth` ↔ `@BrokerHTTP` route** via `httpName` (= the route's `name`): auth is
+     **per ROUTE**, kept DECOUPLED from `@BrokerHTTP` (which carries NO auth). One `@BrokerHTTP`
+     auto-pairs its `@BrokerAuth` (no `name`/`httpName` needed); multiple `@BrokerHTTP` require each
+     to set a `name` and each `@BrokerAuth` to set the matching `httpName`. An `@BrokerAuth` whose
+     `httpName` matches no route is NOT applied and logs a WARNING at microservice startup.
+   - A route with no paired `@BrokerAuth` is **PUBLIC**. Two HTTP paths for the SAME action can now
+     carry DIFFERENT auth — pair each to its route by `name`.
 
 ***REMOVED******REMOVED*** Topic ↔ queue ↔ exchange wiring
 7. **The topic `name` must match everywhere**: `@BrokerAction`, `topics[].name`,

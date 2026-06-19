@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp
-description: Reference, schema and gotchas for the @open-rlb/nestjs-amqp library (NestJS + RabbitMQ/AMQP + HTTP/WebSocket gateway). Use when answering questions about its YAML config (broker incl. routeDiscovery, topics, auth-providers, gateway paths/ws/events), AMQP rpc/handle/broadcast/event semantics, the @BrokerAction/@BrokerParam/@BrokerHTTP decorators, the BrokerService API, route auto-discovery, gateway-admin (routes/auth-providers/metrics/health), the name-keyed ACL, or when debugging wiring/timeout/auth/websocket errors. Shared knowledge base for the rlb-amqp-add-action, rlb-amqp-add-route, rlb-amqp-add-ws-event, rlb-amqp-scaffold, rlb-amqp-acl and rlb-amqp-gateway-admin skills.
+description: Reference, schema and gotchas for the @open-rlb/nestjs-amqp library (NestJS + RabbitMQ/AMQP + HTTP/WebSocket gateway). Use when answering questions about its YAML config (broker incl. routeDiscovery, topics, auth-providers, gateway paths/ws/events), AMQP rpc/handle/broadcast/event semantics, the @BrokerAction/@BrokerParam/@BrokerHTTP/@BrokerAuth decorators, the BrokerService API, route auto-discovery, gateway-admin (routes/auth-providers/metrics/health), the name-keyed ACL, or when debugging wiring/timeout/auth/websocket errors. Shared knowledge base for the rlb-amqp-add-action, rlb-amqp-add-route, rlb-amqp-add-ws-event, rlb-amqp-scaffold, rlb-amqp-acl and rlb-amqp-gateway-admin skills.
 ---
 
 ***REMOVED*** @open-rlb/nestjs-amqp — reference
@@ -82,3 +82,6 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
 10. ACL actions/roles and gateway-admin auth-providers are **name-keyed**: `PUT` upserts,
     `GET` lists, `GET .../get?name=`, `DELETE` by name. There is no POST and no id-based
     ACL CRUD. Boolean checks (`/acl/check*`) return `200` with `true`/`false`.
+11. HTTP-route auth is **per ROUTE** and DECOUPLED from `@BrokerHTTP`: pair `@BrokerHTTP { name }`
+    ↔ `@BrokerAuth` `httpName`. A single `@BrokerHTTP` auto-pairs its `@BrokerAuth` (no name needed);
+    a route with no `@BrokerAuth` is public.

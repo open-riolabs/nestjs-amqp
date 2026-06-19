@@ -270,9 +270,9 @@ broker:
     ***REMOVED*** exchange/queue default to rlb-route-discovery / rlb-route-sync; override to namespace per env.
 ```
 
-On bootstrap (when `serviceName` is set and `publishOnBoot !== false`), the publisher maps this app's `@BrokerHTTP` / `@BrokerAction` metadata into a `RouteManifest` and publishes it as a **durable, persistent** message. The durable queue buffers the manifest even if no gateway consumer is up yet — it's delivered once one connects.
+On bootstrap (when `serviceName` is set and `publishOnBoot !== false`), the publisher maps this app's `@BrokerHTTP` / `@BrokerAction` / `@BrokerAuth` metadata into a `RouteManifest` and publishes it as a **durable, persistent** message. Each route in the manifest carries its own auth, declared with `@BrokerAuth` and paired to that route **by name** (see the per-route auth model in [Broker](./broker.md)). The durable queue buffers the manifest even if no gateway consumer is up yet — it's delivered once one connects.
 
-Routes are declared with `@BrokerHTTP` on top of a `@BrokerAction` method:
+Routes are declared with `@BrokerHTTP` on top of a `@BrokerAction` method; auth stays decoupled in `@BrokerAuth`, which pairs to a route by `httpName` === that route's `name`:
 
 ```ts
 @Injectable()
@@ -285,6 +285,19 @@ export class RouteDiscoveryDemoService {
   }
 }
 ```
+
+A single `@BrokerHTTP` auto-pairs its `@BrokerAuth` (no `name`/`httpName` needed). When ONE action is exposed over **two routes with different auth**, give each `@BrokerHTTP` a `name` and point each `@BrokerAuth` at it via `httpName` — the manifest then carries each route's auth independently:
+
+```ts
+@BrokerAction('booking', 'get-booking')
+@BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
+@BrokerAuth('cust-jwks', true, undefined, 'get-booking')          // public-ish: anonymous allowed
+@BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
+@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking') // admins only
+getBooking(@BrokerParam('tag', 'id') id: string) { /* ... */ }
+```
+
+> A route with no paired `@BrokerAuth` is **public**. With multiple `@BrokerHTTP`, an `@BrokerAuth` whose `httpName` matches no route is NOT applied and logs a warning at microservice startup.
 
 > The gateway must declare the microservice's broker **topic** in its own broker config (queue + topic) so it can route forwarded calls to the service.
 

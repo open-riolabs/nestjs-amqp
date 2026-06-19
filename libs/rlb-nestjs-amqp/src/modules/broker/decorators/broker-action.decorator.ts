@@ -30,6 +30,10 @@ export function BrokerHTTP(
      *  it defaults to that action. Makes the http↔action pairing deterministic (decorator
      *  order/position is NOT used). */
     action?: string,
+    /** Optional route name. Auth stays decoupled in @BrokerAuth, which targets THIS route by its
+     *  `name` (see @BrokerAuth's `httpName`). Needed only when the method declares more than one
+     *  @BrokerHTTP; with a single @BrokerHTTP the auth auto-pairs and no name is required. */
+    name?: string,
     successStatusCode?: number,
     timeout?: number,
     parseRaw?: boolean;
@@ -53,10 +57,12 @@ export function BrokerHTTP(
   };
 }
 
-// `action` binds this auth to a specific @BrokerAction on the same method (by name), exactly
-// like @BrokerHTTP. Required when the method declares more than one @BrokerAction; with a single
-// action it defaults to that action. Makes the auth<->action pairing deterministic (not order-based).
-export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: string[], action?: string): MethodDecorator {
+// Per-ROUTE auth, kept DECOUPLED from @BrokerHTTP. It pairs to a specific @BrokerHTTP route by the
+// route's `httpName` (= the `name` given in that @BrokerHTTP's options):
+//  - a method with ONE @BrokerHTTP auto-pairs (httpName optional — the simple case);
+//  - a method with MULTIPLE @BrokerHTTP REQUIRES `httpName` to disambiguate; an auth whose httpName
+//    is missing or matches no route is NOT applied and logs a warning at microservice startup.
+export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: string[], httpName?: string): MethodDecorator {
   return (target, propertyKey, descriptor) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, target.constructor) || [];
     const params = getParamNames(descriptor.value);
@@ -65,7 +71,7 @@ export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: s
       authName,
       allowAnonymous,
       roles,
-      action,
+      httpName,
     });
     Reflect.defineMetadata(RLB_BROKER_AUTH_METADATA_KEY, existingMetadata, target.constructor);
   };

@@ -55,9 +55,9 @@ an HTTP status (e.g. `NotFoundError`) yields the right gateway status.
 - `topic` must match a `topics:` entry (an `rpc` topic). `action` is the dispatch key.
 - **`(topic, action)` must be unique** across the whole app — all actions of a topic share
   ONE consumer/queue, dispatched by `action` (gotcha 3).
-- A single method may carry **multiple** `@BrokerAction`s. When it does, any `@BrokerHTTP` /
-  `@BrokerAuth` on that method **must name its `action`** to pair deterministically (decorator
-  order is never used).
+- A single method may carry **multiple** `@BrokerAction`s. When it does, any `@BrokerHTTP` on
+  that method **must name its `action`** to pair deterministically (decorator order is never
+  used). Auth pairs separately — see `@BrokerAuth` below.
 
 ***REMOVED******REMOVED******REMOVED*** `@BrokerParam(source, name?, pipe?)` — one source per argument
 
@@ -82,15 +82,52 @@ auto-discovery), which persists + registers them. This requires `broker.routeDis
 (see `rlb-amqp` reference / `docs/gateway-admin.md`); the gateway must also declare this
 service's topic so it can forward calls.
 
+`dataSource` is `'query' | 'body' | 'params'`. The options object carries
+`{ name?, action?, successStatusCode?, timeout?, parseRaw?, binary?, redirect?, headers?,
+forwardHeaders? }` — it does **not** carry auth.
+
+Two independent pairings sit on the method, each only needed in the multi case:
+
+- **http ↔ action** (`@BrokerHTTP`'s `action`): bind a route to one of several `@BrokerAction`s.
+  Required only when the method declares **more than one** `@BrokerAction`; with a single action
+  it defaults to that action.
+- **auth ↔ route** (`@BrokerAuth`'s `httpName` ⇄ `@BrokerHTTP`'s `name`): bind an auth rule to one
+  of several routes. Required only when the method declares **more than one** `@BrokerHTTP`; with a
+  single route the auth auto-pairs (no `name`/`httpName` needed). A route with no paired
+  `@BrokerAuth` is **public**.
+
+Auth lives in a separate, decoupled decorator —
+`@BrokerAuth(authName, allowAnonymous?, roles?, httpName?)` — never inside `@BrokerHTTP`'s options.
+This lets two HTTP paths for the SAME action carry DIFFERENT auth.
+
+Simple case — one route, auth auto-pairs (no names needed):
+
 ```ts
 @BrokerAction('calculator', 'sum')
-@BrokerHTTP('POST', '/calculator/sum', 'body')   // dataSource: body | query | params | ...
+@BrokerHTTP('POST', '/calculator/sum', 'body')   // dataSource: 'query' | 'body' | 'params'
+@BrokerAuth('cust-jwks', true)                   // auto-pairs to the single route; public if omitted
 async sum(@BrokerParam('body', 'values') values: number[]) {
   return values.reduce((a, v) => a + v, 0);
 }
 ```
 
-(Pattern taken verbatim from `sample/config-sample/calculator.ms/src/app.service.ts`.)
+Multi case — two routes for ONE action, each name-paired to its own auth:
+
+```ts
+@BrokerAction('booking', 'get-booking')
+@BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
+@BrokerAuth('cust-jwks', true, undefined, 'get-booking')          // httpName ⇄ route name
+@BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
+@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')
+async getBooking(@BrokerParam('params', 'id') id: string) {
+  return this.bookings.find(id);
+}
+```
+
+An `@BrokerAuth` whose `httpName` matches no route is NOT applied and logs a WARNING at
+microservice startup.
+
+(Single-route pattern taken verbatim from `sample/config-sample/calculator.ms/src/app.service.ts`.)
 
 ***REMOVED******REMOVED*** Step 2 — YAML sync (the critical part)
 
@@ -131,7 +168,8 @@ single consumer dispatches by `action`.
 - topic-type exchange ⇒ queue has `routingKey` (gotcha 7)
 - `(topic, action)` unique (gotcha 3)
 - header params read the prefixed/uppercased name (gotcha 4)
-- if multiple `@BrokerAction` on one method ⇒ each `@BrokerHTTP`/`@BrokerAuth` names its `action`
+- if multiple `@BrokerAction` on one method ⇒ each `@BrokerHTTP` names its `action`
+- if multiple `@BrokerHTTP` on one method ⇒ each `@BrokerAuth` sets `httpName` = the route's `name`
 
 ***REMOVED******REMOVED*** Step 4 — build
 

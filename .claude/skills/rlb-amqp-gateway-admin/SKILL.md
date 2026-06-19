@@ -195,6 +195,17 @@ broker:
 Routes are declared `@BrokerHTTP` over a `@BrokerAction` method. The gateway must
 still declare the microservice's broker topic so it can route forwarded calls.
 
+Each published route's auth comes from `@BrokerAuth` (decoupled from `@BrokerHTTP`),
+paired per route by name: with one `@BrokerHTTP` it auto-pairs; with multiple, each
+`@BrokerHTTP` sets a `name` and each `@BrokerAuth` matches it via `httpName`. So two
+routes over the same action can publish with different auth — a route with no paired
+`@BrokerAuth` is published as public.
+
+```ts
+@BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
+@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')  // pairs by httpName
+```
+
 ***REMOVED******REMOVED******REMOVED*** Consumer (gateway ← microservice) — `GatewayAdminModule` `routeDiscovery`
 
 Wired by `GatewayAdminModule` (NOT YAML). Asserts the fanout exchange, subscribes

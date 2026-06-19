@@ -10,6 +10,7 @@ A NestJS toolkit for building RabbitMQ/AMQP microservices behind a configurable 
 - [ACL](./acl.md) — role-based authorization: name-keyed actions/roles, per-user grants, the `acl-can-user-do` checks, the two-level cache.
 - [Gateway-admin](./gateway-admin.md) — DB-managed routes and auth-providers, metrics, route-sync receiver, health probe.
 - [Gotchas](./gotchas.md) — the sharp edges: control-topic semantics, name-keyed CRUD, 204-vs-200, exchange/queue naming across sides.
+- [YAML migration scripts](./yaml-migration.md) — migrate `gateway.paths[]` into the gateway-admin DB (`gateway-paths-to-http.js`) and stamp `@BrokerHTTP`/`@BrokerAuth` into microservice code for auto-discovery (`broker-http-decorators.js`).
 
 ***REMOVED******REMOVED*** Install
 
