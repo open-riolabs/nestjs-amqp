@@ -6,10 +6,10 @@ import { randomUUID } from 'crypto';
 import { IncomingMessage } from 'http';
 import { filter, lastValueFrom, Subject, Subscription } from 'rxjs';
 import { WebSocketServer as Server, WebSocket } from 'ws';
+import { ProcessedAuthData } from '..';
 import { AmqpConnection } from "../../../amqp-lib";
 import { ActionPayload, BrokerConfig, BrokerEvent, BrokerService } from '../../broker';
 import { RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from '../../broker/const';
-import { ProcessedAuthData } from '..';
 import { GatewayConfig, WebSocketEvent } from '../config/path-definition.config';
 import { HttpAuthHandlerService } from './http-auth-handler.service';
 
@@ -308,8 +308,6 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
       if (!this.subjects[event.name]) {
         this.subjects[event.name] = new Subject();
       }
-      const exchange = this.brokerConfig.exchanges.find(e => e.name === event.exchange);
-      if (!exchange) throw new Error(`Exchange ${event.exchange} not found in configuration for event ${event.name}`);
       if (!cname) {
         throw new Error('Client name is required for event push configuration');
       }
@@ -354,7 +352,7 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
             exclusive: true,
           }
         }, '', {});
-        this.logger.log(`Binded event \`${event.name}\` [${event.type}] to exchange \`${exchange.name}\`, Route: \`${event.routingKey}\`, Queue: \`${queueName}\``);
+        this.logger.log(`Binded event \`${event.name}\` [${event.type}] to exchange \`${event.exchange}\`, Route: \`${event.routingKey}\`, Queue: \`${queueName}\``);
       } catch (error) {
         this.logger.error(`Error subscribing to topic ${event.name}: ${error.message}`);
       }
