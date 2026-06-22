@@ -7,4 +7,7 @@ export interface AclCacheOptions {
 
 export interface AclModuleOptions {
   cache?: AclCacheOptions;
+  /** Action a caller must hold (on the target company/resource) before they may grant or
+   *  revoke. Defaults to `'role-management'` (ACL_DEFAULT_ROLE_MANAGEMENT_ACTION). */
+  roleManagementAction?: string;
 }

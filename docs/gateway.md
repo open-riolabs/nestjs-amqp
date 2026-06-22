@@ -12,20 +12,21 @@ The gateway is the `ProxyModule`. It is HTTP-transport-agnostic in spirit but sh
 - For the broker primitives the gateway forwards to, see [./broker.md](./broker.md).
 - For the admin actions exposed under `/admin/*` (DB-backed routes, auth-providers, metrics,
   route auto-discovery), see [./gateway-admin.md](./gateway-admin.md).
-- For role-gated routes and the `acl-can-user-do*` checks, see [./acl.md](./acl.md).
+- For action-gated routes and the `acl-check-action` check, see [./acl.md](./acl.md).
 
 ***REMOVED******REMOVED*** Base features
 
 - **Declarative routes.** Each `gateway.paths[]` entry is a `PathDefinition`: HTTP method + path
   → broker `topic`/`action`, in `rpc` (wait for a reply) or `event` (fire-and-forget) mode.
-- **Built-in auth gate.** Per-path `auth` (a named provider) validates the request; `roles`
-  add a role-based ACL check; `allowAnonymous` opts a route out entirely.
+- **Built-in auth gate.** Per-path `auth` (a named provider) validates the request; `actions`
+  add an action-based ACL check (scoped to the request's `(companyId, resourceId)`);
+  `allowAnonymous` opts a route out entirely.
 - **Claim forwarding.** A valid token's claims are mapped to `X-GTW-AUTH-*` headers and forwarded
   to the microservice — request headers can never override them (anti-spoofing).
 - **Runtime reload.** Routes can be pulled from a DB and rebuilt without a restart (see
   `loadConfig.paths` and `reloadTopic`).
 - **WebSocket events.** `gateway.events[]` bind broker exchanges to per-user, per-event WS streams
-  with token auth, role checks, and per-user scope isolation. `http`-type events forward to a webhook.
+  with token auth, action checks, and per-user scope isolation. `http`-type events forward to a webhook.
 - **Per-call metrics.** Every served request is emitted (fire-and-forget) to a broker sink and/or
   an in-process hook.
 
@@ -43,7 +44,7 @@ ProxyModule.forRootAsync({
     gatewayOptions: config.get<GatewayConfig>('gateway'),
   }),
   providers: [
-    // Required ONLY for role-gated paths/events: lets the gateway resolve roles in-process.
+    // Required ONLY for action-gated paths/events: lets the gateway run checkAction in-process.
     { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
     // Optional: an in-proxy metrics sink (e.g. write each call to InfluxDB).
     { provide: RLB_GTW_METRICS_HOOK, useClass: InfluxMetricsHook },
@@ -54,9 +55,9 @@ ProxyModule.forRootAsync({
 Two bindings live in `providers`:
 
 - **`RLB_GTW_ACL_ROLE_SERVICE`** — an `IAclRoleService` (typically `AclService`). It backs the
-  role check on any path/event that declares `roles`. The binding is **optional**: if a path
-  declares `roles` and this service is **not** registered, the request is **denied (403)** and an
-  error is logged. Routes without `roles` work fine without it.
+  `checkAction` call on any path/event that declares `actions`. The binding is **optional**: if a
+  path declares `actions` and this service is **not** registered, the request is **denied (403)**
+  and an error is logged. Routes without `actions` work fine without it.
 - **`RLB_GTW_METRICS_HOOK`** — an optional `GatewayMetricsHook` (`{ track(point) }`). When present,
   the gateway calls it once per served request, independently of the broker `gateway.metrics` sink.
 
@@ -122,8 +123,8 @@ gateway:
 | `mode` | `'rpc' \| 'event'` | `rpc` waits for a reply; `event` fire-and-forget with publisher confirm. |
 | `dataSource` | see below | How the request payload is assembled. |
 | `auth` | `string?` | Name of an auth-provider to validate the request. |
-| `allowAnonymous` | `boolean?` | `true` makes the route public (auth/role gate skipped). |
-| `roles` | `string[]` | Role names; the caller must hold **at least one**. Requires `auth`. |
+| `allowAnonymous` | `boolean?` | `true` makes the route public (auth/action gate skipped). |
+| `actions` | `string \| string[]` | Action names; the caller must hold **at least one** (OR-semantics) on the request's `(companyId, resourceId)`. Requires `auth`. |
 | `timeout` | `number?` | RPC timeout (ms) for `rpc` mode. |
 | `parseRaw` | `boolean?` | Adds the raw request body as `$raw` (needs `rawBody: true`). |
 | `binary` | `boolean?` | Treat a raw (non-JSON) RPC reply as base64 → binary body. |
@@ -152,20 +153,33 @@ For every request the gateway runs `processAuthData` (best-effort), then decides
 
 1. **`allowAnonymous: true`** → the gate is **skipped**. A token, if present and valid, still has its
    claims mapped and forwarded; a missing/invalid token is **not** blocked.
-2. **`auth` set, no `roles`** → **authentication only**. The provider must validate the request
+2. **`auth` set, no `actions`** → **authentication only**. The provider must validate the request
    (else `401`); on success the mapped claim headers (`X-GTW-AUTH-*`) are forwarded downstream.
-3. **`auth` + `roles`** → authentication **and** role-based authorization. After a valid token, the
-   gateway resolves the user id from the provider's `uidClaim` and calls
-   `IAclRoleService.canUserDoGtw(roles, userId)` **in-process**. The user passes if they hold at
-   least one role; otherwise `403`.
+3. **`auth` + `actions`** → authentication **and** action-based authorization. After a valid token,
+   the gateway resolves the user id from the provider's `uidClaim`, extracts the request's
+   `(companyId, resourceId)`, and calls
+   `IAclRoleService.checkAction(userId, ctx, actions)` **in-process**. The user passes if they hold
+   at least one of `actions` on that **exact** target; otherwise `403`.
 
-> Declaring `roles` **without** `auth` is a misconfiguration — there is no identity to check, so the
-> path fails closed (every request `403`). The gateway logs this loudly at boot. Likewise, role checks
-> require a `jwt`/`jwks` provider with a `uidClaim`, and a registered `RLB_GTW_ACL_ROLE_SERVICE`;
+> Declaring `actions` **without** `auth` is a misconfiguration — there is no identity to check, so the
+> path fails closed (every request `403`). The gateway logs this loudly at boot. Likewise, the action
+> check requires a `jwt`/`jwks` provider with a `uidClaim`, and a registered `RLB_GTW_ACL_ROLE_SERVICE`;
 > any missing piece → deny.
 
-The resource-scoped ACL check (`acl-can-user-do`) is **not** run by the gateway — it lives on the
-target microservice, which is the only one that knows the resource. See [./acl.md](./acl.md).
+***REMOVED******REMOVED******REMOVED******REMOVED*** Resource scoping
+
+The action check is **resource-aware**: the caller must hold the action on the **exact**
+`(companyId, resourceId)` the request targets — there is no wildcard. A resource-less grant
+authorizes **only** a request that also carries no company/resource (both ids absent on the request
+**and** the grant). `companyId` is part of the decision, not grouping metadata.
+
+The gateway always reads the canonical `companyId` / `resourceId` from the request, precedence
+**params → query → body**, and matches them exactly. Normalization treats `undefined`, `null` and
+`''` as *absent* (they compare equal), so a missing canonical field simply means "resource-less"
+rather than failing.
+
+There is no separate resource-scoped ACL action: the single `acl-check-action` primitive does both
+the gateway gate and any in-service check. See [./acl.md](./acl.md).
 
 ***REMOVED******REMOVED******REMOVED*** Auth-providers (static config)
 
@@ -177,7 +191,7 @@ target microservice, which is the only one that knows the resource. See [./acl.m
 | `name` | all | Referenced by `path.auth` / `event.auth`. |
 | `type` | all | `jwt`, `jwks`, `basic`, `str-compare`, or `none`. |
 | `headerPrefix` | all | Prefix for mapped claim headers (e.g. `X-GTW-AUTH-`). |
-| `uidClaim` | jwt/jwks | Claim that becomes the user id header `<headerPrefix>USERID` (required for role checks). |
+| `uidClaim` | jwt/jwks | Claim that becomes the user id header `<headerPrefix>USERID` (required for action checks). |
 | `jwtMap` | jwt/jwks | `['source:dest', ...]` — maps decoded claims to `<headerPrefix><DEST>` headers. **Without it, no claims are forwarded** (the token is accepted but nothing is exposed). |
 | `algorithms` | jwt/jwks | Allowed signing algorithms (e.g. `[RS256]`). |
 | `issuer` | jwt/jwks | Expected token issuer. |
@@ -259,7 +273,7 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
 | `exchange` / `routingKey` | `string` | Broker source bound to a per-instance exclusive queue. |
 | `auth` | `string?` | Auth-provider used to verify the connection token **and** map claims, at subscribe time. When set, a valid token is required unless `requireAuth: false`. |
 | `requireAuth` | `boolean?` | `false` makes `auth` optional (anonymous may subscribe; authenticated still get claims). Defaults `true` when `auth` is set. |
-| `roles` | `string[]?` | Role names checked via the ACL service (needs `auth`). |
+| `actions` | `string \| string[]?` | Action names checked via the ACL service (needs `auth`); OR-semantics. Checked **resource-agnostically** — WS events carry no HTTP resource. |
 | `scopeClaim` | `string?` | Per-user isolation: the claim whose value must match the message. |
 | `payloadKey` | `string?` | The message payload key compared against `scopeClaim`. |
 | `url` / `method` / `headers` / `timeout` | — | For `type: 'http'` events: the webhook target. |
@@ -274,7 +288,7 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
 | `allowedOrigins` | — | Allowlist of accepted `Origin` headers. When unset, all origins are accepted (logged at boot). |
 | `maxMessageBytes` | `16384` | Max inbound client message size; larger frames are dropped. |
 
-> Authentication/authorization is declared **per-event** (`auth`/`requireAuth`/`roles`/`scopeClaim`),
+> Authentication/authorization is declared **per-event** (`auth`/`requireAuth`/`actions`/`scopeClaim`),
 > not in `gateway.ws`.
 
 ***REMOVED******REMOVED******REMOVED*** How it works
@@ -284,9 +298,10 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
   a `['bearer', '<token>']` / `['jwt', '<token>']` pair is also accepted. The token is verified
   **per-event** at subscribe time with that event's provider, and the session lifetime is bounded by
   the token's `exp` (expired sessions are closed by the heartbeat).
-- **Per-event auth & roles.** On `subscribe`, if the event has `auth` the token is verified and
+- **Per-event auth & actions.** On `subscribe`, if the event has `auth` the token is verified and
   claims mapped; `requireAuth !== false` rejects an invalid token (`onError: 'unauthorized'`). If it
-  has `roles`, `checkRolesForClaims` runs against the ACL service (`onError: 'forbidden'`).
+  has `actions`, `checkActionsForClaims` runs against the ACL service resource-agnostically
+  (`onError: 'forbidden'`).
 - **Per-user scope isolation.** With `scopeClaim` + `payloadKey`, the server only forwards messages
   whose `payload[payloadKey]` equals the authenticated client's `scopeClaim` value. This prevents a
   client from receiving other users' data via a crafted `select` filter. With `auth` but **no**
@@ -351,15 +366,14 @@ exposes, among others:
 | Method & path | Topic | Action | Mode | Notes |
 | --- | --- | --- | --- | --- |
 | `GET /health` | `rlb-gateway-admin` | `gw-health` | rpc | Returns `{ status: 'ok' }`. |
-| `GET /acl/check` | `rlb-acl` | `acl-can-user-do-gtw` | rpc | `?userId=&roles=` → `200 true/false`. |
-| `GET /acl/check-resource` | `rlb-acl` | `acl-can-user-do` | rpc | resource-scoped → `200 true/false`. |
+| `GET /acl/check` | `rlb-acl` | `acl-check-action` | rpc | `?userId=&action=&companyId=&resourceId=` → `200 true/false`. |
 | `PUT /acl/actions` | `rlb-acl` | `acl-action-update` | rpc | name-keyed upsert. |
 | `PUT /acl/roles` | `rlb-acl` | `acl-role-update` | rpc | name-keyed upsert. |
-| `POST /acl/grants` | `rlb-acl` | `acl-grant` | rpc | `{ userId, roles, resourceId?, companyId? }`. |
-| `DELETE /acl/grants` | `rlb-acl` | `acl-revoke` | rpc | same shape; removes roles. |
+| `POST /acl/grants` | `rlb-acl` | `acl-grant` | rpc | `{ userId, roles, resourceId?, companyId? }`; gated by `role-management` on the target. |
+| `DELETE /acl/grants` | `rlb-acl` | `acl-revoke` | rpc | same shape; removes roles; same gate. |
 | `PUT /admin/auth` | `rlb-gateway-admin` | `gw-auth-update` | rpc | name-keyed auth-provider upsert. |
 | `POST /admin/reload` | `rlb-gateway-control` | `gw-reload` | event | broadcasts a route reload. |
-| `GET /protected` | `rlb-gateway-admin` | `gw-metrics-get` | rpc | `auth: gateway-jwks`, `roles: [user, admin]`. |
+| `GET /protected` | `rlb-gateway-admin` | `gw-metrics-get` | rpc | `auth: gateway-jwks`, `actions: [read-metrics]`. |
 
 > The topic names `rlb-acl` / `rlb-gateway-admin` and all action strings shown here are
 > **decorator-bound** on the backend and are **not** configurable — they must match the handler

@@ -158,19 +158,19 @@ Decorate any provider method. The metadata scanner discovers it at boot and subs
 - `action` — the dispatch key. **`(topic, action)` must be unique** across your whole app — two handlers claiming the same pair collide.
 - `type` — `'rpc'` (default semantics, replies) or `'event'`.
 
-A single method may declare **multiple** `@BrokerAction`s (one method servicing several actions). When it does, any `@BrokerHTTP` on that method **must name its `action`** (the `action` option) to bind to the right `@BrokerAction` deterministically — decorator order is never used. This http↔action pairing is independent of auth; auth is paired separately by route name (see [`@BrokerAuth`](***REMOVED***brokerauthauthname-allowanonymous-roles-httpname)).
+A single method may declare **multiple** `@BrokerAction`s (one method servicing several actions). When it does, any `@BrokerHTTP` on that method **must name its `action`** (the `action` option) to bind to the right `@BrokerAction` deterministically — decorator order is never used. This http↔action pairing is independent of auth; auth is paired separately by route name (see [`@BrokerAuth`](***REMOVED***brokerauthauthname-allowanonymous-actions-httpname)).
 
 ***REMOVED******REMOVED******REMOVED*** `@BrokerHTTP(method, path, dataSource, options?)`
 
 Exposes the method as an HTTP route, published to a gateway via [route auto-discovery](./gateway-admin.md). `dataSource` is `'query' | 'body' | 'params'`. Notable options: `name` (optional route name used for auth pairing), `action` (disambiguates when the method declares **multiple** `@BrokerAction`), plus `successStatusCode`, `timeout`, `parseRaw`, `binary`, `redirect`, `headers`, `forwardHeaders`. `@BrokerHTTP` does **not** carry auth — auth lives in a decoupled `@BrokerAuth`.
 
-***REMOVED******REMOVED******REMOVED*** `@BrokerAuth(authName, allowAnonymous?, roles?, httpName?)`
+***REMOVED******REMOVED******REMOVED*** `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`
 
 Auth for an HTTP route, kept **decoupled** from `@BrokerHTTP`. It pairs to a specific `@BrokerHTTP` route by `httpName` === that route's `name`.
 
 - `authName` — the auth provider to apply.
 - `allowAnonymous?` — allow unauthenticated access.
-- `roles?` — required roles.
+- `actions?` — actions the caller must hold (OR-semantics) on the request's `(companyId, resourceId)`; the gateway gates the route with `acl-check-action`.
 - `httpName?` — the `name` of the `@BrokerHTTP` route this auth applies to.
 
 **Pairing rules:**
@@ -186,7 +186,7 @@ Because auth pairs by route name rather than by action, two HTTP paths for the *
 @BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
 @BrokerAuth('cust-jwks', true, undefined, 'get-booking')
 @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
-@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')
+@BrokerAuth('admin-jwks', undefined, ['read-booking'], 'admin-get-booking')
 getBooking(@BrokerParam('params', 'id') id: string) { /* … */ }
 ```
 
@@ -257,11 +257,11 @@ Call another service and await its response with `requestData`:
 
 ```ts
 const result = await broker.requestData<Req, Res>(
-  'rlb-acl',          // topic (rpc mode)
-  'acl-can-user-do',  // action
-  { userId, roles },  // payload
-  headers,            // optional
-  timeout,            // optional, ms
+  'rlb-acl',                         // topic (rpc mode)
+  'acl-check-action',                // action
+  { userId, action, companyId, resourceId }, // payload
+  headers,                           // optional
+  timeout,                           // optional, ms
 );
 ```
 

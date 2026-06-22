@@ -1,9 +1,12 @@
+import { AclResourceContext } from '../../acl/authz-match';
+
 export const RLB_GTW_ACL_ROLE_SERVICE = 'RLB_GTW_ACL_ROLE_SERVICE';
 export interface IAclRoleService {
-  /** Gateway primary filter (resource-agnostic): true when the user holds at least one of
-   *  `roles`. userId from the auth provider, roles from the path config — no topic/action. */
-  canUserDoGtw(roles: string | string[], userId: string): Promise<boolean>;
-  /** MS-side resource-scoped check: true when a global grant OR a grant bound to `resourceId`
-   *  gives the user at least one of `roles`. The resource is known only to the microservice. */
-  canUserDo(roles: string | string[], userId: string, resourceId?: string): Promise<boolean>;
+  /**
+   * The single ACL authorization primitive. True when `userId` holds at least one of `action`
+   * (via any role) on the EXACT (companyId, resourceId) in `ctx` — strict match, the only carve-out
+   * being both ids absent on the request AND the grant. `ctx === undefined` skips resource scoping
+   * (WebSocket events, which carry no resource).
+   */
+  checkAction(userId: string, ctx: AclResourceContext | undefined, action: string | string[]): Promise<boolean>;
 }

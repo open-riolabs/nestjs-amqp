@@ -62,7 +62,7 @@ export function BrokerHTTP(
 //  - a method with ONE @BrokerHTTP auto-pairs (httpName optional — the simple case);
 //  - a method with MULTIPLE @BrokerHTTP REQUIRES `httpName` to disambiguate; an auth whose httpName
 //    is missing or matches no route is NOT applied and logs a warning at microservice startup.
-export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: string[], httpName?: string): MethodDecorator {
+export function BrokerAuth(authName: string, allowAnonymous?: boolean, actions?: string | string[], httpName?: string): MethodDecorator {
   return (target, propertyKey, descriptor) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_AUTH_METADATA_KEY, target.constructor) || [];
     const params = getParamNames(descriptor.value);
@@ -70,7 +70,7 @@ export function BrokerAuth(authName: string, allowAnonymous?: boolean, roles?: s
       methodName: propertyKey,
       authName,
       allowAnonymous,
-      roles,
+      actions,
       httpName,
     });
     Reflect.defineMetadata(RLB_BROKER_AUTH_METADATA_KEY, existingMetadata, target.constructor);

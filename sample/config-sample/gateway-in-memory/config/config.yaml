@@ -202,28 +202,19 @@ gateway:
       action: acl-revoke
       mode: rpc
 
-    ***REMOVED*** --- ACL checks (exposed over HTTP for the demo; normally called over the broker) ---
-    ***REMOVED*** Gateway-style primary filter {userId, roles}: true if the user holds at least one role.
-    ***REMOVED*** A read → GET; query: ?userId=&roles=user&roles=admin. Returns 200 with `true`/`false`.
-    - name: acl-check-gtw
+    ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
+    ***REMOVED*** checkAction(userId, {companyId?, resourceId?}, action): true if the user holds `action`
+    ***REMOVED*** via any role on the EXACT (companyId, resourceId). Both ids absent ⇒ resource-less grants
+    ***REMOVED*** only (no wildcard). query: ?userId=&action=role-management&companyId=&resourceId=
+    - name: acl-check-action
       method: GET
       path: /acl/check
       dataSource: query
       topic: rlb-acl
-      action: acl-can-user-do-gtw
-      mode: rpc
-    ***REMOVED*** MS-side resource-scoped check {userId, roles, resource}: true if a global grant OR a
-    ***REMOVED*** grant bound to that resource gives the user a role. A read → GET; query:
-    ***REMOVED*** ?userId=&roles=admin&resource=doc-1. Returns 200 with `true`/`false`.
-    - name: acl-check-resource
-      method: GET
-      path: /acl/check-resource
-      dataSource: query
-      topic: rlb-acl
-      action: acl-can-user-do
+      action: acl-check-action
       mode: rpc
     ***REMOVED*** Authenticated: lists the caller's accessible resources (grouped by business resource).
-    ***REMOVED*** Reads userId from the forwarded X-GTW-AUTH-USERID header → needs `auth` (no roles).
+    ***REMOVED*** Reads userId from the forwarded X-GTW-AUTH-USERID header → needs `auth` (no actions).
     - name: acl-list-resources-by-user
       method: GET
       path: /acl/resources
@@ -340,8 +331,11 @@ gateway:
       action: gw-reload
       mode: event
 
-    ***REMOVED*** --- PROTECTED demo: Keycloak JWT + roles → gateway role filter (canUserDoGtw) ---
-    ***REMOVED*** `roles` lists ROLE names now: the gateway passes if the user holds AT LEAST ONE of them.
+    ***REMOVED*** --- PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction) ---
+    ***REMOVED*** `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId
+    ***REMOVED*** from the token, extracts the request's (companyId, resourceId), and passes if the user
+    ***REMOVED*** holds AT LEAST ONE of these actions on that (companyId, resourceId). With no companyId/
+    ***REMOVED*** resourceId on the request, a resource-less grant of one of these actions is required.
     - name: protected-resource
       method: GET
       path: /protected
@@ -350,7 +344,7 @@ gateway:
       action: gw-metrics-get
       mode: rpc
       auth: gateway-jwks
-      roles: [user, admin]
+      actions: [gateway-access]
 
   ***REMOVED*** Routes managed in the DB are loaded (ordered static-before-param) at boot AND on every
   ***REMOVED*** runtime reload, in addition to the YAML ones above. Seed via POST /admin/paths then

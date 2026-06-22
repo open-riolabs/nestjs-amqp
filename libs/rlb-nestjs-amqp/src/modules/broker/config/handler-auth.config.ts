@@ -17,8 +17,8 @@ export interface HandlerAuthConfig extends AuthConfig {
   usernameClaim: string;
   uidClaim: string;
   /**
-   * @deprecated No longer used. The gateway role check is role-based and runs in-process
-   * via `IAclRoleService.canUserDoGtw(path.roles, userId)` — it does not RPC a topic/action.
+   * @deprecated No longer used. The gateway authorization check is action-based and runs in-process
+   * via `IAclRoleService.checkAction(userId, ctx, path.actions)` — it does not RPC a topic/action.
    * Kept optional only for backward compatibility with existing configs.
    */
   aclTopic?: string;

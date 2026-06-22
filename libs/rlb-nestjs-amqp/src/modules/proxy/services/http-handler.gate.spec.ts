@@ -22,7 +22,8 @@ const mkService = () => {
   };
   const auth = {
     processAuthData: jest.fn().mockResolvedValue({ success: false }),
-    checkRoles: jest.fn().mockResolvedValue(true),
+    extractResourceContext: jest.fn().mockReturnValue({ companyId: undefined, resourceId: undefined }),
+    checkActions: jest.fn().mockResolvedValue(true),
     findProvider: jest.fn().mockReturnValue({ name: 'p' }),
   };
   const utils = { error2Object: (e: any) => ({ name: e?.name, message: e?.message }) };
@@ -61,17 +62,17 @@ const handlerFor = (svc: HttpHandlerService, path: PathDefinition) => {
 
 const basePath = (over: Partial<PathDefinition> = {}): PathDefinition => ({
   name: 'p', method: 'POST', path: '/x', topic: 't', action: 'a', mode: 'rpc',
-  dataSource: 'body', roles: [], headers: {}, forwardHeaders: {}, redirect: 0, ...over,
+  dataSource: 'body', actions: [], headers: {}, forwardHeaders: {}, redirect: 0, ...over,
 } as PathDefinition);
 
 describe('HttpHandlerService — auth/authz gate', () => {
-  it('allowAnonymous=true: skips enforcement entirely (no checkRoles, request proceeds) even with auth+roles', async () => {
+  it('allowAnonymous=true: skips enforcement entirely (no checkActions, request proceeds) even with auth+actions', async () => {
     const { svc, broker, auth } = mkService();
     auth.processAuthData.mockResolvedValue({ success: false }); // invalid/absent token
-    const h = handlerFor(svc, basePath({ auth: 'p', roles: ['admin'], allowAnonymous: true }));
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['admin'], allowAnonymous: true }));
     const res = mkRes();
     await h(mkReq(), res);
-    expect(auth.checkRoles).not.toHaveBeenCalled();
+    expect(auth.checkActions).not.toHaveBeenCalled();
     expect(broker.requestData).toHaveBeenCalledTimes(1);
     expect(res.statusCode).toBe(200);
   });
@@ -97,22 +98,22 @@ describe('HttpHandlerService — auth/authz gate', () => {
     expect('success' in forwardedHeaders).toBe(false);
   });
 
-  it('auth+roles, ACL denies: 403 and the broker is never called', async () => {
+  it('auth+actions, ACL denies: 403 and the broker is never called', async () => {
     const { svc, broker, auth } = mkService();
     auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
-    auth.checkRoles.mockResolvedValue(false);
-    const h = handlerFor(svc, basePath({ auth: 'p', roles: ['admin'] }));
+    auth.checkActions.mockResolvedValue(false);
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['admin'] }));
     const res = mkRes();
     await h(mkReq(), res);
     expect(res.statusCode).toBe(403);
     expect(broker.requestData).not.toHaveBeenCalled();
   });
 
-  it('auth+roles, ACL allows: forwards and returns 200', async () => {
+  it('auth+actions, ACL allows: forwards and returns 200', async () => {
     const { svc, broker, auth } = mkService();
     auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
-    auth.checkRoles.mockResolvedValue(true);
-    const h = handlerFor(svc, basePath({ auth: 'p', roles: ['admin'] }));
+    auth.checkActions.mockResolvedValue(true);
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['admin'] }));
     const res = mkRes();
     await h(mkReq(), res);
     expect(res.statusCode).toBe(200);

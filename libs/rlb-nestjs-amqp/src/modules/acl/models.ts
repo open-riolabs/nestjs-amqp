@@ -14,8 +14,9 @@ export interface AclGrant<Id = string> {
   _id?: Id;
   userId: string;
   resourceId?: string;
-  /** Grouping-only metadata: the company the resource(s) belong to. NOT part of any authz
-   *  decision — used solely to group resources in listResourcesByUser. */
+  /** Part of the authorization decision: a grant authorizes a request only on an EXACT
+   *  (companyId, resourceId) match (see grantMatchesResource). Also groups the resources by
+   *  company in listResourcesByUser. */
   companyId?: string;
   friendlyName?: string;
   roles: string[];

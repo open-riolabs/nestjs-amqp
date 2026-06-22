@@ -1,28 +1,37 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { BadRequestError, PaginationModel } from '../../../common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestError, ForbiddenError, PaginationModel } from '../../../common';
 import { BrokerAction, BrokerParam } from '../../broker';
+import { grantMatchesResource } from '../authz-match';
 import { AclCacheService } from '../cache/acl-cache.service';
-import { ACL_ACTIONS, ACL_TOPIC } from '../const';
+import { AclModuleOptions } from '../config/acl.config';
+import { ACL_ACTIONS, ACL_DEFAULT_ROLE_MANAGEMENT_ACTION, ACL_TOPIC, RLB_ACL_OPTIONS } from '../const';
 import { AclAction, AclGrant, AclRole } from '../models';
 import { AclActionRepository } from '../repository/acl-action.repository';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
 import { AclRoleRepository } from '../repository/acl-role.repository';
+import { AclService } from './acl.service';
 
 @Injectable()
 export class AclManagementService {
   private readonly logger = new Logger(AclManagementService.name);
+  /** Action the caller must hold (on the target company/resource) to grant or revoke. */
+  private readonly roleMgmtAction: string;
 
   constructor(
     private readonly actions: AclActionRepository,
     private readonly roles: AclRoleRepository,
     private readonly grants: AclGrantRepository,
     private readonly cache: AclCacheService,
-  ) { }
+    private readonly acl: AclService,
+    @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
+  ) {
+    this.roleMgmtAction = options.roleManagementAction ?? ACL_DEFAULT_ROLE_MANAGEMENT_ACTION;
+  }
 
-  // grant and revoke are DUAL operations on the same key — the (userId, resourceId) grant — with the
-  // same params: userId (required), roles (required), resourceId (optional), companyId (optional,
-  // grouping-only metadata). grant ADDS roles to the pair (creating the record if absent); revoke
-  // REMOVES them (deleting the record once no roles remain).
+  // grant/revoke are DUAL ops on the single (userId, companyId, resourceId) record: grant ADDS roles
+  // (creating it if absent), revoke REMOVES them (deleting it once empty). Both are GATED — the
+  // caller (X-GTW-AUTH-USERID) must hold the role-management action on the target (companyId,
+  // resourceId). Seed the first role-management grant in the DB out-of-band to bootstrap.
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.grant, 'rpc')
   async grant(
     @BrokerParam('body', 'userId') userId: string,
@@ -30,13 +39,17 @@ export class AclManagementService {
     @BrokerParam('body', 'resourceId') resourceId?: string,
     @BrokerParam('body', 'companyId') companyId?: string,
     @BrokerParam('body', 'friendlyName') friendlyName?: string,
+    @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
   ): Promise<AclGrant> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
+    if (!(await this.acl.checkAction(currentUser ?? '', { companyId, resourceId }, this.roleMgmtAction))) {
+      throw new ForbiddenError(`'${this.roleMgmtAction}' is required on the target resource to grant`);
+    }
     await this.assertRolesExist(roles);
-    // ONE grant per (userId, resourceId): create it if absent, otherwise MERGE the roles into
-    // the existing one. Idempotent — re-granting the same roles never produces a duplicate doc.
-    const existing = await this.findGrant(userId, resourceId);
+    // ONE grant per (userId, companyId, resourceId): create it if absent, otherwise MERGE the roles
+    // into the existing one. Idempotent — re-granting the same roles never produces a duplicate doc.
+    const existing = await this.findGrant(userId, companyId, resourceId);
     let result: AclGrant;
     if (existing) {
       const merged = Array.from(new Set([...(existing.roles || []), ...roles]));
@@ -58,13 +71,17 @@ export class AclManagementService {
     @BrokerParam('body', 'roles') roles: string[],
     @BrokerParam('body', 'resourceId') resourceId?: string,
     @BrokerParam('body', 'companyId') companyId?: string,
+    @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
   ): Promise<AclGrant | null> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
-    const existing = await this.findGrant(userId, resourceId);
+    if (!(await this.acl.checkAction(currentUser ?? '', { companyId, resourceId }, this.roleMgmtAction))) {
+      throw new ForbiddenError(`'${this.roleMgmtAction}' is required on the target resource to revoke`);
+    }
+    const existing = await this.findGrant(userId, companyId, resourceId);
     if (!existing) return null;
-    // Remove the given roles from the (userId, resourceId) grant; keep the record while any role
-    // remains, delete it once empty. companyId is grouping-only metadata (no effect on targeting).
+    // Remove the given roles from the (userId, companyId, resourceId) grant; keep the record while
+    // any role remains, delete it once empty.
     const remaining = (existing.roles || []).filter((r) => !roles.includes(r));
     const result = remaining.length
       ? await this.grants.updateById(existing._id!, { roles: remaining })
@@ -73,10 +90,10 @@ export class AclManagementService {
     return result;
   }
 
-  /** The single grant for (userId, resourceId), treating absent/null resourceId as equivalent. */
-  private async findGrant(userId: string, resourceId?: string): Promise<AclGrant | undefined> {
+  /** The single grant for (userId, companyId, resourceId), matched exactly (absent ids compare equal). */
+  private async findGrant(userId: string, companyId?: string, resourceId?: string): Promise<AclGrant | undefined> {
     const all = await this.grants.filter({ userId });
-    return (all || []).find((g) => (g.resourceId ?? null) === (resourceId ?? null));
+    return (all || []).find((g) => grantMatchesResource(g, { companyId, resourceId }));
   }
 
   // PUT = create-or-update, keyed by `name` (actions have no separate id — the name IS the key).

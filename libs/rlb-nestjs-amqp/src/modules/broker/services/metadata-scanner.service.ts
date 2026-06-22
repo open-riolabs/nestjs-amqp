@@ -33,10 +33,10 @@ export class MetadataScannerService implements OnModuleInit {
         service?: any;
         method?: Function;
         type?: string;
-        auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, roles?: string[], httpName?: string; }[];
-        // `name` comes from the @BrokerHTTP options; `auth`/`allowAnonymous`/`roles` are resolved
-        // onto each route by resolveAuthForRoutes (paired to a @BrokerAuth by name).
-        http?: { method: BrokerHttpMethod; path: string; dataSource?: BrokerParamSource; name?: string; parseRaw?: boolean; timeout?: number; auth?: string; allowAnonymous?: boolean; roles?: string[]; }[];
+        auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, actions?: string | string[], httpName?: string; }[];
+        // `name` comes from the @BrokerHTTP options; `auth`/`allowAnonymous`/`actions` are resolved
+        // onto each route by pairAuthToRoutes (paired to a @BrokerAuth by name).
+        http?: { method: BrokerHttpMethod; path: string; dataSource?: BrokerParamSource; name?: string; parseRaw?: boolean; timeout?: number; auth?: string; allowAnonymous?: boolean; actions?: string | string[]; }[];
         params?: { [key: string]: { source: BrokerParamSource, name?: string; pipe?: PipeTransform; }; };
       };
     };

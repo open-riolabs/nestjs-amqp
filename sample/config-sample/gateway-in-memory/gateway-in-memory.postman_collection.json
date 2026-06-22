@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "gateway-in-memory (open-rlb/nestjs-amqp) — setup & test playlist",
-    "description": "Ordered, runnable playlist for the gateway-in-memory example, using a REAL Keycloak login.\n\nWHAT IT DOES (top-to-bottom, via the Collection Runner):\n0. **Logs in** to Keycloak (direct access / password grant) as {{kcUsername}} -> stores {{token}} and decodes the access_token `sub` into {{userId}}.\n1. Creates ACL **actions** (gateway-access, admin-access).\n2. Creates ACL **roles** (user, admin) that bundle those actions.\n3. Creates the **user association** (grant): {{userId}} (the Keycloak sub) -> [user].\n4. Verifies the **protected** route: 200 when granted, 401 without a token, then revoke -> 403 -> re-grant -> 200.\n5. Drives **gateway-admin**: DB routes (create/list/export), auth-providers, metrics.\n6. Tests the **DB-loaded** route after a restart.\n\nBEFORE RUNNING:\n- The gateway-in-memory app must be up (`nest start gateway-in-memory` or F5 -> 'Debug gateway-in-memory') with RabbitMQ reachable (ACL/admin data lives in-memory).\n- The Keycloak client {{kcClientId}} must have 'Direct Access Grants' enabled (public client; no secret).\n- Run on a freshly (re)started process the first time: the revoke -> 403 step assumes a single grant per user.\n\nThe gateway verifies the Keycloak access_token via the `gateway-jwks` provider (issuer + JWKS, RS256), maps `sub` -> X-GTW-AUTH-USERID and calls AclService.canUserDo('rlb-acl','gateway-access', sub) in-process (RAM + in-memory L2 cache).",
+    "description": "Ordered, runnable playlist for the gateway-in-memory example, using a REAL Keycloak login.\n\nWHAT IT DOES (top-to-bottom, via the Collection Runner):\n0. **Logs in** to Keycloak (direct access / password grant) as {{kcUsername}} -> stores {{token}} and decodes the access_token `sub` into {{userId}}.\n1. Creates ACL **actions** (gateway-access, admin-access).\n2. Creates ACL **roles** (user, admin) that bundle those actions.\n3. Creates the **user association** (grant): {{userId}} (the Keycloak sub) -> [user].\n4. Verifies the **protected** route: 200 when granted, 401 without a token, then revoke -> 403 -> re-grant -> 200.\n5. Drives **gateway-admin**: DB routes (create/list/export), auth-providers, metrics.\n6. Tests the **DB-loaded** route after a restart.\n\nBEFORE RUNNING:\n- The gateway-in-memory app must be up (`nest start gateway-in-memory` or F5 -> 'Debug gateway-in-memory') with RabbitMQ reachable (ACL/admin data lives in-memory).\n- The Keycloak client {{kcClientId}} must have 'Direct Access Grants' enabled (public client; no secret).\n- Run on a freshly (re)started process the first time: the revoke -> 403 step assumes a single grant per user.\n\nThe gateway verifies the Keycloak access_token via the `gateway-jwks` provider (issuer + JWKS, RS256), maps `sub` -> X-GTW-AUTH-USERID and runs checkAction(sub, {companyId?, resourceId?}, 'gateway-access') in-process (RAM + in-memory L2 cache).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -74,7 +74,7 @@
           "name": "GET /protected  (403 — logged in but not yet granted)",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": [
-              "// Valid Keycloak token passes auth, but with no ACL grant the role check fails.",
+              "// Valid Keycloak token passes auth, but with no ACL grant the action check fails.",
               "pm.test('Forbidden (403) before the grant exists (fresh DB)', function () { pm.expect(pm.response.code).to.be.oneOf([403, 200]); });",
               "if (pm.response.code === 200) { console.log('NOTE: already 200 — a grant for this user persists from a previous run.'); }"
             ] } }
@@ -384,24 +384,24 @@
       ]
     },
     {
-      "name": "4b · ACL checks (gateway filter + MS resource)",
-      "description": "Gateway filter (GET /acl/check → acl-can-user-do-gtw, query {userId, roles}) and MS-side resource check (GET /acl/check-resource → acl-can-user-do, query {userId, roles, resource}). Both return a boolean: the gateway now answers 200 with body `true` OR `false` (a defined-but-falsy result is real content; only null/undefined yields 204).",
+      "name": "4b · ACL check (acl-check-action)",
+      "description": "The single authorization primitive (GET /acl/check → acl-check-action, query {userId, action, companyId?, resourceId?}): checkAction returns true if the user holds `action` via any role on the EXACT (companyId, resourceId) — no wildcard; both ids absent matches resource-less grants only. The gateway answers 200 with body `true` OR `false` (a defined-but-falsy result is real content; only null/undefined yields 204).",
       "item": [
         {
-          "name": "GET /acl/check  (gateway filter: roles=[user] -> TRUE)",
+          "name": "GET /acl/check  (action=gateway-access, NO companyId/resourceId -> TRUE)",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": [
-              "pm.test('allowed (200, true) — user has global role user', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+              "pm.test('allowed (200, true) — resource-less grant: role user -> gateway-access', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
             ] } }
           ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&roles=user", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "user" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=gateway-access", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "gateway-access" }] }
           }
         },
         {
-          "name": "GET /acl/check  (gateway filter: roles=[superadmin] -> FALSE)",
+          "name": "GET /acl/check  (action=superpower, NO companyId/resourceId -> FALSE)",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": [
               "pm.test('not allowed → 200 with body false (no longer an empty 204)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
@@ -410,11 +410,11 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&roles=superadmin", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "superadmin" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=superpower", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "superpower" }] }
           }
         },
         {
-          "name": "POST /acl/grants  (grant {{userId}} -> [admin] ONLY on resource doc-1)",
+          "name": "POST /acl/grants  (grant {{userId}} -> [admin] ONLY on resourceId doc-1)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('granted on doc-1', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
           ] } } ],
@@ -426,36 +426,36 @@
           }
         },
         {
-          "name": "GET /acl/check-resource  (admin on doc-1 -> TRUE, exact resource)",
+          "name": "GET /acl/check  (action=admin-access on resourceId=doc-1 -> TRUE, exact resource)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('allowed (200, true)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-1", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-1" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=admin-access&resourceId=doc-1", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "admin-access" }, { "key": "resourceId", "value": "doc-1" }] }
           }
         },
         {
-          "name": "GET /acl/check-resource  (admin on doc-2 -> FALSE, not granted there)",
+          "name": "GET /acl/check  (action=admin-access on resourceId=doc-2 -> FALSE, not granted there)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('not allowed → 200 with body false (no longer an empty 204)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
+            "pm.test('not allowed → 200 with body false (exact (companyId,resourceId) match, no wildcard)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-2" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=admin-access&resourceId=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "admin-access" }, { "key": "resourceId", "value": "doc-2" }] }
           }
         },
         {
-          "name": "GET /acl/check-resource  (user on doc-2 -> TRUE, global grant applies everywhere)",
+          "name": "GET /acl/check  (action=gateway-access on resourceId=doc-2 -> FALSE, resource-less grant does NOT match a resource request)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('allowed via global grant (200, true)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+            "pm.test('not allowed → 200 with body false (no wildcard: a resource-less grant only matches a resource-less request)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=user&resource=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "user" }, { "key": "resource", "value": "doc-2" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=gateway-access&resourceId=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "gateway-access" }, { "key": "resourceId", "value": "doc-2" }] }
           }
         },
         {
@@ -475,11 +475,11 @@
       ]
     },
     {
-      "name": "4c · Auth-gate semantics (allowAnonymous / roles / spoofing / unknown provider)",
-      "description": "End-to-end checks of the gateway auth/authz gate via throwaway DB routes (create -> reload -> test -> cleanup) plus an identity-spoofing probe. Covers: allowAnonymous bypass (public, no token), roles-without-auth fail-closed (403), unknown auth provider fail-closed (401, never 500), canUserDoGtw OR-semantics, and that a client-supplied X-GTW-AUTH-USERID cannot override the token identity.\n\nASSUMES folders 0-4b already ran (the logged-in user has at least one grant). Reload is async (broker round-trip): on a transient 404 just re-send the GET.",
+      "name": "4c · Auth-gate semantics (allowAnonymous / actions / spoofing / unknown provider)",
+      "description": "End-to-end checks of the gateway auth/authz gate via throwaway DB routes (create -> reload -> test -> cleanup) plus an identity-spoofing probe. Covers: allowAnonymous bypass (public, no token), actions-without-auth fail-closed (403), unknown auth provider fail-closed (401, never 500), checkAction OR-semantics (caller holds at least one of the actions), and that a client-supplied X-GTW-AUTH-USERID cannot override the token identity.\n\nASSUMES folders 0-4b already ran (the logged-in user has at least one grant). Reload is async (broker round-trip): on a transient 404 just re-send the GET.",
       "item": [
         {
-          "name": "POST /admin/paths  (create /gate/anon — allowAnonymous + auth + roles=[superadmin])",
+          "name": "POST /admin/paths  (create /gate/anon — allowAnonymous + auth + actions=[superpower])",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "var b = pm.response.json(); if (b && b._id) { pm.collectionVariables.set('gateAnonId', b._id); }",
             "pm.test('created', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
@@ -487,12 +487,12 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gate-anon\",\n  \"method\": \"GET\",\n  \"path\": \"/gate/anon\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"allowAnonymous\": true,\n  \"auth\": \"gateway-jwks\",\n  \"roles\": [\"superadmin\"],\n  \"enabled\": true\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gate-anon\",\n  \"method\": \"GET\",\n  \"path\": \"/gate/anon\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"allowAnonymous\": true,\n  \"auth\": \"gateway-jwks\",\n  \"actions\": [\"superpower\"],\n  \"enabled\": true\n}" },
             "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
           }
         },
         {
-          "name": "POST /admin/paths  (create /gate/rolesnoauth — roles but NO auth)",
+          "name": "POST /admin/paths  (create /gate/actionsnoauth — actions but NO auth)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "var b = pm.response.json(); if (b && b._id) { pm.collectionVariables.set('gateRolesId', b._id); }",
             "pm.test('created', function () { pm.expect(pm.response.code).to.be.oneOf([200,201]); });"
@@ -500,7 +500,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gate-rolesnoauth\",\n  \"method\": \"GET\",\n  \"path\": \"/gate/rolesnoauth\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"roles\": [\"user\"],\n  \"enabled\": true\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"gate-actionsnoauth\",\n  \"method\": \"GET\",\n  \"path\": \"/gate/actionsnoauth\",\n  \"dataSource\": \"query\",\n  \"topic\": \"rlb-gateway-admin\",\n  \"action\": \"gw-metrics-get\",\n  \"mode\": \"rpc\",\n  \"actions\": [\"gateway-access\"],\n  \"enabled\": true\n}" },
             "url": { "raw": "{{baseUrl}}/admin/paths", "host": ["{{baseUrl}}"], "path": ["admin", "paths"] }
           }
         },
@@ -531,7 +531,7 @@
           }
         },
         {
-          "name": "GET /gate/anon  (200 — allowAnonymous bypasses auth+roles, NO token)",
+          "name": "GET /gate/anon  (200 — allowAnonymous bypasses auth+actions, NO token)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('allowAnonymous => public 200 even without a token (re-send if 404: reload in flight)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });",
             "if (pm.response.code === 404) console.warn('reload still in flight — re-send this request');"
@@ -543,15 +543,15 @@
           }
         },
         {
-          "name": "GET /gate/rolesnoauth  (403 — roles declared without auth = fail closed)",
+          "name": "GET /gate/actionsnoauth  (403 — actions declared without auth = fail closed)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('roles without an auth provider => 403 (fail closed)', function () { pm.expect(pm.response.code).to.be.oneOf([403, 404]); });",
+            "pm.test('actions without an auth provider => 403 (fail closed)', function () { pm.expect(pm.response.code).to.be.oneOf([403, 404]); });",
             "if (pm.response.code === 404) console.warn('reload still in flight — re-send this request');"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": { "raw": "{{baseUrl}}/gate/rolesnoauth", "host": ["{{baseUrl}}"], "path": ["gate", "rolesnoauth"] }
+            "url": { "raw": "{{baseUrl}}/gate/actionsnoauth", "host": ["{{baseUrl}}"], "path": ["gate", "actionsnoauth"] }
           }
         },
         {
@@ -568,14 +568,14 @@
           }
         },
         {
-          "name": "GET /acl/check  (OR semantics: roles=[superadmin,user] -> TRUE)",
+          "name": "GET /acl/check  (OR semantics: action=[superpower,gateway-access] -> TRUE)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('allowed (200, true) — canUserDoGtw passes if the user holds AT LEAST ONE role', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
+            "pm.test('allowed (200, true) — checkAction passes if the user holds AT LEAST ONE action', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/true/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&roles=superadmin&roles=user", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "superadmin" }, { "key": "roles", "value": "user" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=superpower&action=gateway-access", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "superpower" }, { "key": "action", "value": "gateway-access" }] }
           }
         },
         {
@@ -610,7 +610,7 @@
           }
         },
         {
-          "name": "DELETE /admin/paths  (cleanup /gate/rolesnoauth)",
+          "name": "DELETE /admin/paths  (cleanup /gate/actionsnoauth)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('deleted', function () { pm.expect(pm.response.code).to.be.oneOf([200,204,404]); });"
           ] } } ],

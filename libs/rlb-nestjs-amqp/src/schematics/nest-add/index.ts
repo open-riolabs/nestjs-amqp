@@ -290,7 +290,7 @@ function buildGatewayBlock(sel: Resolved): string {
   events: []
   ws:
     heartbeatIntervalMs: 30000
-    ***REMOVED*** Auth is declared per-event (events[].auth / requireAuth / roles / scopeClaim).
+    ***REMOVED*** Auth is declared per-event (events[].auth / requireAuth / actions / scopeClaim).
   paths:
 ${paths.join('\n')}`;
 
@@ -384,20 +384,16 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-revoke
       mode: rpc
-    ***REMOVED*** --- ACL checks (GET → 200 with true/false) ---
-    - name: acl-check-gtw
+    ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
+    ***REMOVED*** checkAction(userId, {companyId?, resourceId?}, action): true if the user holds the action
+    ***REMOVED*** via any role on the EXACT (companyId, resourceId). companyId/resourceId are optional;
+    ***REMOVED*** when both are absent the check matches resource-less grants only (no wildcard).
+    - name: acl-check-action
       method: GET
       path: /acl/check
       dataSource: query
       topic: rlb-acl
-      action: acl-can-user-do-gtw
-      mode: rpc
-    - name: acl-check-resource
-      method: GET
-      path: /acl/check-resource
-      dataSource: query
-      topic: rlb-acl
-      action: acl-can-user-do
+      action: acl-check-action
       mode: rpc
     ***REMOVED*** Lists the caller's accessible resources. Add an 'auth: <provider>' line once you declare an auth-provider.
     - name: acl-list-resources-by-user
@@ -563,7 +559,7 @@ function brokerForRootAsync(): string {
 function proxyForRootAsync(sel: Resolved): string {
   const providers = sel.acl
     ? `[
-        // Role-gated paths resolve the caller's roles via AclService (in-process, no broker hop).
+        // Action-gated paths resolve the caller's identity via AclService (in-process, no broker hop).
         { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
       ]`
     : `[]`;

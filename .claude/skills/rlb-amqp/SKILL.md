@@ -42,7 +42,7 @@ are the terse, rules-first version for editing tasks:
 - `docs/README.md` — index. `docs/getting-started.md` — bootstrap a ms + gateway.
 - `docs/broker.md` — `@BrokerAction`/`@BrokerParam`, topic modes, RPC, `BrokerService`.
 - `docs/gateway.md` — `gateway.paths[]`, `gateway.events[]`, auth gate, status mapping, ws.
-- `docs/acl.md` — name-keyed actions/roles, dual grant/revoke, `acl-can-user-do*` checks.
+- `docs/acl.md` — name-keyed actions/roles, dual grant/revoke, the `acl-check-action` check.
 - `docs/gateway-admin.md` — DB routes, name-keyed auth-providers, metrics, health, route-sync.
 - `docs/gotchas.md` — the canonical source `references/gotchas.md` is ported from.
 
@@ -56,7 +56,7 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
 - `rlb-amqp-add-route` — expose an action over HTTP (`gateway.paths[]`).
 - `rlb-amqp-add-ws-event` — add a secure WebSocket/webhook event (`gateway.events[]`).
 - `rlb-amqp-scaffold` — bootstrap a new microservice/gateway (module, main, config).
-- `rlb-amqp-acl` — name-keyed actions/roles, grant/revoke, the `acl-can-user-do*` checks.
+- `rlb-amqp-acl` — name-keyed actions/roles, grant/revoke, the `acl-check-action` check.
 - `rlb-amqp-gateway-admin` — DB routes/auth-providers, metrics, health, route auto-discovery.
 
 ***REMOVED******REMOVED*** Golden rules (summary — full list in references/gotchas.md)
@@ -72,7 +72,7 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
 6. No destructuring / default values in `@BrokerAction` method parameters; always pass an
    explicit `name` to `@BrokerParam`.
 7. `publishMessage` is `async` — `await` it for the publisher-confirm guarantee.
-8. `roles` (HTTP or WS) require an `IAclRoleService` registered via
+8. `actions` (HTTP or WS) require an `IAclRoleService` registered via
    `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`.
    Auth-providers + gateway config are passed to `ProxyModule` (not `BrokerModule`).
 9. Topic names `rlb-acl` / `rlb-gateway-admin` / `rlb-gateway-control` and ALL action

@@ -1,10 +1,10 @@
 ***REMOVED*** ACL
 
-Role-based access control for `@open-rlb/nestjs-amqp`. The ACL module ships a set of
-`@BrokerAction` handlers (bound to a fixed broker topic) that answer authorization
-questions and manage the actions / roles / grants that back them. The gateway also wires
-the same `AclService` in-process so it can enforce per-route role filters without a round
-trip over the broker.
+Action-based access control for `@open-rlb/nestjs-amqp`. The ACL module ships a set of
+`@BrokerAction` handlers (bound to a fixed broker topic) that answer the single
+authorization question and manage the actions / roles / grants that back it. The gateway
+also wires the same `AclService` in-process so it can enforce per-route action filters
+without a round trip over the broker.
 
 ***REMOVED******REMOVED*** Introduction
 
@@ -12,9 +12,11 @@ ACL is built from three named entities and a small set of decisions:
 
 - **Actions** — atomic capabilities (e.g. `read-doc`, `delete-user`). Keyed by `name`.
 - **Roles** — named bundles of actions (e.g. `editor = [read-doc, write-doc]`). Keyed by `name`.
-- **Grants** — bind a `userId` to one or more **roles**, optionally scoped to a `resourceId`.
-- **Checks** — `canUserDoGtw` (resource-agnostic, the gateway's primary filter) and
-  `canUserDo` (resource-scoped, evaluated by the owning microservice).
+- **Grants** — bind a `userId` to one or more **roles**, scoped to a `(companyId, resourceId)`
+  target (either may be absent).
+- **Check** — a single primitive, `checkAction(userId, ctx, action)`, that resolves the
+  requested action(s) to the roles that include them and verifies the user's grants on the
+  exact `(companyId, resourceId)` in `ctx`.
 
 All handlers are bound to the topic `rlb-acl` (the constant `ACL_TOPIC`). That topic name
 and every action string are decorator-bound in the library and are **not** configurable —
@@ -22,38 +24,93 @@ your broker/gateway config must reference them literally.
 
 ***REMOVED******REMOVED*** Base features
 
-***REMOVED******REMOVED******REMOVED*** Role-based authorization
+***REMOVED******REMOVED******REMOVED*** Action-based authorization
 
-A grant attaches a list of **role names** to a user. Authorization never matches on action
-strings directly — it matches on roles:
+A grant attaches a list of **role names** to a user; each role bundles **actions**.
+Authorization is expressed in terms of **actions** through one primitive:
 
-- `canUserDoGtw(roles, userId)` returns `true` when the user holds **at least one** of the
-  requested roles, ignoring resource scoping. This is what the gateway calls for a route
-  that declares `roles: [...]`.
-- `canUserDo(roles, userId, resourceId?)` returns `true` when a **global** grant (no
-  `resourceId`) **or** a grant bound to exactly that `resourceId` gives the user at least
-  one of the requested roles. The resource is known only to the microservice, so this check
-  is normally invoked over the broker by the service that owns the resource.
+- `checkAction(userId, ctx, action)` returns `true` when the user holds **at least one** of
+  the requested `action`s (OR-semantics) — via any role that includes it — on the exact
+  `(companyId, resourceId)` in `ctx`. `action` is a `string | string[]`; `ctx` is
+  `{ companyId?, resourceId? }`.
 
-Both checks return `false` (never throw) on missing input or internal error.
+It is exposed two ways, both backed by the same method:
 
-***REMOVED******REMOVED******REMOVED*** Grants per user (and optional resource)
+- **Over the broker** as the `acl-check-action` action on the `rlb-acl` topic (body
+  `{ userId, action, companyId?, resourceId? }`).
+- **In-process** as `IAclRoleService.checkAction(userId, ctx, action)` — what the gateway
+  calls to gate a route without a broker round trip (bound via `RLB_GTW_ACL_ROLE_SERVICE`).
 
-There is exactly **one grant record per `(userId, resourceId)` pair** (an absent
-`resourceId` is its own "global" slot). `grant` and `revoke` are dual operations on that
-record:
+**The resource match is exact — there is no wildcard.** A grant authorizes a request iff its
+`(companyId, resourceId)` equal the request's after normalization (`undefined`, `null` and
+`''` all count as *absent* and compare equal). The **only** carve-out is when both ids are
+absent on the request **and** on the grant — a legitimate resource-less / global grant. A
+resource-less grant no longer authorizes a request that carries a `companyId`/`resourceId`,
+and `companyId` is now **load-bearing** in the authorization decision (it is no longer
+grouping-only metadata).
 
-- **grant** merges the supplied roles into the pair, creating the record if absent. It is
+Pass `ctx === undefined` (rather than `{ }`) to skip resource scoping entirely — a
+resource-agnostic check. The gateway uses this for WebSocket events, which carry no HTTP
+resource.
+
+The check returns `false` (never throws) on missing input or internal error.
+
+***REMOVED******REMOVED******REMOVED*** Grants per user and target
+
+There is exactly **one grant record per `(userId, companyId, resourceId)` triple** (an absent
+`companyId`/`resourceId` is part of the key — absent ids compare equal). `grant` and `revoke`
+are dual operations on that record:
+
+- **grant** merges the supplied roles into the triple, creating the record if absent. It is
   idempotent — re-granting the same roles never produces a duplicate.
-- **revoke** removes the supplied roles from the pair, and **deletes the record entirely
+- **revoke** removes the supplied roles from the triple, and **deletes the record entirely
   once no roles remain**.
 
-`companyId` is **grouping-only metadata** (it replaced the old `resourceBusinessId`). It is
-stored on the grant and used to group results in `acl-list-resources-by-user`, but it plays
-**no part in authorization decisions** — targeting is by `(userId, resourceId)` only.
+`companyId` and `resourceId` together identify the grant **and** scope authorization (see
+the exact-match rule above). `companyId` replaced the old `resourceBusinessId`; it is no
+longer grouping-only — it participates in both targeting and the authorization decision.
+(It is still also used to group results in `acl-list-resources-by-user`.)
 
-Both `grant` and `revoke` validate that every supplied role already exists (unknown roles →
-`400`), and both invalidate the user's cached decisions on success.
+`grant` validates that every supplied role already exists (unknown roles → `400`), and both
+operations invalidate the user's cached decisions on success.
+
+***REMOVED******REMOVED******REMOVED*** Admin gate on grant / revoke
+
+`grant` and `revoke` are themselves **gated**. The caller — identified by the forwarded
+`X-GTW-AUTH-USERID` header — must hold the **`role-management`** action on the **target**
+`(companyId, resourceId)`, checked with the same exact-match `checkAction`; otherwise the
+operation throws `ForbiddenError` (→ `403`). An admin scoped to one company/resource cannot
+manage grants on another.
+
+The gate action defaults to `role-management`
+(`ACL_DEFAULT_ROLE_MANAGEMENT_ACTION`) and is overridable per deployment via
+`AclModuleOptions.roleManagementAction`. Because the gate is itself a grant, **bootstrap the
+very first `role-management` grant by seeding the grant store directly** — the library adds
+no bypass.
+
+***REMOVED******REMOVED******REMOVED*** Gateway route gating (action-based)
+
+The gateway gates HTTP routes and WebSocket events on **actions**, not roles. A route
+declares the actions it requires; the gateway resolves the caller's identity from the auth
+provider and authorizes via `checkAction`:
+
+- **HTTP paths** declare `actions: [..]` on the `PathDefinition` (OR-semantics). The gateway
+  resolves the caller's userId (the provider's `uidClaim`), extracts the request's
+  `(companyId, resourceId)`, and authorizes if the caller holds **one** of `actions` on that
+  target. Declaring `actions` **without** `auth` fails closed (`403`) — there is no identity
+  to evaluate.
+- **WebSocket events** declare `actions: [..]` and are checked **resource-agnostically** (WS
+  events carry no HTTP resource): a subscriber passes if any grant includes one of the
+  actions.
+
+For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from the request,
+precedence **params → query → body**, and matches them exactly.
+
+The exact-match rule (no wildcard) applies throughout: the caller's grant must match the
+extracted `(companyId, resourceId)` exactly, the sole carve-out being both ids absent on the
+request **and** the grant. See [the gateway docs](./gateway.md) for the full path/event
+field reference, and note the `@BrokerAuth` decorator's 3rd parameter is now `actions` (was
+`roles`): `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`.
 
 ***REMOVED******REMOVED******REMOVED*** Two-level cache (L1 RAM + optional L2)
 
@@ -114,12 +171,11 @@ export class AppModule {}
 `AclModule` is registered as a **global** module and exports `AclService` and
 `AclCacheService`.
 
-***REMOVED******REMOVED******REMOVED*** Gateway side (in-process role filter)
+***REMOVED******REMOVED******REMOVED*** Gateway side (in-process action filter)
 
-So the gateway can enforce `roles: [...]` route filters without an extra broker round trip,
+So the gateway can enforce `actions: [...]` route filters without an extra broker round trip,
 bind the gateway's `RLB_GTW_ACL_ROLE_SERVICE` token to the same `AclService`. The token
-expects an `IAclRoleService` (`canUserDoGtw` / `canUserDo`), which `AclService` already
-implements:
+expects an `IAclRoleService` (`checkAction`), which `AclService` already implements:
 
 ```ts
 import { Module } from '@nestjs/common';
@@ -139,7 +195,7 @@ export class GatewayModule {}
 
 When the gateway and ACL backend run in the same process, `useExisting: AclService` reuses
 the already-registered instance. If they run in separate services, the gateway instead
-issues a broker RPC to the `acl-can-user-do-gtw` action on the `rlb-acl` topic.
+issues a broker RPC to the `acl-check-action` action on the `rlb-acl` topic.
 
 ***REMOVED******REMOVED*** YAML configuration
 
@@ -195,31 +251,34 @@ in `rpc` mode and maps to the action string shown.
 | `PUT` | `/acl/roles` | `acl-role-update` | Upsert by `name`. Body: `{ name, actions, description? }`. All `actions` must exist (else `400`). |
 | `DELETE` | `/acl/roles` | `acl-role-delete` | Delete by `name`. Body: `{ name }`. |
 
-***REMOVED******REMOVED******REMOVED*** Grants (per user; `resourceId` optional)
+***REMOVED******REMOVED******REMOVED*** Grants (per user + target; admin-gated)
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|
-| `POST` | `/acl/grants` | `acl-grant` | Merge roles into the `(userId, resourceId)` grant. Body: `{ userId, roles, resourceId?, companyId?, friendlyName? }`. `userId` + `roles` **required**. |
-| `DELETE` | `/acl/grants` | `acl-revoke` | Remove roles from the `(userId, resourceId)` grant; delete the record once empty. Body: `{ userId, roles, resourceId?, companyId? }`. `userId` + `roles` **required**. |
+| `POST` | `/acl/grants` | `acl-grant` | Merge roles into the `(userId, companyId, resourceId)` grant. Body: `{ userId, roles, resourceId?, companyId?, friendlyName? }`. `userId` + `roles` **required**. |
+| `DELETE` | `/acl/grants` | `acl-revoke` | Remove roles from the `(userId, companyId, resourceId)` grant; delete the record once empty. Body: `{ userId, roles, resourceId?, companyId? }`. `userId` + `roles` **required**. |
 
-Both operations require `userId` and `roles`; `resourceId` and `companyId` are optional.
-`companyId` is grouping metadata only and does not affect targeting.
+Both operations require `userId` and `roles`; `resourceId` and `companyId` are optional but
+**part of the grant identity and the authorization scope** (not just metadata). Both are
+**gated**: the caller (forwarded `X-GTW-AUTH-USERID`) must hold the `role-management` action
+on the target `(companyId, resourceId)`, else `403` (`ForbiddenError`). Seed the first
+`role-management` grant directly in the store to bootstrap.
 
-***REMOVED******REMOVED******REMOVED*** Checks and resource listing
+***REMOVED******REMOVED******REMOVED*** Check and resource listing
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|
-| `GET` | `/acl/check` | `acl-can-user-do-gtw` | Resource-agnostic role check. Query: `?userId=&roles=user&roles=admin`. Returns **200** with body `true`/`false`. |
-| `GET` | `/acl/check-resource` | `acl-can-user-do` | Resource-scoped check (global grant OR grant bound to `resource`). Query: `?userId=&roles=admin&resource=doc-1`. Returns **200** with body `true`/`false`. |
-| `GET` | `/acl/resources` | `acl-list-resources-by-user` | Authenticated. Lists the caller's accessible resources grouped by `companyId`, each with its resolved actions. Reads `userId` from the forwarded `X-GTW-AUTH-USERID` header (requires `auth`, no roles). |
+| `GET` | `/acl/check` | `acl-check-action` | The single authorization primitive. Query: `?userId=&action=read-doc&action=write-doc&companyId=&resourceId=`. `action` is OR-semantics; `companyId`/`resourceId` scope the check (exact match, both absent ⇒ resource-less). Returns **200** with body `true`/`false`. |
+| `GET` | `/acl/resources` | `acl-list-resources-by-user` | Authenticated. Lists the caller's accessible resources grouped by `companyId`, each with its resolved actions. Reads `userId` from the forwarded `X-GTW-AUTH-USERID` header (requires `auth`). |
 
-> **A defined falsy result is real content.** `/acl/check` and `/acl/check-resource` return
-> **200** with a JSON `true` or `false` body — `false` is a meaningful answer, not an empty
-> one. Only a `null`/`undefined` result collapses to `204`.
+> **A defined falsy result is real content.** `/acl/check` returns **200** with a JSON
+> `true` or `false` body — `false` is a meaningful answer, not an empty one. Only a
+> `null`/`undefined` result collapses to `204`.
 
-> **Removed actions.** `acl-list-by-user` and `acl-verify-access` no longer exist. Use
-> `acl-can-user-do` for resource-scoped checks and `acl-list-resources-by-user` to enumerate
-> a user's resources.
+> **Removed actions.** `acl-can-user-do`, `acl-can-user-do-gtw`, `acl-list-by-user` and
+> `acl-verify-access` no longer exist. Use `acl-check-action` for every authorization check
+> and `acl-list-resources-by-user` to enumerate a user's resources. The two old check routes
+> (`/acl/check` and `/acl/check-resource`) collapse into the single `GET /acl/check`.
 
 ---
 

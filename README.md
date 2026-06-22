@@ -56,7 +56,7 @@ Monorepo NestJS (vedi `nest-cli.json`):
                 │
         ┌───────▼────────┐   modules/proxy  ── Gateway
         │ HttpHandler    │   - registra route HTTP dinamiche
-        │ WebSocketSvc   │   - auth (jwt/jwks/basic/str-compare) + ACL/ruoli
+        │ WebSocketSvc   │   - auth (jwt/jwks/basic/str-compare) + ACL/azioni
         │ JwtService     │   - traduce HTTP/WS → messaggi broker
         └───────┬────────┘
                 │
@@ -80,7 +80,7 @@ Monorepo NestJS (vedi `nest-cli.json`):
 
 1. **`amqp-lib`** — driver a basso livello (`AmqpConnection`): connessione resiliente (`amqp-connection-manager`), canali gestiti, setup di exchange/queue/binding al boot, RPC con `correlationId` + *direct-reply-to*, consumer con gestione errori (`Nack` → ack/reject/requeue), graceful shutdown.
 2. **`modules/broker`** — astrazione di business: `BrokerService`, decoratori `@BrokerAction`/`@BrokerParam`, `MetadataScannerService` (auto-discovery dei metodi decorati e registrazione automatica dei consumer).
-3. **`modules/proxy`** — gateway HTTP/WebSocket: registrazione dinamica di route Express, auth pluggable, ACL/ruoli, WebSocket sicuro e scalabile, forwarding webhook.
+3. **`modules/proxy`** — gateway HTTP/WebSocket: registrazione dinamica di route Express, auth pluggable, ACL/azioni, WebSocket sicuro e scalabile, forwarding webhook.
 
 ***REMOVED******REMOVED******REMOVED*** Flusso di una richiesta
 
@@ -126,7 +126,7 @@ import yamlConfig from './config/config.loader';
         gatewayOptions: config.get<GatewayConfig>('gateway'),
       }),
       providers: [
-        // { provide: RLB_GTW_ACL_ROLE_SERVICE, useClass: MyAclService }, // solo se usi `roles`
+        // { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }, // solo se usi `actions`
       ],
     }),
   ],
@@ -537,7 +537,7 @@ Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **
 
 ***REMOVED******REMOVED******REMOVED*** `AclModule` — ACL DB-backed con cache 2-livelli
 
-ACL (azioni → ruoli → grant per-utente) con `canUserDo` corretto e **cache RAM + L2 pluggable** (TTL diversi) e invalidazione che forza il DB.
+ACL (azioni → ruoli → grant per-utente) con un'unica primitiva `checkAction` (action-based, match **esatto** su `(companyId, resourceId)`, niente wildcard) e **cache RAM + L2 pluggable** (TTL diversi) e invalidazione che forza il DB.
 
 ```ts
 import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrantRepository,
@@ -572,10 +572,9 @@ import { AclModule, AclService, AclActionRepository, AclRoleRepository, AclGrant
 export class AppModule {}
 ```
 
-- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-can-user-do` / `acl-can-user-do-gtw` (rpc), `acl-grant`/`acl-revoke`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl`. (Il check ruoli del gateway è in-process via `IAclRoleService`, quindi gli auth-provider non richiedono più `aclTopic`/`aclAction`.)
-- **Due verifiche role-based** (servite dalla cache 2-tier, miss → DB → ripopola); input solo `userId` + `roles`, **niente topic/action**:
-  - `canUserDoGtw(roles, userId)` — **filtro primario del gateway** (role-based, OR): vero se l'utente ha almeno uno dei ruoli, resource-agnostico. È quello usato da `checkRoles` su `path.roles`. RPC `acl-can-user-do-gtw`.
-  - `canUserDo(roles, userId, resourceId)` — **lato microservizio**: vero se un grant **globale** (senza `resourceId`) **oppure** legato a quella risorsa dà all'utente il ruolo (`roles` accetta `string | string[]`). La risorsa è nota solo al ms, che chiama l'RPC `acl-can-user-do` con payload `{ userId, resource, roles }`.
+- I handler sono esposti su `BrokerService` con topic **`rlb-acl`** (costante `ACL_TOPIC`): `acl-check-action` (rpc), `acl-grant`/`acl-revoke`, `acl-list-resources-by-user`, `acl-action-*`, `acl-role-*`. Definisci nel tuo `broker.topics` un topic `rlb-acl`. (Il check del gateway è in-process via `IAclRoleService`, quindi gli auth-provider non richiedono più `aclTopic`/`aclAction`.)
+- **Verifica unica action-based** (servita dalla cache 2-tier, miss → DB → ripopola): `checkAction(userId, { companyId?, resourceId? }, action)` — vero se l'utente ha l'`action` (`string | string[]`, semantica OR) tramite un qualsiasi ruolo, su quella **esatta** coppia `(companyId, resourceId)`. Match: `grant.companyId === companyId && grant.resourceId === resourceId` (undefined/null/'' = assenti); unica deroga: entrambi assenti su richiesta **e** grant (grant globale). **Niente wildcard**; `companyId` è parte della decisione. Il gateway la usa in-process via `IAclRoleService.checkAction` su `path.actions`; è esposta anche come RPC `acl-check-action` (`{ userId, action, companyId?, resourceId? }`) per gli altri ms.
+- **grant/revoke sono gated**: il chiamante (header `X-GTW-AUTH-USERID`) deve avere l'azione `role-management` sulla risorsa target `(companyId, resourceId)`, altrimenti `403`. Il record grant è univoco per `(userId, companyId, resourceId)`; il primo `role-management` si fa **seed diretto a DB** (nessun bypass nella lib; azione del gate configurabile con `AclModuleOptions.roleManagementAction`).
 - **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
 - **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-in-memory` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
 
@@ -660,7 +659,7 @@ Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili pr
 
 ***REMOVED******REMOVED******REMOVED*** Auth / ACL
 
-14. **`roles` su una path richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. Il check del gateway è **role-based**: `path.roles` elenca **nomi di ruolo** e l'utente passa se ne possiede **almeno uno** (`canUserDoGtw(path.roles, userId)`, filtro primario resource-agnostico). L'auth-provider deve definire `uidClaim` (per estrarre lo userId) + `headerPrefix`. La verifica fine sulla risorsa va fatta sul microservizio con `canUserDo(roles, userId, resourceId)` (RPC `acl-can-user-do`). Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
+14. **`actions` su una path richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. Il check del gateway è **action-based**: `path.actions` elenca **nomi di azione** e l'utente passa se ne possiede **almeno una** sulla **esatta** coppia `(companyId, resourceId)` della richiesta (`checkAction(userId, ctx, path.actions)`). Il gateway estrae i campi canonici `companyId`/`resourceId` dalla richiesta (precedenza params→query→body) e li confronta in modo esatto. L'auth-provider deve definire `uidClaim` (per estrarre lo userId) + `headerPrefix`. Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
 15. **Gli header propagati sono uppercase e prefissati** (`${headerPrefix}${DEST}`): leggi `X-GTW-AUTH-USERID`, non `userId`.
 
 ***REMOVED******REMOVED******REMOVED*** WebSocket
@@ -687,7 +686,7 @@ Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili pr
 - `Queue <name> has no routing key`: l'exchange è di tipo `topic` ma il queue non ha `routingKey`.
 - `Client name is required ...`: manca `connection_name` (richiesto da broadcast e WebSocket).
 - `ACL Role Service not found`: stai usando `roles` senza aver registrato `RLB_GTW_ACL_ROLE_SERVICE`.
-- `401/403` dal gateway: controlla `auth`, `auth-providers[]`, e l'ACL service quando usi `roles`.
+- `401/403` dal gateway: controlla `auth`, `auth-providers[]`, e l'ACL service quando usi `actions`.
 - Timeout RPC: `replyQueues` errato, `action` non gestita da alcun servizio, o handler troppo lento (`timeout`).
 
 ---

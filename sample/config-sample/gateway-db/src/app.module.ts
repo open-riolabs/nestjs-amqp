@@ -39,8 +39,8 @@ import { MongoRouteSyncLogRepository } from './modules/database/repository/mongo
         gatewayOptions: configService.get<GatewayConfig>('gateway'),
       }),
       providers: [
-        // In-process role gate: roles-protected paths (e.g. /protected) resolve the caller's
-        // roles via AclService.canUserDoGtw instead of a broker round-trip.
+        // In-process action gate: action-protected paths (e.g. /protected) resolve the caller's
+        // grants via AclService.checkAction instead of a broker round-trip.
         { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
         // In-proxy metrics hook → InfluxDB (no-op until INFLUX_URL/TOKEN/ORG env are set).
         { provide: RLB_GTW_METRICS_HOOK, useClass: InfluxMetricsHook },

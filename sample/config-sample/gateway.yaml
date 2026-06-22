@@ -50,7 +50,7 @@ auth-providers:
     headerPrefix: "X-GTW-AUTH-"
 
     ***REMOVED*** Claim that becomes the user-id header (<headerPrefix>USERID). REQUIRED for
-    ***REMOVED*** any path/event that declares `roles` — the role check resolves identity
+    ***REMOVED*** any path/event that declares `actions` — the action check resolves identity
     ***REMOVED*** from this claim.
     uidClaim: sub
 
@@ -131,11 +131,16 @@ gateway:
   ***REMOVED*** THE AUTH GATE (evaluated per request):
   ***REMOVED***   1. allowAnonymous: true        -> gate skipped; a valid token (if present)
   ***REMOVED***                                     still has claims mapped & forwarded.
-  ***REMOVED***   2. auth set, no roles          -> authentication only (401 if invalid).
-  ***REMOVED***   3. auth + roles                -> authenticate, then in-process role check
-  ***REMOVED***                                     canUserDoGtw(roles, userId): pass if the
-  ***REMOVED***                                     user holds AT LEAST ONE role, else 403.
-  ***REMOVED***   Declaring `roles` WITHOUT `auth` fails closed (every request 403).
+  ***REMOVED***   2. auth set, no actions        -> authentication only (401 if invalid).
+  ***REMOVED***   3. auth + actions              -> authenticate, resolve the caller's userId,
+  ***REMOVED***                                     extract the request's (companyId, resourceId),
+  ***REMOVED***                                     then checkAction(userId, ctx, actions): pass
+  ***REMOVED***                                     if the user holds AT LEAST ONE action on that
+  ***REMOVED***                                     (companyId, resourceId), else 403.
+  ***REMOVED***   Declaring `actions` WITHOUT `auth` fails closed (every request 403).
+  ***REMOVED***
+  ***REMOVED***   The gateway reads the canonical companyId/resourceId from the request
+  ***REMOVED***   (precedence params → query → body) and matches them exactly.
   ***REMOVED***
   ***REMOVED*** RESPONSE / STATUS MAPPING (rpc mode):
   ***REMOVED***   * A DEFINED reply (including falsy false / 0 / "") -> 200 with body.
@@ -172,7 +177,7 @@ gateway:
 
     ***REMOVED*** ---- (2) Rich RPC route exercising every PathDefinition field -----------
     ***REMOVED*** GET /reports/:id -> rlb-gateway-admin / gw-metrics-get.
-    ***REMOVED*** Authenticated + role-gated, with header forwarding, custom timeout, etc.
+    ***REMOVED*** Authenticated + action-gated, with header forwarding, custom timeout, etc.
     - name: report-download
       method: GET
       path: /reports/:id          ***REMOVED*** :id is merged into the payload via params
@@ -182,8 +187,12 @@ gateway:
       mode: rpc
 
       auth: gateway-jwks          ***REMOVED*** provider name from auth-providers above
-      roles: [user, admin]        ***REMOVED*** caller must hold at least ONE of these roles
+      actions: [metrics-read]     ***REMOVED*** caller must hold at least ONE of these ACTIONS on
+                                  ***REMOVED*** the request's (companyId, resourceId)
       allowAnonymous: false       ***REMOVED*** explicit: do NOT skip the gate (default behavior)
+
+      ***REMOVED*** The gateway reads the canonical companyId/resourceId from the request
+      ***REMOVED*** (precedence params → query → body) and matches them exactly.
 
       timeout: 15000              ***REMOVED*** RPC timeout in ms (rpc mode only)
 
@@ -273,7 +282,7 @@ gateway:
   ***REMOVED*** ws:  WebSocketGatewayOptions — connection-level limits & heartbeat
   ***REMOVED*** ===========================================================================
   ***REMOVED*** CONNECTION-level only. Authentication/authorization is declared PER-EVENT
-  ***REMOVED*** (auth/requireAuth/roles/scopeClaim under each events[] entry), not here.
+  ***REMOVED*** (auth/requireAuth/actions/scopeClaim under each events[] entry), not here.
   ws:
     maxConnections: 1000             ***REMOVED*** max concurrent connections this instance accepts
     maxSubscriptionsPerClient: 50    ***REMOVED*** max active subscriptions per connected client
@@ -309,7 +318,8 @@ gateway:
       requireAuth: true              ***REMOVED*** require a valid token (default true when auth set);
                                      ***REMOVED*** set false to allow anonymous subscribers while
                                      ***REMOVED*** still mapping claims for authenticated ones
-      roles: [user]                  ***REMOVED*** role check via the ACL service (needs auth)
+      actions: [chat-subscribe]      ***REMOVED*** action check via the ACL service (needs auth);
+                                     ***REMOVED*** WS events are gated resource-agnostically
 
       ***REMOVED*** Per-user isolation: the server only forwards a message when
       ***REMOVED*** payload[payloadKey] equals the authenticated client's scopeClaim value.

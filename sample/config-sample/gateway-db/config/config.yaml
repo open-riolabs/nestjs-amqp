@@ -38,8 +38,8 @@ auth-providers:
     rolesClaim: roles
     headerPrefix: "X-GTW-AUTH-"
     ***REMOVED*** uidClaim = the mapped header SUFFIX that carries the user id (jwtMap sub:userId →
-    ***REMOVED*** X-GTW-AUTH-USERID). Required by the in-process role gate to identify the caller; without
-    ***REMOVED*** it, roles-protected paths fail closed (403). Replaces the old `usernameClaim`.
+    ***REMOVED*** X-GTW-AUTH-USERID). Required by the in-process action gate to identify the caller; without
+    ***REMOVED*** it, actions-protected paths fail closed (403). Replaces the old `usernameClaim`.
     uidClaim: USERID
     outProp: $auth
     issuer: https://auth.example.com/realms/demo
@@ -217,24 +217,16 @@ gateway:
       action: acl-revoke
       mode: rpc
 
-    ***REMOVED*** Gateway role filter {userId, roles}. A read → GET; query: ?userId=&roles=user&roles=admin.
+    ***REMOVED*** ACL check {userId, action, companyId?, resourceId?}. checkAction: true if the user holds
+    ***REMOVED*** `action` via any role on the EXACT (companyId, resourceId); both ids absent ⇒ resource-less
+    ***REMOVED*** grants only (no wildcard). A read → GET; query: ?userId=&action=role-management&companyId=&resourceId=
     ***REMOVED*** Returns 200 with `true`/`false` (no longer an empty 204 on the negative case).
-    - name: acl-check-gtw
+    - name: acl-check-action
       method: GET
       path: /acl/check
       dataSource: query
       topic: rlb-acl
-      action: acl-can-user-do-gtw
-      mode: rpc
-
-    ***REMOVED*** MS resource-scoped check {userId, roles, resource}. A read → GET; query:
-    ***REMOVED*** ?userId=&roles=admin&resource=doc-1. Returns 200 with `true`/`false`.
-    - name: acl-check-resource
-      method: GET
-      path: /acl/check-resource
-      dataSource: query
-      topic: rlb-acl
-      action: acl-can-user-do
+      action: acl-check-action
       mode: rpc
 
     - name: acl-list-resources-by-user
@@ -246,6 +238,11 @@ gateway:
       mode: rpc
       auth: gateway-jwks
 
+    ***REMOVED*** PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction).
+    ***REMOVED*** `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId
+    ***REMOVED*** from the token, extracts the request's (companyId, resourceId), and passes if the user
+    ***REMOVED*** holds AT LEAST ONE of these actions on that (companyId, resourceId). With no companyId/
+    ***REMOVED*** resourceId on the request, a resource-less grant of one of these actions is required.
     - name: protected-resource
       method: GET
       path: /protected
@@ -254,7 +251,7 @@ gateway:
       action: gw-metrics-get
       mode: rpc
       auth: gateway-jwks
-      roles: [user, admin]
+      actions: [gateway-access]
 
     - name: gw-path-create
       method: POST

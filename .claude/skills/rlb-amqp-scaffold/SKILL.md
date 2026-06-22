@@ -277,10 +277,10 @@ export class AppService {
 }
 ```
 
-Add auth with `@BrokerAuth(authName, allowAnonymous?, roles?, httpName?)` — decoupled from
-`@BrokerHTTP`. With one `@BrokerHTTP` it auto-pairs (no `httpName` needed); with multiple,
-each `@BrokerHTTP` sets a `name` and each `@BrokerAuth` targets it via `httpName`. A route
-with no `@BrokerAuth` is public.
+Add auth with `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)` — decoupled from
+`@BrokerHTTP` (3rd param is ACL action names). With one `@BrokerHTTP` it auto-pairs (no
+`httpName` needed); with multiple, each `@BrokerHTTP` sets a `name` and each `@BrokerAuth`
+targets it via `httpName`. A route with no `@BrokerAuth` is public.
 
 ***REMOVED******REMOVED*** Verify
 - topic/queue/exchange names line up across `broker`/`topics`/paths (gotchas 5–7);

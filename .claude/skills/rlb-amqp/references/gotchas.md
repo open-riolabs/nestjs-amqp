@@ -76,29 +76,54 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
     NOT a metrics dump. Use `/admin/metrics*` (`gw-metrics-*`) for metrics.
 
 ***REMOVED******REMOVED*** Auth / ACL
-21. **`roles` require `auth` on the same path/event.** No `auth` → no identity → fails closed
-    (every request `403`, logged at boot). Always pair `roles: [...]` with `auth: <provider>`.
-22. **`roles` require an `IAclRoleService`** registered via `RLB_GTW_ACL_ROLE_SERVICE` in
+21. **`actions` require `auth` on the same path/event.** No `auth` → no identity → fails closed
+    (every request `403`, logged at boot). Always pair `actions: [...]` with `auth: <provider>`.
+22. **`actions` require an `IAclRoleService`** registered via `RLB_GTW_ACL_ROLE_SERVICE` in
     `ProxyModule.forRootAsync({ providers: [...] })`. Missing → deny (403). The gateway check is
-    **role-based, OR, resource-agnostic** (`canUserDoGtw(roles, userId)`): `roles` lists ROLE NAMES,
-    the user passes holding AT LEAST ONE. The provider only needs `uidClaim` (+ `headerPrefix`).
-23. **Two ACL check actions on `rlb-acl`** (both cached, both HTTP GET → `200` true/false):
-    `acl-can-user-do-gtw` → `canUserDoGtw(roles, userId)` (gateway filter, OR, resource-agnostic,
-    `GET /acl/check`) and `acl-can-user-do` → `canUserDo(roles, userId, resource)` (**ms-side**;
-    a global grant OR a grant on that resource passes, `GET /acl/check-resource`).
+    **action-based, OR, resource-SCOPED** (`checkAction(userId, ctx, actions)`): `actions` lists
+    ACTION NAMES, the caller is authorized if it holds AT LEAST ONE on the request's
+    `(companyId, resourceId)`. The provider only needs `uidClaim` (+ `headerPrefix`).
+23. **One ACL check action on `rlb-acl`: `acl-check-action`** (cached, HTTP GET → `200` true/false).
+    `checkAction(userId, ctx, action)`, `ctx = { companyId?, resourceId? }`,
+    `action = string | string[]` (OR). It resolves action→roles-that-include-it, then matches the
+    user's grants. A grant authorizes **iff** `grant.companyId === req.companyId &&
+    grant.resourceId === req.resourceId` (undefined/null/`''` = absent). The ONLY carve-out: both
+    ids absent on request AND grant. **No wildcard** — a `null` `resourceId` does NOT match
+    everything; `companyId` is load-bearing. Replaces the old `acl-can-user-do` /
+    `acl-can-user-do-gtw` and the merged `GET /acl/check` + `/acl/check-resource`.
+23a. **Gateway gating is ACTION-based, not role-based.** `gateway.paths[].actions` /
+    `events[].actions` name ACTIONS (was `roles`). The gateway resolves `userId` from the auth
+    provider, extracts `(companyId, resourceId)` from the request, and authorizes if the caller
+    holds one of `actions` on that pair. It reads the canonical `companyId`/`resourceId` from the
+    request (precedence params→query→body) and matches them exactly. WS events gate by `actions`
+    **resource-agnostically**.
+23b. **`@BrokerAuth`'s 3rd param is now `actions` (was `roles`).** Signature:
+    `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`. Pass action names there for an
+    auto-discovered route's action gate.
 24. **Actions, roles & auth-providers are NAME-KEYED. PUT upserts; there is NO POST.** The `name`
     IS the key (no id). `PUT` creates-or-updates, `GET` lists, `GET .../get?name=` reads one,
     `DELETE` removes by `name`. The old id-based ACL CRUD and `POST`-create endpoints are GONE.
     (Gateway-admin **paths** are the exception — they keep id-keyed CRUD and a POST create.)
 25. **`acl-grant` / `acl-revoke` both REQUIRE `userId` + `roles`** (optional `resourceId` +
-    `companyId`). `grant` MERGES roles into the single `(userId, resourceId)` record (idempotent).
-    `revoke` REMOVES exactly those roles and **deletes the record once it has no roles left**.
-    `revoke` without `roles` throws `400 roles are required` — to wipe a grant, revoke all its roles.
-26. **`companyId` is grouping metadata only.** It replaced `resourceBusinessId` and plays NO part
-    in authorization — it only groups resources in `acl-list-resources-by-user`. Targeting is by
-    `(userId, resourceId)` only. Both grant/revoke validate every role exists (unknown → `400`).
-27. **Removed actions:** `acl-list-by-user` and `acl-verify-access` no longer exist. Use
-    `acl-can-user-do` for resource-scoped checks and `acl-list-resources-by-user` to list resources.
+    `companyId`). The grant record is keyed by `(userId, companyId, resourceId)`. `grant` MERGES
+    roles into that triple (idempotent). `revoke` REMOVES exactly those roles and **deletes the
+    record once it has no roles left**. `revoke` without `roles` throws `400 roles are required` —
+    to wipe a grant, revoke all its roles. **Grants assign ROLES (keep the `roles` param); roles
+    contain actions.** Only the gateway/route GATE switched to action names.
+25a. **`acl-grant` / `acl-revoke` are GATED.** The caller (forwarded `X-GTW-AUTH-USERID`) must hold
+    the `role-management` action on the TARGET `(companyId, resourceId)`, else `403`. The gate
+    action defaults to `role-management`, overridable via `AclModuleOptions.roleManagementAction`.
+    **Chicken-and-egg:** no caller can grant the very first `role-management`, so **bootstrap by
+    seeding the first `role-management` grant directly in the DB**.
+26. **`companyId` is LOAD-BEARING in authorization.** It replaced `resourceBusinessId` and is
+    BOTH part of the grant identity AND matched during `checkAction`: a grant authorizes only when
+    `grant.companyId === req.companyId` (and `resourceId` likewise). It also groups
+    `acl-list-resources-by-user` output. There is **no wildcard** — a `null`/absent `resourceId`
+    only matches a request with that id also absent. Both grant/revoke validate every role exists
+    (unknown → `400`).
+27. **Removed actions:** `acl-list-by-user`, `acl-verify-access`, `acl-can-user-do`, and
+    `acl-can-user-do-gtw` no longer exist (the last two collapsed into `acl-check-action`). Use
+    `acl-check-action` for authorization checks and `acl-list-resources-by-user` to list resources.
 28. **Auth & gateway config go to `ProxyModule`** (`authOptions` / `gatewayOptions`), not
     `BrokerModule`. `BrokerModule` owns only `options` / `topics` / `appOptions`.
 

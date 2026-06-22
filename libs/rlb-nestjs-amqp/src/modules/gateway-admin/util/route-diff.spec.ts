@@ -1,7 +1,7 @@
 import { diffRoutes } from './route-diff';
 import { routeKeyOf } from './route-manifest';
 
-const route = (over: any = {}): any => ({ method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', roles: [], ...over });
+const route = (over: any = {}): any => ({ method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', actions: [], ...over });
 
 describe('diffRoutes', () => {
   it('inserts new routes (changed=true, added=true, no existingId)', () => {
@@ -21,8 +21,8 @@ describe('diffRoutes', () => {
   });
 
   it('updates a changed route (existingId set, added=false)', () => {
-    const r = route({ roles: ['admin'] });
-    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), ...route() }; // roles: []
+    const r = route({ actions: ['admin'] });
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), ...route() }; // actions: []
     const d = diffRoutes('svc', [r], [ex], new Map());
     expect(d.upserts).toHaveLength(1);
     expect(d.upserts[0]).toMatchObject({ existingId: '1', added: false });
@@ -63,7 +63,7 @@ describe('diffRoutes', () => {
   });
 
   it('dedupes duplicate route keys within a manifest (first wins)', () => {
-    const d = diffRoutes('svc', [route(), route({ roles: ['x'] })], [], new Map());
+    const d = diffRoutes('svc', [route(), route({ actions: ['x'] })], [], new Map());
     expect(d.upserts).toHaveLength(1);
   });
 });

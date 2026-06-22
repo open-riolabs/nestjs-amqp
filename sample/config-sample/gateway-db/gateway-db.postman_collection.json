@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "gateway-db (MongoDB sample) — ACL / Grant / Path / Stats",
-    "description": "Runnable playlist for the Mongo-backed gateway (gateway-db sample) against http://localhost:3000 with a a Keycloak (demo realm) login.\n\nFOLDERS\n- ACL   : actions CRUD (name-keyed: PUT upserts, GET list/get, DELETE by name).\n- Roles : roles CRUD (name-keyed).\n- Grant : grant + revoke (dual; roles required) + resources + canUserDo (resource) + canUserDoGtw (no resource).\n- Path  : gateway-admin DB routes CRUD + runtime reload.\n- Stats : metrics (counters, time-series, raw points).\n- Auth  : auth-providers CRUD (name-keyed: create/list/get/update/delete).\n- Misc  : health, protected, paths export, manual metrics track.\n\nRUN ORDER: the top-level Login runs FIRST (stores {{token}} and decodes the subject into {{userId}}), then the folders top-to-bottom. ACL/Roles seed the actions+roles the Grant folder needs.",
+    "description": "Runnable playlist for the Mongo-backed gateway (gateway-db sample) against http://localhost:3000 with a a Keycloak (demo realm) login.\n\nFOLDERS\n- ACL   : actions CRUD (name-keyed: PUT upserts, GET list/get, DELETE by name).\n- Roles : roles CRUD (name-keyed).\n- Grant : grant + revoke (dual; roles required) + resources + acl-check-action (checkAction on the exact companyId/resourceId).\n- Path  : gateway-admin DB routes CRUD + runtime reload.\n- Stats : metrics (counters, time-series, raw points).\n- Auth  : auth-providers CRUD (name-keyed: create/list/get/update/delete).\n- Misc  : health, protected, paths export, manual metrics track.\n\nRUN ORDER: the top-level Login runs FIRST (stores {{token}} and decodes the subject into {{userId}}), then the folders top-to-bottom. ACL/Roles seed the actions+roles the Grant folder needs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -197,7 +197,7 @@
     },
     {
       "name": "Grant",
-      "description": "Grant a global [user] role and a [admin] role scoped to doc-1 (with a companyId, grouping-only), then exercise the checks: canUserDoGtw (no resource) and canUserDo (resource doc-1), list the user's resources, and revoke the [admin] role from doc-1. grant and revoke are DUAL: same params (userId+roles required, resourceId+companyId optional) — grant adds roles to the (userId, resourceId) pair, revoke removes them and deletes the record once empty. The global [user] grant survives for the Misc /protected check.",
+      "description": "Grant a resource-less [user] role and a [admin] role scoped to (companyId=acme, resourceId=doc-1), then exercise acl-check-action (checkAction on the EXACT companyId/resourceId — no wildcard), list the user's resources, and revoke the [admin] role from doc-1. grant and revoke are DUAL: same params (userId+roles required, companyId+resourceId optional) — grant adds roles to the (userId, companyId, resourceId) record, revoke removes them and deletes the record once empty. The resource-less [user] grant survives for the Misc /protected check.",
       "item": [
         {
           "name": "GRANT · POST /acl/grants  ({{userId}} -> [user], global)",
@@ -224,36 +224,36 @@
           }
         },
         {
-          "name": "canUserDoGtw · GET /acl/check  (roles=[user], NO resource -> TRUE)",
+          "name": "checkAction · GET /acl/check  (action=gateway-access, NO companyId/resourceId -> TRUE)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 + true (resource-less grant via role user -> gateway-access)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text().trim()).to.match(/^true/); });"
+          ] } } ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=gateway-access", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "gateway-access" }] }
+          }
+        },
+        {
+          "name": "checkAction · GET /acl/check  (action=admin-access on companyId=acme,resourceId=doc-1 -> TRUE)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('200 + true', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text().trim()).to.match(/^true/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&roles=user", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "user" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=admin-access&companyId=acme&resourceId=doc-1", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "admin-access" }, { "key": "companyId", "value": "acme" }, { "key": "resourceId", "value": "doc-1" }] }
           }
         },
         {
-          "name": "canUserDo · GET /acl/check-resource  (roles=[admin], resource=doc-1 -> TRUE)",
+          "name": "checkAction · GET /acl/check  (action=admin-access on companyId=acme,resourceId=doc-2 -> FALSE)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('200 + true', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text().trim()).to.match(/^true/); });"
+            "pm.test('200 + false (no grant on doc-2 — exact (companyId,resourceId) match, no wildcard)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
           ] } } ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-1", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-1" }] }
-          }
-        },
-        {
-          "name": "canUserDo · GET /acl/check-resource  (roles=[admin], resource=doc-2 -> FALSE)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
-            "pm.test('200 + false (not granted on doc-2)', function () { pm.expect(pm.response.code).to.eql(200); pm.expect(pm.response.text()).to.match(/^false/); });"
-          ] } } ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": { "raw": "{{baseUrl}}/acl/check-resource?userId={{userId}}&roles=admin&resource=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check-resource"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "roles", "value": "admin" }, { "key": "resource", "value": "doc-2" }] }
+            "url": { "raw": "{{baseUrl}}/acl/check?userId={{userId}}&action=admin-access&companyId=acme&resourceId=doc-2", "host": ["{{baseUrl}}"], "path": ["acl", "check"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "action", "value": "admin-access" }, { "key": "companyId", "value": "acme" }, { "key": "resourceId", "value": "doc-2" }] }
           }
         },
         {
@@ -269,14 +269,14 @@
           }
         },
         {
-          "name": "REVOKE · DELETE /acl/grants  (remove [admin] from doc-1 → record emptied & deleted; keep global [user])",
+          "name": "REVOKE · DELETE /acl/grants  (remove [admin] from (acme, doc-1) → record emptied & deleted; keep resource-less [user])",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('revoked', function () { pm.expect(pm.response.code).to.be.oneOf([200,204]); });"
           ] } } ],
           "request": {
             "method": "DELETE",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"resourceId\": \"doc-1\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roles\": [\"admin\"],\n  \"companyId\": \"acme\",\n  \"resourceId\": \"doc-1\"\n}" },
             "url": { "raw": "{{baseUrl}}/acl/grants", "host": ["{{baseUrl}}"], "path": ["acl", "grants"] }
           }
         }
@@ -479,7 +479,7 @@
     },
     {
       "name": "Misc",
-      "description": "Everything else: health (200, no data), the protected route (Keycloak token + role gate), the DB paths export, and a manual metrics track event.",
+      "description": "Everything else: health (200, no data), the protected route (Keycloak token + action gate), the DB paths export, and a manual metrics track event.",
       "item": [
         {
           "name": "GET /health",
@@ -493,7 +493,7 @@
           }
         },
         {
-          "name": "GET /protected  (token + role gate: user holds [user] -> 200)",
+          "name": "GET /protected  (token + action gate: role [user] grants gateway-access -> 200)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('Allowed (200)', function () { pm.expect(pm.response.code).to.eql(200); });"
           ] } } ],

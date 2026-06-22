@@ -140,9 +140,9 @@ export class HttpHandlerService implements OnModuleInit {
     if (!path.topic) throw new Error("Topic is required for path definition");
     if (!path.mode) throw new Error("Mode is required for path definition");
     // Fail loud on a misconfiguration that otherwise silently denies every request:
-    // roles require an auth provider to derive the caller's identity for the ACL check.
-    if (path.roles?.length && !path.auth) {
-      this.logger.warn(`Path '${path.name || path.path}' declares roles but no 'auth' provider; the role check cannot identify the caller and every request will be denied (403). Set 'auth' to enable the ACL.`);
+    // actions require an auth provider to derive the caller's identity for the ACL check.
+    if (path.actions?.length && !path.auth) {
+      this.logger.warn(`Path '${path.name || path.path}' declares actions but no 'auth' provider; the authorization check cannot identify the caller and every request will be denied (403). Set 'auth' to enable the ACL.`);
     }
     // Boot-time validation: a path that references a non-existent auth provider would
     // otherwise only reveal the mistake at request time. Surface it now (the request
@@ -172,9 +172,10 @@ export class HttpHandlerService implements OnModuleInit {
           this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
           return;
         }
-        // (2) Authorization — role-based ACL, applied only when the path declares
-        // `roles` (checkRoles is a no-op when `auth` or `roles` is absent).
-        if (!(await this.httpAuthHandlerService.checkRoles(authData, path))) {
+        // (2) Authorization — action-based ACL (no-op when `auth` or `actions` is absent). The
+        // gateway extracts the request's (companyId, resourceId) and requires an exact grant match.
+        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(req);
+        if (!(await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx))) {
           res.status(403).json({ message: "Forbidden" });
           this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
           return;

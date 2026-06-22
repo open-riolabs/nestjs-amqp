@@ -11,8 +11,8 @@ Four annotated, single-module config fragments. Each is a self-contained referen
 | File | Module | What it documents |
 | --- | --- | --- |
 | `broker.yaml` | broker | The AMQP core: `broker` connection, `exchanges`, `queues`, `topics` (`rpc` / `broadcast` / `event`), and the publisher-side `broker.routeDiscovery` block. |
-| `gateway.yaml` | proxy / gateway | The HTTP/WebSocket edge: `gateway.paths[]`, `gateway.events[]`, `auth`, `roles`, `dataSource`, `loadConfig`, `reloadTopic`, `metrics`. |
-| `acl.yaml` | acl | Role-based authorization: name-keyed actions/roles, per-user grants, the `acl-can-user-do-gtw` / `acl-can-user-do` checks. |
+| `gateway.yaml` | proxy / gateway | The HTTP/WebSocket edge: `gateway.paths[]`, `gateway.events[]`, `auth`, `actions`, `dataSource`, `loadConfig`, `reloadTopic`, `metrics`. |
+| `acl.yaml` | acl | Role-based authorization: name-keyed actions/roles, per-user grants, the single `acl-check-action` authorization check. |
 | `gateway-admin.yaml` | gateway-admin | DB-managed routes and auth-providers, metrics with time-series rollups, the route-sync receiver, and the `gw-health` probe. |
 
 These are reference fragments, not whole apps — combine the blocks you need into one `config.yaml`.

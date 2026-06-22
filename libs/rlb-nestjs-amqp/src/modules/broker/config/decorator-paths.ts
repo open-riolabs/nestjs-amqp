@@ -2,7 +2,7 @@
  * metaInfo (topic -> action -> { type, auth[], http[] }) -> route definitions (PathDefinition
  * shaped). ONE route per @BrokerHTTP entry, all forwarding to the same (topic, action). Auth is
  * PER ROUTE: the scanner has already resolved each @BrokerAuth onto its route (paired by name — see
- * pairAuthToRoutes), so `h.auth`/`allowAnonymous`/`roles` are read straight from the route (a route
+ * pairAuthToRoutes), so `h.auth`/`allowAnonymous`/`actions` are read straight from the route (a route
  * with no paired auth is public). Kept loosely typed.
  */
 export function buildPathDefinitionsFromMeta(meta: any): any[] {
@@ -21,7 +21,7 @@ export function buildPathDefinitionsFromMeta(meta: any): any[] {
           mode: h.mode ?? (entry.type === 'event' ? 'event' : 'rpc'),
           auth: h.auth,
           allowAnonymous: h.allowAnonymous,
-          roles: h.roles ?? [],
+          actions: h.actions ?? [],
           successStatusCode: h.successStatusCode,
           timeout: h.timeout,
           parseRaw: h.parseRaw,
@@ -37,7 +37,7 @@ export function buildPathDefinitionsFromMeta(meta: any): any[] {
 }
 
 /**
- * Resolves PER-ROUTE auth: copies a paired @BrokerAuth's `authName`/`allowAnonymous`/`roles` ONTO
+ * Resolves PER-ROUTE auth: copies a paired @BrokerAuth's `authName`/`allowAnonymous`/`actions` ONTO
  * each @BrokerHTTP route entry (mutates them). Pairing rule, per method:
  *  - a SINGLE @BrokerHTTP auto-pairs the (first) @BrokerAuth — `httpName` not needed (simple case);
  *  - MULTIPLE @BrokerHTTP pair by `httpName` === route `name`.
@@ -56,7 +56,7 @@ export function pairAuthToRoutes(allHttp: any[], allAuth: any[], where = ''): st
     if (paired) {
       h.auth = paired.authName;
       h.allowAnonymous = paired.allowAnonymous;
-      h.roles = paired.roles;
+      h.actions = paired.actions;
     }
   }
 

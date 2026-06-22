@@ -134,7 +134,7 @@ auth-providers:
   - name: gateway-jwks
     type: jwks                       ***REMOVED*** jwt | jwks | basic | str-compare | none
     headerPrefix: "X-GTW-AUTH-"      ***REMOVED*** prefix for mapped claim headers (and <prefix>USERID)
-    uidClaim: sub                    ***REMOVED*** claim → <prefix>USERID; REQUIRED for role checks
+    uidClaim: sub                    ***REMOVED*** claim → <prefix>USERID; REQUIRED for action checks
     jwtMap:                          ***REMOVED*** 'source:dest' pairs → <prefix><DEST>; WITHOUT it NO claims forwarded
       - sub:userId                   ***REMOVED***   → X-GTW-AUTH-USERID
       - email:email                  ***REMOVED***   → X-GTW-AUTH-EMAIL
@@ -159,8 +159,8 @@ Type behaviour:
 
 Hardening: `algorithms` REQUIRED for `jwt`/`jwks` (omit → denied; algorithm-confusion guard).
 Define `jwtMap` or no identity is forwarded (token still `success:true` — fail-safe, not leak).
-`usernameClaim` is deprecated; `aclTopic`/`aclAction` are removed (gateway role check is in-process
-via `IAclRoleService.canUserDoGtw`).
+`usernameClaim` is deprecated; `aclTopic`/`aclAction` are removed (the gateway action check is
+in-process via `IAclRoleService.checkAction(userId, ctx, action)`).
 
 > DB-stored auth-providers (name-keyed `gw-auth-*` upserts) layer on top of this static list —
 > see `docs/gateway-admin.md`.
@@ -211,8 +211,8 @@ control-topic subscriber ignores every other message. Concurrent `reload()`s are
   mode: rpc               ***REMOVED*** rpc | event
   timeout: 15000          ***REMOVED*** rpc only (ms)
   auth: gateway-jwks      ***REMOVED*** auth-provider name
-  allowAnonymous: false   ***REMOVED*** true → skip the auth/role gate entirely
-  roles: [user, admin]    ***REMOVED*** caller must hold AT LEAST ONE; requires auth + IAclRoleService
+  allowAnonymous: false   ***REMOVED*** true → skip the auth/action gate entirely
+  actions: [doc.read, doc.admin]   ***REMOVED*** caller must hold AT LEAST ONE on (companyId, resourceId); needs auth + IAclRoleService
   successStatusCode: 200  ***REMOVED*** default 200 rpc / 202 event / 204 empty rpc reply
   binary: true            ***REMOVED*** treat a raw (non-JSON) reply as base64 → binary body
   redirect: 302           ***REMOVED*** rpc only → redirect with this status, using the reply as Location
@@ -238,9 +238,13 @@ Uploads → `$files` (buffers as binary strings), raw → `$raw`.
 ForbiddenError→403, NotFoundError→404, ConflictError→409, else→500.
 **event status:** successful publish → `successStatusCode || 202`; publish failure → `503`.
 
-Auth gate (per request): `allowAnonymous:true` → gate skipped; `auth` no `roles` → authn only
-(401 if invalid); `auth` + `roles` → authn then in-process `canUserDoGtw(roles, userId)` (403 if
-no role). `roles` without `auth` fails closed (every request 403).
+Auth gate (per request): `allowAnonymous:true` → gate skipped; `auth` no `actions` → authn only
+(401 if invalid); `auth` + `actions` → authn then in-process
+`checkAction(userId, { companyId, resourceId }, actions)` (403 if the caller holds none of
+`actions` on that pair). `actions` without `auth` fails closed (every request 403).
+
+The gateway reads the canonical `companyId`/`resourceId` from the request (precedence
+params → query → body) and matches them exactly for the action check.
 
 ***REMOVED******REMOVED******REMOVED*** gateway.events[]  (WebSocketEvent — WS / webhook)
 
@@ -251,7 +255,7 @@ no role). `roles` without `auth` fails closed (every request 403).
   routingKey: chat.messages
   auth: gateway-jwks       ***REMOVED*** provider that verifies the token + maps claims FOR THIS event (at subscribe)
   requireAuth: true        ***REMOVED*** default true when `auth` is set; false → auth optional (anon allowed)
-  roles: [user]            ***REMOVED*** ACL check via IAclRoleService (needs auth)
+  actions: [chat.read]     ***REMOVED*** ACL check via IAclRoleService.checkAction (needs auth); WS gates resource-agnostically
   scopeClaim: userId       ***REMOVED*** per-user isolation: the mapped claim value...
   payloadKey: userId       ***REMOVED*** ...must equal payload[payloadKey]; without payloadKey → denies everything
   ***REMOVED*** type: http only:
@@ -282,11 +286,10 @@ ACL (topic `rlb-acl`):
 
 | Method | Path | Action |
 | --- | --- | --- |
-| GET | `/acl/check` | `acl-can-user-do-gtw` (resource-agnostic; `200` true/false) |
-| GET | `/acl/check-resource` | `acl-can-user-do` (resource-scoped; `200` true/false) |
+| GET | `/acl/check` | `acl-check-action` (`?userId=&action=&companyId?=&resourceId?=`; exact-match; `200` true/false) |
 | GET | `/acl/resources` | `acl-list-resources-by-user` (auth, reads `X-GTW-AUTH-USERID`) |
-| POST | `/acl/grants` | `acl-grant` (`{userId, roles, resourceId?, companyId?}`) |
-| DELETE | `/acl/grants` | `acl-revoke` (same shape; `roles` REQUIRED) |
+| POST | `/acl/grants` | `acl-grant` (`{userId, roles, resourceId?, companyId?}`; caller needs `role-management` on target) |
+| DELETE | `/acl/grants` | `acl-revoke` (same shape; `roles` REQUIRED; caller needs `role-management` on target) |
 | GET / PUT / DELETE | `/acl/actions[/get?name=]` | `acl-action-list`/`-update`/`-delete`/`-get` |
 | GET / PUT / DELETE | `/acl/roles[/get?name=]` | `acl-role-list`/`-update`/`-delete`/`-get` |
 
@@ -301,4 +304,5 @@ Gateway-admin (topic `rlb-gateway-admin`, except reload):
 | POST | `/admin/metrics/track` | `gw-metrics-track` (`mode: event`) |
 | POST | `/admin/reload` | `gw-reload` on `rlb-gateway-control` (`mode: event`) |
 
-> Removed: `acl-list-by-user`, `acl-verify-access`, `gw-auth-create`, all id-based ACL CRUD.
+> Removed: `acl-list-by-user`, `acl-verify-access`, `acl-can-user-do`, `acl-can-user-do-gtw`
+> (all collapsed into `acl-check-action`), `gw-auth-create`, all id-based ACL CRUD.

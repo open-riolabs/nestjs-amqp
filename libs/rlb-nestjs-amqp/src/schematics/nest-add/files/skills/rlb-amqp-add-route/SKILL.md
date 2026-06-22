@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp-add-route
-description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, roles, dataSource, timeout, file upload or raw body. Generates the YAML path fragment and flags required bootstrap/ACL wiring.
+description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload or raw body. Generates the YAML path fragment and flags required bootstrap/ACL wiring.
 ---
 
 ***REMOVED*** Add an HTTP gateway route (gateway.paths[])
@@ -20,7 +20,9 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 - **dataSource**: how the payload is assembled — `req.params` are ALWAYS merged in, plus:
   `body` | `query` | `params` | `body-query` (body wins) | `query-body` (query wins).
 - **auth**: an `auth-provider` name (validates the request, maps claims to `X-GTW-AUTH-*`
-  headers). `allowAnonymous: true` skips the gate. `roles: [...]` adds a role check.
+  headers). `allowAnonymous: true` skips the gate. `actions: [...]` adds an ACL action check
+  scoped to the request's `(companyId, resourceId)` (read from the canonical fields,
+  params → query → body).
 - Extras: `timeout` (rpc), `successStatusCode`, `binary`, `redirect`, `parseRaw`, static
   `headers`, `forwardHeaders`.
 
@@ -36,7 +38,7 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 | `dataSource` | `body` \| `query` \| `params` \| `body-query` \| `query-body`. |
 | `auth` | Auth-provider name; validates + maps claims. |
 | `allowAnonymous` | `true` → gate skipped (token still mapped if present & valid). |
-| `roles` | Role NAMES; caller passes with AT LEAST ONE. Requires `auth`. |
+| `actions` | ACTION NAMES; caller passes holding AT LEAST ONE on the request's `(companyId, resourceId)`. Requires `auth`. |
 | `timeout` | RPC timeout (ms), `rpc` only. |
 | `binary` | Treat a raw (non-JSON) RPC reply as base64 → binary body. |
 | `parseRaw` | Adds the raw request body as `$raw` (needs `rawBody: true`). |
@@ -60,7 +62,7 @@ gateway:
       action: <action>
       mode: rpc                    ***REMOVED*** or event
       auth: gateway-jwks           ***REMOVED*** optional
-      roles: [resource.write]      ***REMOVED*** optional → needs RLB_GTW_ACL_ROLE_SERVICE
+      actions: [resource.write]    ***REMOVED*** optional → needs RLB_GTW_ACL_ROLE_SERVICE; checked on (companyId, resourceId)
       timeout: 7000                ***REMOVED*** rpc only
       successStatusCode: 201
 ```
@@ -71,15 +73,18 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 
 1. **`allowAnonymous: true`** → gate SKIPPED. A valid token still gets its claims mapped &
    forwarded; a missing/invalid token is NOT blocked.
-2. **`auth` set, no `roles`** → authentication only. Provider must validate (else `401`);
+2. **`auth` set, no `actions`** → authentication only. Provider must validate (else `401`);
    on success the `X-GTW-AUTH-*` headers are forwarded downstream.
-3. **`auth` + `roles`** → authn + role authz. After a valid token the gateway reads the user
-   id from the provider's `uidClaim` and calls `IAclRoleService.canUserDoGtw(roles, userId)`
-   in-process. Passes with at least one role, else `403`.
+3. **`auth` + `actions`** → authn + action authz. After a valid token the gateway reads the
+   user id from the provider's `uidClaim`, extracts `(companyId, resourceId)` from the request
+   (canonical fields, params → query → body), and calls
+   `IAclRoleService.checkAction(userId, { companyId, resourceId }, actions)` in-process. Passes
+   if the caller holds at least one of `actions` on that pair, else `403`. The check is
+   **exact-match on `(companyId, resourceId)` — there is no wildcard**, and `companyId` is
+   load-bearing.
 
-> `roles` WITHOUT `auth` is a misconfiguration: no identity → fails closed (every request
-> `403`, logged loudly at boot). The resource-scoped check (`acl-can-user-do`) is NOT run by
-> the gateway — it lives on the target microservice.
+> `actions` WITHOUT `auth` is a misconfiguration: no identity → fails closed (every request
+> `403`, logged loudly at boot).
 
 ***REMOVED******REMOVED*** Status mapping
 
@@ -109,9 +114,10 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 ***REMOVED******REMOVED*** Required wiring to flag
 
 - If `parseRaw: true` → bootstrap with `NestFactory.create(AppModule, { rawBody: true })`.
-- If `roles` is used → an `IAclRoleService` must be registered via `RLB_GTW_ACL_ROLE_SERVICE`
-  in `ProxyModule.forRootAsync({ providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }] })`.
-  If a path declares `roles` and the service is NOT registered → request DENIED (`403`) +
+- If `actions` is used → an `IAclRoleService` (`checkAction`) must be registered via
+  `RLB_GTW_ACL_ROLE_SERVICE` in
+  `ProxyModule.forRootAsync({ providers: [{ provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService }] })`.
+  If a path declares `actions` and the service is NOT registered → request DENIED (`403`) +
   error logged. The auth-provider needs a `uidClaim` (+ `headerPrefix`) to resolve the userId.
 - Forwarded auth claims reach the handler as prefixed/uppercased headers
   (e.g. `X-GTW-AUTH-USERID`) — read them with `@BrokerParam('header', ...)`. Request headers

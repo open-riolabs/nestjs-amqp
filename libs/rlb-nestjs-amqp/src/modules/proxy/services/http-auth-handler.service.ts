@@ -3,6 +3,7 @@ import { Request } from 'express';
 import { ProcessedAuthData } from '..';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
 import { RLB_AMQP_AUTH_OPTIONS } from '../../broker/const';
+import { AclResourceContext } from '../../acl/authz-match';
 import { PathDefinition } from '../config/path-definition.config';
 import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
 import { JwtService } from './jwt.service';
@@ -85,19 +86,19 @@ export class HttpAuthHandlerService {
   }
 
   /**
-   * Role-based ACL check from already-mapped claims (used by non-HTTP transports,
-   * e.g. WebSocket events). Resource-agnostic: returns true when the identity behind
-   * `claims` holds AT LEAST ONE of `roles` (delegated to `canUserDoGtw`). When no roles
-   * are required it authorizes; the resource-scoped check lives on the microservice.
+   * Action-based ACL check from already-mapped claims (also used by WebSocket events). True when
+   * the identity behind `claims` holds at least one of `actions` on the request's (companyId,
+   * resourceId) in `ctx` (exact match via `checkAction`). `ctx === undefined` ⇒ resource-agnostic
+   * (WS events carry no resource). No actions required ⇒ authorized.
    */
-  async checkRolesForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }, roles?: string | string[]): Promise<boolean> {
-    const list = Array.isArray(roles) ? roles : (roles ? [roles] : []);
+  async checkActionsForClaims(authConfig: HandlerAuthConfig, claims: { [key: string]: any; }, actions?: string | string[], ctx?: AclResourceContext): Promise<boolean> {
+    const list = Array.isArray(actions) ? actions : (actions ? [actions] : []);
     if (!list.length) return true;
     // Misconfiguration → log loudly and DENY (403). Never throw: a thrown error here escapes the
     // route handler as an unhandled rejection → a generic 500 (or worse, a hang). Denying keeps
     // the gateway predictable while the boot-time validation + this log point at the fix.
     if (authConfig.type !== 'jwt' && authConfig.type !== 'jwks') {
-      this.logger.error(`Auth provider '${authConfig.name}' is not a JWT/JWKS provider; cannot run role checks → denying.`);
+      this.logger.error(`Auth provider '${authConfig.name}' is not a JWT/JWKS provider; cannot run authorization checks → denying.`);
       return false;
     }
     if (!authConfig.uidClaim) {
@@ -105,13 +106,13 @@ export class HttpAuthHandlerService {
       return false;
     }
     if (!this.aclRoleService) {
-      this.logger.error(`ACL Role Service not found (RLB_GTW_ACL_ROLE_SERVICE not registered) but a path requires roles → denying.`);
+      this.logger.error(`ACL service not found (RLB_GTW_ACL_ROLE_SERVICE not registered) but a path requires actions → denying.`);
       return false;
     }
     if (!claims) return false;
     const userId = claims[`${authConfig.headerPrefix}${authConfig.uidClaim}`];
     if (!userId) return false;
-    return this.aclRoleService.canUserDoGtw(list, userId);
+    return this.aclRoleService.checkAction(userId, ctx, list);
   }
 
   async checkBasicAuth(req: Request, authConfig: HandlerAuthConfig) {
@@ -168,25 +169,32 @@ export class HttpAuthHandlerService {
     return out;
   }
 
+  /** The (companyId, resourceId) the request targets — the canonical fields, read params-first then
+   *  query then body, mirroring how the gateway forwards them to the microservice (where
+   *  @BrokerParam('body', 'companyId'/'resourceId') reads them back). */
+  extractResourceContext(req: Request): AclResourceContext {
+    return {
+      companyId: (req.params as any)?.companyId ?? (req.query as any)?.companyId ?? (req.body as any)?.companyId,
+      resourceId: (req.params as any)?.resourceId ?? (req.query as any)?.resourceId ?? (req.body as any)?.resourceId,
+    };
+  }
+
   /**
-   * Gateway authorization for an HTTP path. No-op (authorized) when the path declares
-   * no `auth` or no `roles`. Otherwise resolves the path's provider and applies the
-   * role-based primary filter via `checkRolesForClaims`: the user passes if they hold
-   * at least one of `path.roles` (resource-agnostic). Fine-grained, resource-scoped
-   * checks happen on the target microservice (AclService.canUserDo / 'acl-can-user-do'),
-   * which is the only one that knows the resource.
+   * Gateway authorization for an HTTP path. Authorized (no-op) when the path declares no `auth` or
+   * no `actions`; otherwise the caller must hold one of `path.actions` on the request's `ctx`
+   * (companyId, resourceId) — exact match, no wildcard.
    */
-  async checkRoles(data: { [key: string]: any; }, path: PathDefinition): Promise<boolean> {
-    if (!path?.roles?.length) return true;
-    // Roles declared but no auth provider to identify the caller: fail closed (deny),
-    // since there is no userId to evaluate against the ACL. A path that wants to enforce
-    // roles MUST declare `auth` (mirrors the WebSocket event behaviour).
+  async checkActions(data: { [key: string]: any; }, path: PathDefinition, ctx?: AclResourceContext): Promise<boolean> {
+    if (!path?.actions?.length) return true;
+    // Actions declared but no auth provider to identify the caller: fail closed (deny), since
+    // there is no userId to evaluate against the ACL. A path that enforces actions MUST declare
+    // `auth` (mirrors the WebSocket event behaviour).
     if (!path?.auth) return false;
     const authConfig = this.authProviders.find(o => o.name === path.auth);
     if (!authConfig) {
-      this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}' → denying role check.`);
+      this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}' → denying authorization check.`);
       return false;
     }
-    return this.checkRolesForClaims(authConfig, data, path.roles);
+    return this.checkActionsForClaims(authConfig, data, path.actions, ctx);
   }
 }

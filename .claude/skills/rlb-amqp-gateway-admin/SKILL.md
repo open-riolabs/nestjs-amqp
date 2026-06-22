@@ -203,7 +203,7 @@ routes over the same action can publish with different auth — a route with no 
 
 ```ts
 @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
-@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')  // pairs by httpName
+@BrokerAuth('admin-jwks', undefined, ['booking.admin'], 'admin-get-booking')  // 3rd param = ACL actions; pairs by httpName
 ```
 
 ***REMOVED******REMOVED******REMOVED*** Consumer (gateway ← microservice) — `GatewayAdminModule` `routeDiscovery`

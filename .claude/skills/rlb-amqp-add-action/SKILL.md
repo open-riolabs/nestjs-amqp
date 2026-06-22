@@ -97,8 +97,9 @@ Two independent pairings sit on the method, each only needed in the multi case:
   `@BrokerAuth` is **public**.
 
 Auth lives in a separate, decoupled decorator —
-`@BrokerAuth(authName, allowAnonymous?, roles?, httpName?)` — never inside `@BrokerHTTP`'s options.
-This lets two HTTP paths for the SAME action carry DIFFERENT auth.
+`@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)` — never inside `@BrokerHTTP`'s options.
+The 3rd param is `actions` (ACL action names, was `roles`). This lets two HTTP paths for the SAME
+action carry DIFFERENT auth.
 
 Simple case — one route, auth auto-pairs (no names needed):
 
@@ -118,7 +119,7 @@ Multi case — two routes for ONE action, each name-paired to its own auth:
 @BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
 @BrokerAuth('cust-jwks', true, undefined, 'get-booking')          // httpName ⇄ route name
 @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
-@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')
+@BrokerAuth('admin-jwks', undefined, ['booking.admin'], 'admin-get-booking')  // 3rd param = ACL actions
 async getBooking(@BrokerParam('params', 'id') id: string) {
   return this.bookings.find(id);
 }

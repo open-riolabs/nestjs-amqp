@@ -8,7 +8,7 @@ function canonicalRoute(r: any) {
   return {
     name: r.name, method: r.method, path: r.path, dataSource: r.dataSource,
     topic: r.topic, action: r.action, mode: r.mode, auth: r.auth ?? null,
-    allowAnonymous: r.allowAnonymous ?? null, roles: r.roles ?? [],
+    allowAnonymous: r.allowAnonymous ?? null, actions: r.actions ?? [],
     successStatusCode: r.successStatusCode ?? null, timeout: r.timeout ?? null,
     parseRaw: r.parseRaw ?? null, binary: r.binary ?? null, redirect: r.redirect ?? null,
     headers: r.headers ?? {}, forwardHeaders: r.forwardHeaders ?? {},

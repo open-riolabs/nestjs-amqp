@@ -3,6 +3,7 @@ import { UnauthorizedError } from '../../../common';
 import { BrokerAction, BrokerParam } from '../../broker';
 import { IAclRoleService } from '../../proxy/services/acl.service';
 import { AclCacheService } from '../cache/acl-cache.service';
+import { AclResourceContext, grantMatchesResource } from '../authz-match';
 import { ACL_ACTIONS, ACL_TOPIC } from '../const';
 import { AclResourceGroup } from '../models';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
@@ -18,56 +19,48 @@ export class AclService implements IAclRoleService {
     private readonly cache: AclCacheService,
   ) { }
 
-  private toList(roles: string | string[]): string[] {
-    return Array.isArray(roles) ? roles : (roles ? [roles] : []);
+  private toList(value: string | string[]): string[] {
+    return Array.isArray(value) ? value : (value ? [value] : []);
   }
 
-  async canUserDoGtw(roles: string | string[], userId: string): Promise<boolean> {
-    const list = this.toList(roles);
-    if (!userId || !list.length) return false;
-    const cacheAction = `role-gtw:${[...list].sort().join(',')}`;
+  /**
+   * The single ACL authorization primitive. True when `userId` holds at least one of `action` —
+   * via any role that includes it — on the EXACT (companyId, resourceId) in `ctx`. Match is strict
+   * (no wildcard); the sole carve-out is both ids absent on request AND grant. `ctx === undefined`
+   * skips resource scoping (used by WebSocket events, which carry no resource).
+   */
+  async checkAction(userId: string, ctx: AclResourceContext | undefined, action: string | string[]): Promise<boolean> {
+    const actions = this.toList(action);
+    if (!userId || !actions.length) return false;
+    const scopeKey = ctx === undefined ? 'agnostic' : `${ctx.companyId ?? '*'}|${ctx.resourceId ?? '*'}`;
+    const cacheAction = `act:${scopeKey}:${[...actions].sort().join(',')}`;
     const cached = await this.cache.get(userId, cacheAction);
     if (cached !== null) return cached;
-    const grants = await this.grants.filter({ userId });
-    const allowed = grants.some((g) => (g.roles || []).some((r) => list.includes(r)));
-    await this.cache.set(userId, cacheAction, allowed);
-    return allowed;
-  }
-
-  async canUserDo(roles: string | string[], userId: string, resourceId?: string): Promise<boolean> {
-    const list = this.toList(roles);
-    if (!userId || !list.length) return false;
-    const cacheAction = `role-res:${resourceId ?? '*'}:${[...list].sort().join(',')}`;
-    const cached = await this.cache.get(userId, cacheAction);
-    if (cached !== null) return cached;
-    const grants = await this.grants.filter({ userId });
-    const scoped = grants.filter((g) => g.resourceId == null || g.resourceId === resourceId);
-    const allowed = scoped.some((g) => (g.roles || []).some((r) => list.includes(r)));
-    await this.cache.set(userId, cacheAction, allowed);
-    return allowed;
-  }
-
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.canUserDoGtw, 'rpc')
-  async handleCanUserDoGtw(
-    @BrokerParam('body', 'userId') userId: string,
-    @BrokerParam('body', 'roles') roles?: string | string[],
-  ): Promise<boolean> {
-    try {
-      return await this.canUserDoGtw(roles ?? [], userId);
-    } catch (error) {
-      this.logger.error(error);
-      return false;
+    // Resolve the requested action(s) to the role names that include any of them. JS-side
+    // resolution keeps this portable across consumer repos (no array-contains filter needed).
+    const allRoles = await this.roles.list();
+    const roleNames = new Set(
+      (allRoles || []).filter((r) => (r.actions || []).some((a) => actions.includes(a))).map((r) => r.name),
+    );
+    let allowed = false;
+    if (roleNames.size) {
+      const grants = await this.grants.filter({ userId });
+      const scoped = ctx === undefined ? grants : grants.filter((g) => grantMatchesResource(g, ctx));
+      allowed = scoped.some((g) => (g.roles || []).some((r) => roleNames.has(r)));
     }
+    await this.cache.set(userId, cacheAction, allowed);
+    return allowed;
   }
 
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.canUserDo, 'rpc')
-  async handleCanUserDo(
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.checkAction, 'rpc')
+  async handleCheckAction(
     @BrokerParam('body', 'userId') userId: string,
-    @BrokerParam('body', 'resource') resource: string,
-    @BrokerParam('body', 'roles') roles?: string | string[],
+    @BrokerParam('body', 'action') action: string | string[],
+    @BrokerParam('body', 'companyId') companyId?: string,
+    @BrokerParam('body', 'resourceId') resourceId?: string,
   ): Promise<boolean> {
     try {
-      return await this.canUserDo(roles ?? [], userId, resource);
+      return await this.checkAction(userId, { companyId, resourceId }, action);
     } catch (error) {
       this.logger.error(error);
       return false;

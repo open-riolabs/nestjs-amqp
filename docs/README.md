@@ -7,7 +7,7 @@ A NestJS toolkit for building RabbitMQ/AMQP microservices behind a configurable 
 - [Getting started](./getting-started.md) — install, bootstrap a microservice and a gateway, the minimal `config.yaml`.
 - [Broker](./broker.md) — the AMQP core: `@BrokerAction` / `@BrokerParam`, topics, RPC vs event vs broadcast, the `BrokerService` API.
 - [Gateway](./gateway.md) — the HTTP/WebSocket edge: `gateway.paths[]`, `gateway.events[]`, auth, roles, data sources, runtime reload.
-- [ACL](./acl.md) — role-based authorization: name-keyed actions/roles, per-user grants, the `acl-can-user-do` checks, the two-level cache.
+- [ACL](./acl.md) — action-based authorization: name-keyed actions/roles, per-user grants, the `acl-check-action` check, the two-level cache.
 - [Gateway-admin](./gateway-admin.md) — DB-managed routes and auth-providers, metrics, route-sync receiver, health probe.
 - [Gotchas](./gotchas.md) — the sharp edges: control-topic semantics, name-keyed CRUD, 204-vs-200, exchange/queue naming across sides.
 - [YAML migration scripts](./yaml-migration.md) — migrate `gateway.paths[]` into the gateway-admin DB (`gateway-paths-to-http.js`) and stamp `@BrokerHTTP`/`@BrokerAuth` into microservice code for auto-discovery (`broker-http-decorators.js`).
@@ -48,7 +48,7 @@ import { /* low-level connection primitives */ } from '@open-rlb/nestjs-amqp/amq
 
 **proxy / gateway** — the HTTP and WebSocket edge. The `ProxyModule` turns `gateway.paths[]` entries into Express routes that forward each request to a broker `topic` + `action` (RPC or event), pulling the payload from `body`/`query`/`params` per `dataSource`, applying `auth` (an auth-provider) and `roles`. `gateway.events[]` pushes broker messages out to authenticated WebSocket clients (or webhooks). Routes can be rebuilt at runtime without a restart. See [Gateway](./gateway.md).
 
-**acl** — role-based authorization. Actions and roles are name-keyed (PUT upserts, GET lists, DELETE by name); per-user grants tie a `userId` to a set of `roles`, optionally scoped to a `resourceId` (with `companyId` as grouping-only metadata that has no part in authz decisions). The checks `acl-can-user-do-gtw` (gateway role filter) and `acl-can-user-do` (resource-scoped) return a plain boolean. A two-level cache keeps hot lookups fast. See [ACL](./acl.md).
+**acl** — action-based authorization. Actions and roles are name-keyed (PUT upserts, GET lists, DELETE by name); per-user grants tie a `userId` to a set of `roles`, scoped to a `(companyId, resourceId)` target (both load-bearing in the authz decision — exact match, no wildcard). The single check `acl-check-action` (`checkAction(userId, ctx, action)`) resolves the requested action(s) to roles and verifies the user's grants, returning a plain boolean; the gateway runs it in-process to gate routes by `actions`. A two-level cache keeps hot lookups fast. See [ACL](./acl.md).
 
 **gateway-admin** — the management backend. It stores gateway routes and auth-providers in a database (both exposed over the broker; auth-providers are name-keyed PUT-upserts), records request metrics with time-series rollups, and runs the route-sync receiver that consumes route manifests auto-published by microservices on boot. It also serves the `gw-health` liveness probe (`{ status: 'ok' }`). See [Gateway-admin](./gateway-admin.md).
 

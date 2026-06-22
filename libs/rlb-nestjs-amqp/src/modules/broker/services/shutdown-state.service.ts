@@ -20,17 +20,18 @@ export class ShutdownStateService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    const handleSignal = (signal: NodeJS.Signals) => {
-      if (this._isShuttingDown) return;
-      this._isShuttingDown = true;
-      this.logger.log(`Shutdown signal '${signal}' received.`);
-      setTimeout(() => {
-        this.logger.error(`Graceful shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms on ${signal}, forcing exit.`);
-        process.exit(1);
-      }, SHUTDOWN_TIMEOUT_MS).unref();
-    };
-    process.once('SIGINT', () => handleSignal('SIGINT'));
-    process.once('SIGTERM', () => handleSignal('SIGTERM'));
+    process.once('SIGINT', () => this.handleSignal('SIGINT'));
+    process.once('SIGTERM', () => this.handleSignal('SIGTERM'));
+  }
+
+  private handleSignal(signal: NodeJS.Signals): void {
+    if (this._isShuttingDown) return;
+    this._isShuttingDown = true;
+    this.logger.log(`Shutdown signal '${signal}' received.`);
+    setTimeout(() => {
+      this.logger.error(`Graceful shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms on ${signal}, forcing exit.`);
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS).unref();
   }
 
   async onModuleDestroy(): Promise<void> {

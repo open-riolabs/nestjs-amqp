@@ -124,11 +124,13 @@ function buildHttp(route, { action, name, indent }) {
 // method has multiple routes). Returns null for public routes (auth:false / no auth).
 function buildAuth(route, httpName, indent) {
   if (!route.auth || route.auth === false) return null;
-  const roles = Array.isArray(route.roles) && route.roles.length ? route.roles : null;
+  const actions = Array.isArray(route.actions)
+    ? (route.actions.length ? route.actions : null)
+    : (route.actions ? [route.actions] : null);
   const parts = [`${q}${route.auth}${q}`];
-  const needAnon = route.allowAnonymous !== undefined || roles || httpName;
+  const needAnon = route.allowAnonymous !== undefined || actions || httpName;
   if (needAnon) parts.push(route.allowAnonymous === undefined ? 'undefined' : String(route.allowAnonymous));
-  if (roles || httpName) parts.push(roles ? objLiteral(roles) : 'undefined');
+  if (actions || httpName) parts.push(actions ? objLiteral(actions) : 'undefined');
   if (httpName) parts.push(`${q}${httpName}${q}`);
   return `${indent}@BrokerAuth(${parts.join(', ')})`;
 }

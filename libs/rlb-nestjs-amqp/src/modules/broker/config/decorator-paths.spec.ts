@@ -4,13 +4,13 @@ describe('buildPathDefinitionsFromMeta', () => {
   it('emits one route per @BrokerHTTP, reading the per-route auth resolved onto each route', () => {
     const meta = {
       orders: {
-        'order.create': { type: 'rpc', http: [{ method: 'POST', path: '/orders', dataSource: 'body', auth: 'w', roles: ['orders.write'] }] },
+        'order.create': { type: 'rpc', http: [{ method: 'POST', path: '/orders', dataSource: 'body', auth: 'w', actions: ['orders.write'] }] },
         'order.quote': { type: 'rpc', http: [{ method: 'GET', path: '/orders/quote', dataSource: 'query', auth: 'r', allowAnonymous: true }] },
       },
     };
     const defs = buildPathDefinitionsFromMeta(meta);
     expect(defs).toHaveLength(2);
-    expect(defs.find(d => d.method === 'POST')).toMatchObject({ topic: 'orders', action: 'order.create', auth: 'w', roles: ['orders.write'], mode: 'rpc' });
+    expect(defs.find(d => d.method === 'POST')).toMatchObject({ topic: 'orders', action: 'order.create', auth: 'w', actions: ['orders.write'], mode: 'rpc' });
     expect(defs.find(d => d.method === 'GET')).toMatchObject({ topic: 'orders', action: 'order.quote', auth: 'r', allowAnonymous: true, mode: 'rpc' });
   });
 
@@ -36,11 +36,11 @@ describe('pairAuthToRoutes (per-route auth pairing)', () => {
     ];
     const w = pairAuthToRoutes(h, [
       { authName: 'cust-jwks', allowAnonymous: true, httpName: 'cust' },
-      { authName: 'admin-jwks', roles: ['admin'], httpName: 'adm' },
+      { authName: 'admin-jwks', actions: ['admin'], httpName: 'adm' },
     ], 'Svc.m');
     expect(h[0].auth).toBe('cust-jwks');
     expect(h[1].auth).toBe('admin-jwks');
-    expect(h[1].roles).toEqual(['admin']);
+    expect(h[1].actions).toEqual(['admin']);
     expect(w).toHaveLength(0);
 
     const routes = buildPathDefinitionsFromMeta({ booking: { 'get-booking': { type: 'rpc', http: h } } });

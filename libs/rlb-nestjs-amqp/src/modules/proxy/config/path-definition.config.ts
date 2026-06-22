@@ -10,7 +10,9 @@ export interface PathDefinition {
   mode: 'event' | 'rpc';
   auth?: string;
   allowAnonymous?: boolean;
-  roles: string[];
+  /** Actions the caller must hold to use this route (OR-semantics). The gateway verifies them
+   *  against the request's (companyId, resourceId) via the ACL; omit/empty ⇒ no authorization. */
+  actions?: string | string[];
   timeout?: number;
   binary?: boolean;
   headers: {
@@ -39,7 +41,9 @@ export interface WebSocketEvent {
    * Defaults to `true` when `auth` is set.
    */
   requireAuth?: boolean;
-  roles?: string[];
+  /** Actions the subscriber must hold (OR-semantics). Checked resource-agnostically (WS events
+   *  carry no HTTP resource): a subscriber passes if any of their grants includes one of these. */
+  actions?: string | string[];
   /**
    * When set, the server only forwards messages whose `payload[payloadKey]`
    * equals the authenticated client's `scopeClaim` value. Prevents a client
@@ -56,7 +60,7 @@ export interface WebSocketEvent {
 export interface WebSocketGatewayOptions {
   /**
    * Connection-level limits and heartbeat. Authentication/authorization is declared
-   * per-event on WebSocketEvent (auth/requireAuth/roles/scopeClaim), not here.
+   * per-event on WebSocketEvent (auth/requireAuth/actions/scopeClaim), not here.
    */
   /** Maximum number of concurrent connections accepted by this instance. */
   maxConnections?: number;

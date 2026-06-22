@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp-add-ws-event
-description: Add a secure WebSocket event (or HTTP webhook) to the @open-rlb/nestjs-amqp gateway by adding a gateway.events[] entry. Use when the user wants to push broker messages to connected WebSocket clients or to a webhook, with authentication (token in subprotocol), per-event roles/ACL, and per-user scoping to avoid leaking other users' data. Generates the YAML event fragment plus the exchange/queue and ws options, and flags the security wiring.
+description: Add a secure WebSocket event (or HTTP webhook) to the @open-rlb/nestjs-amqp gateway by adding a gateway.events[] entry. Use when the user wants to push broker messages to connected WebSocket clients or to a webhook, with authentication (token in subprotocol), per-event actions/ACL, and per-user scoping to avoid leaking other users' data. Generates the YAML event fragment plus the exchange/queue and ws options, and flags the security wiring.
 ---
 
 ***REMOVED*** Add a WebSocket / webhook event (gateway.events[])
@@ -27,14 +27,15 @@ each message out to the connected clients of EVERY gateway instance. Secure it b
     required to subscribe.
   - `requireAuth: false` → makes `auth` optional (anonymous allowed; claims mapped if a token
     is present — handy with `scopeClaim`). Defaults to `true` when `auth` is set.
-  - `roles: [...]` → ACL check (needs `IAclRoleService`); requires `auth` for the identity.
+  - `actions: [...]` → ACL action check via `IAclRoleService.checkAction` (needs `IAclRoleService`);
+    requires `auth` for the identity. WS events gate **resource-agnostically** (both ids absent).
   - `scopeClaim` + `payloadKey` → per-user isolation: a client only receives messages where
     `payload[payloadKey] === claims[scopeClaim]`. `scopeClaim` is the MAPPED claim
     (with `headerPrefix`, e.g. `X-GTW-AUTH-USERID`). Without `payloadKey` it denies all
     (gotcha 16). With `auth` but no `scopeClaim`/`payloadKey`, every authorized subscriber
     gets ALL messages (warned at boot).
 
-> Auth/roles/scope are declared PER-EVENT. `gateway.ws` only holds connection-level limits,
+> Auth/actions/scope are declared PER-EVENT. `gateway.ws` only holds connection-level limits,
 > heartbeat, origin allowlist and message-size cap (no auth fields). Different events may use
 > different providers.
 
@@ -57,7 +58,7 @@ gateway:
       routingKey: orders.***REMOVED***
       auth: gateway-jwks                ***REMOVED*** verifies token + maps claims for this event
       requireAuth: true                 ***REMOVED*** default true when auth is set; false → optional
-      roles: [orders.read]              ***REMOVED*** optional → needs IAclRoleService
+      actions: [orders.read]            ***REMOVED*** optional → needs IAclRoleService (checkAction); resource-agnostic for WS
       scopeClaim: X-GTW-AUTH-USERID     ***REMOVED*** optional per-user scoping (MAPPED claim)
       payloadKey: userId                ***REMOVED*** message field compared to scopeClaim
 
@@ -89,8 +90,8 @@ broker:
   `sample/config-sample/gateway-in-memory/src/main.ts`).
 - `events[].auth` must reference a `jwt`/`jwks` provider; subscribing without a valid token
   yields `{ topic:'onError', data:{ event, error:'unauthorized' } }` (unless `requireAuth:false`).
-  A failed role check yields `error:'forbidden'`.
-- `roles` → `IAclRoleService` via `RLB_GTW_ACL_ROLE_SERVICE` in
+  A failed action check yields `error:'forbidden'`.
+- `actions` → `IAclRoleService` (`checkAction`) via `RLB_GTW_ACL_ROLE_SERVICE` in
   `ProxyModule.forRootAsync({ providers: [...] })` (gotcha 15).
 - Do NOT add a fixed durable queue for the event — the lib creates a per-instance exclusive
   ephemeral auto-delete queue for fan-out (gotcha 17).

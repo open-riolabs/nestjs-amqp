@@ -107,7 +107,7 @@ otherwise fail with a timeout while the handler is still working.
 
 ***REMOVED******REMOVED*** Gateway HTTP
 
-**`/acl/check*` (and any boolean RPC) return `200` with `true`/`false`, not `204`.** A *defined*
+**`/acl/check` (and any boolean RPC) returns `200` with `true`/`false`, not `204`.** A *defined*
 result is real content — including the falsy `false`, `0`, or `""` — so it is sent as
 `200` + JSON body. Only `null`/`undefined` becomes `204 No Content`. So
 `GET /acl/check?...` answers `200 false` for "no", **not** an empty `204`. Don't treat a 2xx as
@@ -131,23 +131,43 @@ metrics.
 
 ***REMOVED******REMOVED*** Auth & ACL
 
-**`roles` on a path require `auth` on the same path.** The role check needs to identify the
+**Route gating uses `actions`, not `roles`; `@BrokerAuth`'s 3rd param is `actions`.** The
+gateway gates paths and WS events on ACTION names (`paths[].actions` / `events[].actions`),
+not role names. The decorator signature is now
+`@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)` — the 3rd arg is `actions`
+(was `roles`). Grants still assign ROLES (which bundle actions); only the gating fields and
+the check changed. Don't pass role names where the gate expects actions.
+
+**`actions` on a path require `auth` on the same path.** The action check needs to identify the
 caller; without an `auth` provider it can't, and every request is denied (the gateway logs the
-warning and returns `403`). Always pair `roles: [...]` with `auth: <provider>`.
+warning and returns `403`). Always pair `actions: [...]` with `auth: <provider>`.
 
-**The gateway role check is name-keyed and OR-based.** `paths[].roles` lists ROLE NAMES; the
-caller passes if they hold **at least one** of them (`acl-can-user-do-gtw` →
-`canUserDoGtw(roles, userId)`, resource-agnostic). The provider only needs to extract the userId
-(`uidClaim` + `headerPrefix`) — no topic/action wiring.
+**The gateway action check is OR-based and resource-aware.** `paths[].actions` lists ACTION
+NAMES; the caller passes if they hold **at least one** of them on the request's exact
+`(companyId, resourceId)` (`acl-check-action` → `checkAction(userId, ctx, actions)`). The
+provider must extract the userId (`uidClaim` + `headerPrefix`). WS events check `actions`
+**resource-agnostically** (they carry no HTTP resource).
 
-**Two ACL check actions, both cached, inputs are userId + roles only:**
+**The gateway gate verifies `(companyId, resourceId)` EXACTLY — no wildcard.** A grant
+authorizes only when its `(companyId, resourceId)` equal the request's (`undefined`/`null`/`''`
+all = absent and compare equal). The gateway reads the canonical `companyId`/`resourceId` from
+the request (precedence params → query → body) and matches them exactly. Holding the
+action on company A / resource X does **not** authorize a request targeting company B or
+resource Y.
+
+**Resource-less grants are NO LONGER a wildcard.** A grant with no `companyId`/`resourceId`
+authorizes **only** a request that also carries neither (the single carve-out: both ids absent
+on request AND grant). It does **not** authorize a request that targets some
+`(companyId, resourceId)`. Scope your grants to the exact target you mean to allow.
+
+**One ACL check action — `acl-check-action`, cached.** There is a single primitive now:
 
 | Action | Helper | Use |
 | --- | --- | --- |
-| `acl-can-user-do-gtw` | `canUserDoGtw(roles, userId)` | Gateway primary filter — OR, resource-agnostic. Exposed at `GET /acl/check`. |
-| `acl-can-user-do` | `canUserDo(roles, userId, resource)` | MS-side, resource-scoped — a global grant OR a grant on that resource passes. Exposed at `GET /acl/check-resource`. |
+| `acl-check-action` | `checkAction(userId, ctx, action)` | The only authorization check — OR over `action`, scoped to the exact `(companyId, resourceId)` in `ctx` (pass `ctx === undefined` to skip scoping). Exposed at `GET /acl/check` (query `userId`, `action`, `companyId?`, `resourceId?`). |
 
-Both are HTTP **GET** and return `200` + `true`/`false`.
+It is HTTP **GET** and returns `200` + `true`/`false`. The old `acl-can-user-do` /
+`acl-can-user-do-gtw` actions and the second `/acl/check-resource` route are gone.
 
 **Actions, roles and auth-providers are NAME-KEYED. PUT upserts; there is NO POST.** The `name`
 *is* the key (no separate id). Create-or-update with `PUT`, list with `GET`, read one with
@@ -163,27 +183,43 @@ gone.
 (Action strings: `acl-action-*`, `acl-role-*`, `gw-auth-*`. Auth-provider CRUD lives in
 **gateway-admin**, not the broker module.)
 
-**`acl-revoke` now REQUIRES `roles` (just like `acl-grant`).** Both take `userId` + `roles`
+**`acl-revoke` REQUIRES `roles` (just like `acl-grant`).** Both take `userId` + `roles`
 (required) and optional `resourceId` + `companyId`. `grant` MERGES the roles into the single
-`(userId, resourceId)` record (idempotent — no duplicates). `revoke` REMOVES exactly those roles
-and **deletes the record once it has no roles left**. Calling `revoke` without `roles` throws
-`400 roles are required` — it does not wipe the grant. To delete a whole grant, revoke all its
-roles.
+`(userId, companyId, resourceId)` record (idempotent — no duplicates). `revoke` REMOVES exactly
+those roles and **deletes the record once it has no roles left**. Calling `revoke` without `roles`
+throws `400 roles are required` — it does not wipe the grant. To delete a whole grant, revoke all
+its roles.
 
-**`companyId` is grouping metadata only.** It replaced the old `resourceBusinessId` and plays
-**no part** in authorization decisions — it only groups resources for listings
-(`acl-list-resources-by-user`). Don't expect a `companyId` to scope a grant.
+**Grant identity is `(userId, companyId, resourceId)`.** There is exactly one grant record per
+triple, and the data-plane param is still `roles` (grants assign roles; roles bundle actions).
+`companyId` and `resourceId` are part of the key — absent ids (`undefined`/`null`/`''`) compare
+equal, so the resource-less grant is its own slot. Two grants for the same user on different
+companies/resources are distinct records.
 
-**Removed actions.** `acl-list-by-user` and `acl-verify-access` no longer exist. Use
-`acl-can-user-do` for resource-scoped checks and `acl-list-resources-by-user` to list a user's
-resources.
+**`grant`/`revoke` need `role-management` ON THE TARGET (seed the first admin).** Both are gated:
+the caller — the forwarded `X-GTW-AUTH-USERID` — must hold the `role-management` action on the
+**target** `(companyId, resourceId)` being granted/revoked, checked with the same exact-match
+`checkAction`; otherwise `403` (`ForbiddenError`). An admin scoped to one company/resource cannot
+touch another. The gate action defaults to `role-management` (overridable via
+`AclModuleOptions.roleManagementAction`). Since the gate is itself a grant, **bootstrap the very
+first `role-management` grant by seeding the grant store directly** — the library adds no bypass.
+
+**`companyId` is LOAD-BEARING in authorization.** It replaced the old `resourceBusinessId` and is
+**part of the authorization decision** (and the grant identity) — a grant matches a request only
+when both `companyId` and `resourceId` match exactly. It is no longer grouping-only metadata
+(though it is still also used to group `acl-list-resources-by-user` results). Don't assume a
+mismatched or absent `companyId` is ignored.
+
+**Removed actions.** `acl-can-user-do`, `acl-can-user-do-gtw`, `acl-list-by-user` and
+`acl-verify-access` no longer exist. Use `acl-check-action` for every authorization check and
+`acl-list-resources-by-user` to list a user's resources.
 
 **Auth & gateway config go to `ProxyModule`, not `BrokerModule`.** Auth-providers and gateway
 options are passed as `authOptions` / `gatewayOptions` on `ProxyModule`. `BrokerModule` owns only
 `options` / `topics` / `appOptions`.
 
 **Decorator auth is per ROUTE, paired by name — not per-action.** `@BrokerAuth(authName,
-allowAnonymous?, roles?, httpName?)` stays DECOUPLED from `@BrokerHTTP(method, path, dataSource,
+allowAnonymous?, actions?, httpName?)` stays DECOUPLED from `@BrokerHTTP(method, path, dataSource,
 { name? })`: it pairs to a specific route by `httpName` === that route's `name`. A method with a
 SINGLE `@BrokerHTTP` auto-pairs — no `name`/`httpName` needed. A method with MULTIPLE `@BrokerHTTP`
 REQUIRES each route to set `name` and each `@BrokerAuth` to set a matching `httpName`; an
@@ -196,11 +232,12 @@ unchanged: `@BrokerHTTP`'s `action` option disambiguates when a method declares 
 
 ```ts
 // Two routes, same action, different auth — each auth pairs by route name.
+// (3rd @BrokerAuth arg is `actions`: the admin route requires the `read-booking` action.)
 @BrokerAction('booking', 'get-booking')
 @BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
 @BrokerAuth('cust-jwks', true, undefined, 'get-booking')
 @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
-@BrokerAuth('admin-jwks', undefined, ['admin'], 'admin-get-booking')
+@BrokerAuth('admin-jwks', undefined, ['read-booking'], 'admin-get-booking')
 ```
 
 ---

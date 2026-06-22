@@ -18,12 +18,15 @@ standalone, runnable sample.
 
 - **ACL name-keyed CRUD** — actions and roles are keyed by `name`: `PUT` upserts (idempotent,
   create-or-update), `GET` lists, `GET …/get?name=` reads one, `DELETE` removes by name. Grants
-  bind a `userId` to roles, optionally scoped to a `resourceId`.
-- **ACL checks over HTTP** — the gateway filter `acl-can-user-do-gtw` (`GET /acl/check`) and the
-  resource-scoped `acl-can-user-do` (`GET /acl/check-resource`), both returning `200` with a JSON
-  `true`/`false` body (a defined falsy answer is real content, not a `204`).
-- **Role-gated `/protected`** — a Keycloak/JWKS JWT plus `roles: [user, admin]`: the gateway
-  resolves the user id from the token and passes the caller if they hold **at least one** role.
+  bind a `userId` to roles, optionally scoped to a `companyId` / `resourceId`.
+- **ACL check over HTTP** — the single authorization primitive `acl-check-action`
+  (`GET /acl/check?userId=&action=&companyId=&resourceId=`): `checkAction(userId, {companyId?,
+  resourceId?}, action)` returns `200` with a JSON `true`/`false` body (a defined falsy answer is
+  real content, not a `204`). A grant authorizes only on the EXACT `(companyId, resourceId)` — no
+  wildcard; both ids absent matches resource-less grants only.
+- **Action-gated `/protected`** — a Keycloak/JWKS JWT plus `actions: [gateway-access]`: the gateway
+  resolves the user id from the token, extracts the request's `(companyId, resourceId)`, and passes
+  the caller if they hold **at least one** of those actions on that scope.
 - **Gateway-admin DB routes + runtime reload** — routes can be created in the in-memory store
   (`POST /admin/paths`) and registered on Express at runtime via a broadcast reload
   (`POST /admin/reload`) — no restart.
@@ -45,8 +48,8 @@ standalone, runnable sample.
   (`serviceName: demo-ms`, `publishOnBoot: true`).
 - **`ProxyModule.forRootAsync`** — the gateway itself (`gatewayOptions` = the `gateway:` block,
   `authOptions` = `auth-providers:`), plus two DI bindings:
-  - `RLB_GTW_ACL_ROLE_SERVICE` → `useExisting: AclService` (required for the role-gated paths so the
-    gateway can resolve roles in-process);
+  - `RLB_GTW_ACL_ROLE_SERVICE` → `useExisting: AclService` (required for the action-gated paths so the
+    gateway can run `checkAction` in-process);
   - `RLB_GTW_METRICS_HOOK` → `useClass: InfluxMetricsHook` (the optional in-proxy metrics sink).
 - **`AclModule.forRoot`** — binds the abstract `AclActionRepository` / `AclRoleRepository` /
   `AclGrantRepository` tokens to the in-memory repositories, and `RLB_ACL_CACHE_STORE` to
@@ -79,7 +82,7 @@ must reference them literally:
 
 - **Topic names:** `rlb-acl` (ACL handlers), `rlb-gateway-admin` (gateway-admin handlers),
   `rlb-gateway-control` (the broadcast reload control topic).
-- **Action strings:** e.g. `acl-action-update`, `acl-role-update`, `acl-can-user-do-gtw`,
+- **Action strings:** e.g. `acl-action-update`, `acl-role-update`, `acl-check-action`,
   `gw-path-export`, `gw-metrics-track`, `gw-reload`, `demo.echo`.
 
 What **is** configurable: the AMQP `uri`/credentials, the exchange/queue/`routingKey` declarations,
@@ -126,9 +129,9 @@ via `PORT`).
   `GET …/get?name=`.
 - **3–4 — Grant + `/protected`:** grant the logged-in user, watch `/protected` flip `403 → 200`,
   then `401` without a token, `403` after revoke, and back to `200` after re-grant.
-- **4b — ACL checks:** gateway filter (`/acl/check`, OR semantics over roles), resource-scoped
-  checks (`/acl/check-resource`), and `/acl/resources`.
-- **4c — Auth-gate semantics:** `allowAnonymous` bypass, `roles` without `auth` failing closed
+- **4b — ACL check:** `acl-check-action` (`/acl/check`, OR semantics over actions, scoped to the
+  exact `(companyId, resourceId)`), and `/acl/resources`.
+- **4c — Auth-gate semantics:** `allowAnonymous` bypass, `actions` without `auth` failing closed
   (`403`), an unknown auth-provider failing closed (`401`, never `500`), and the anti-spoofing
   check that a client-supplied `X-GTW-AUTH-USERID` is ignored.
 - **5–7 — Gateway-admin:** DB route CRUD + `export`, auth-provider upserts, and the auto-collected
@@ -146,5 +149,5 @@ defaults to `http://localhost:3000`.
 ***REMOVED******REMOVED*** See also
 
 - [`docs/gateway.md`](../../../docs/gateway.md) — the `gateway:` block, auth gate, WebSocket events.
-- [`docs/acl.md`](../../../docs/acl.md) — actions / roles / grants, the two checks, and the cache.
+- [`docs/acl.md`](../../../docs/acl.md) — actions / roles / grants, the `acl-check-action` check, and the cache.
 - [`docs/gateway-admin.md`](../../../docs/gateway-admin.md) — DB routes, metrics, route auto-discovery.
