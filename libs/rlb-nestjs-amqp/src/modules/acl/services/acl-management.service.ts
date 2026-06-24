@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, ForbiddenError, PaginationModel } from '../../../common';
 import { BrokerAction, BrokerParam } from '../../broker';
-import { grantMatchesResource } from '../authz-match';
+import { grantMatchesResource } from '../auth-match';
 import { AclCacheService } from '../cache/acl-cache.service';
 import { AclModuleOptions } from '../config/acl.config';
 import { ACL_ACTIONS, ACL_DEFAULT_ROLE_MANAGEMENT_ACTION, ACL_TOPIC, RLB_ACL_OPTIONS } from '../const';

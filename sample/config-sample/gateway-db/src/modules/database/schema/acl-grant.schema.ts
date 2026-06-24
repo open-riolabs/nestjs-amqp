@@ -6,7 +6,7 @@ const AclGrantSchema = new mongoose.Schema({
   _id: Schema.Types.ObjectId,
   userId: String,
   resourceId: String,
-  // Grouping-only metadata (the company the resources belong to); no role in authz.
+  // Grouping-only metadata (the company the resources belong to); no role in auth.
   companyId: String,
   friendlyName: String,
   roles: [String],

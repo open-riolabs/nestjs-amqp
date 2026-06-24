@@ -1,4 +1,4 @@
-import { AclResourceContext } from '../../acl/authz-match';
+import { AclResourceContext } from '../../acl/auth-match';
 
 export const RLB_GTW_ACL_ROLE_SERVICE = 'RLB_GTW_ACL_ROLE_SERVICE';
 export interface IAclRoleService {

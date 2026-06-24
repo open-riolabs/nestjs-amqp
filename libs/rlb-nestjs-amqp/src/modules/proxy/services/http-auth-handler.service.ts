@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Request } from 'express';
 import { ProcessedAuthData } from '..';
+import { AclResourceContext } from '../../acl/auth-match';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
 import { RLB_AMQP_AUTH_OPTIONS } from '../../broker/const';
-import { AclResourceContext } from '../../acl/authz-match';
 import { PathDefinition } from '../config/path-definition.config';
 import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
 import { JwtService } from './jwt.service';

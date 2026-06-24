@@ -75,7 +75,7 @@ For every request the gateway runs `processAuthData` (best-effort), then:
    forwarded; a missing/invalid token is NOT blocked.
 2. **`auth` set, no `actions`** → authentication only. Provider must validate (else `401`);
    on success the `X-GTW-AUTH-*` headers are forwarded downstream.
-3. **`auth` + `actions`** → authn + action authz. After a valid token the gateway reads the
+3. **`auth` + `actions`** → authn + action auth. After a valid token the gateway reads the
    user id from the provider's `uidClaim`, extracts `(companyId, resourceId)` from the request
    (canonical fields, params → query → body), and calls
    `IAclRoleService.checkAction(userId, { companyId, resourceId }, actions)` in-process. Passes

@@ -44,10 +44,10 @@ Con `--gateway=false` la factory passa a `BrokerModule` solo `{ options, topics,
 
 Monorepo NestJS (vedi `nest-cli.json`):
 
-| Progetto                 | Tipo        | Descrizione                                      |
-| ------------------------ | ----------- | ------------------------------------------------ |
-| `libs/rlb-nestjs-amqp`   | library     | La libreria vera e propria (il prodotto npm)     |
-| `apps/gateway`           | application | App di esempio/riferimento che usa la libreria   |
+| Progetto               | Tipo        | Descrizione                                    |
+| ---------------------- | ----------- | ---------------------------------------------- |
+| `libs/rlb-nestjs-amqp` | library     | La libreria vera e propria (il prodotto npm)   |
+| `apps/gateway`         | application | App di esempio/riferimento che usa la libreria |
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -222,12 +222,12 @@ broker:
 
 Un topic mappa un nome logico (azione/microservizio) su un percorso AMQP. Il `mode` decide la semantica.
 
-| `mode`      | Quando usarlo                          | Campi richiesti                                         | Semantica                            |
-| ----------- | -------------------------------------- | ------------------------------------------------------- | ------------------------------------ |
-| `rpc`       | request/response                       | `name`, `queue` (o `exchange`+`routingKey`)             | risposta immediata + timeout         |
-| `handle`    | worker su una coda                     | `name`, `queue`                                         | consumer di coda semplice            |
-| `broadcast` | un messaggio a molti consumer          | `name`, `exchange`, `routingKey`                        | fanout/topic; richiede `connection_name` |
-| `event`     | publish senza risposta                 | `name`, `queue` **oppure** `exchange`+`routingKey`      | fire-and-forget                      |
+| `mode`      | Quando usarlo                 | Campi richiesti                                    | Semantica                                |
+| ----------- | ----------------------------- | -------------------------------------------------- | ---------------------------------------- |
+| `rpc`       | request/response              | `name`, `queue` (o `exchange`+`routingKey`)        | risposta immediata + timeout             |
+| `handle`    | worker su una coda            | `name`, `queue`                                    | consumer di coda semplice                |
+| `broadcast` | un messaggio a molti consumer | `name`, `exchange`, `routingKey`                   | fanout/topic; richiede `connection_name` |
+| `event`     | publish senza risposta        | `name`, `queue` **oppure** `exchange`+`routingKey` | fire-and-forget                          |
 
 ```yaml
 topics:
@@ -348,14 +348,14 @@ Registra il servizio come provider in un modulo NestJS qualunque: il `MetadataSc
 
 ***REMOVED******REMOVED******REMOVED******REMOVED*** Sorgenti `@BrokerParam(source, name?)`
 
-| Source      | Valore iniettato                                      |
-| ----------- | ----------------------------------------------------- |
-| `body`      | `payload[name ?? nomeParametro]`                      |
-| `body-full` | payload completo                                      |
-| `header`    | `headers[name ?? nomeParametro]`                      |
-| `tag`       | consumer tag AMQP                                     |
-| `action`    | action del messaggio                                  |
-| `topic`     | topic corrente                                        |
+| Source      | Valore iniettato                 |
+| ----------- | -------------------------------- |
+| `body`      | `payload[name ?? nomeParametro]` |
+| `body-full` | payload completo                 |
+| `header`    | `headers[name ?? nomeParametro]` |
+| `tag`       | consumer tag AMQP                |
+| `action`    | action del messaggio             |
+| `topic`     | topic corrente                   |
 
 > Se ometti `@BrokerParam` su un parametro, il default è `{ source: 'body' }` con chiave = nome del parametro.
 
@@ -363,9 +363,9 @@ Registra il servizio come provider in un modulo NestJS qualunque: il `MetadataSc
 
 Ogni `@BrokerAction` è eseguibile **sia in RPC sia in event**, senza modifiche al servizio. Cambia solo cosa attende il chiamante.
 
-| Modalità | Come si invoca                                    | Cosa si attende                                          |
-| -------- | ------------------------------------------------- | ------------------------------------------------------- |
-| `rpc`    | `broker.requestData(...)` / path `mode: rpc`      | la **risposta** del metodo (request/response)           |
+| Modalità | Come si invoca                                    | Cosa si attende                                             |
+| -------- | ------------------------------------------------- | ----------------------------------------------------------- |
+| `rpc`    | `broker.requestData(...)` / path `mode: rpc`      | la **risposta** del metodo (request/response)               |
 | `event`  | `broker.publishMessage(...)` / path `mode: event` | solo che il **broker prenda in carico** (publisher confirm) |
 
 `publishMessage` è `async` e si risolve solo al publisher confirm (rigetta su nack/errore). Sul gateway, una path `mode: event` risponde `202` **dopo** il confirm e `503` se il broker non accetta.
@@ -516,7 +516,7 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 ***REMOVED******REMOVED******REMOVED*** Sicurezza e scalabilità
 
 - **Auth per evento**: `events[].auth` indica il provider che verifica il token e mappa i claim per quell'evento; `requireAuth: false` rende l'auth opzionale (anonimi ammessi, claim mappati se il token c'è). Subscribe negato (`onError: unauthorized`) se l'auth è richiesta e il token non è valido.
-- **Authz per evento**: `roles` (ACL via `IAclRoleService`) sull'identità ricavata da `auth`.
+- **auth per evento**: `roles` (ACL via `IAclRoleService`) sull'identità ricavata da `auth`.
 - **Scoping per-utente**: `scopeClaim` + `payloadKey` impediscono a un client di ricevere dati altrui tramite un `select` arbitrario (il filtro server-side è intersecato con quello del client, mai allargato). Se `scopeClaim` è impostato senza `payloadKey`, **nega tutto** (safe default).
 - **Sessione limitata dalla scadenza del token**: l'`exp` del JWT viene catturato alla prima verifica e la connessione viene chiusa (`1008 token expired`) appena scade — niente consegne dopo la scadenza.
 - **Origin allowlist**: `gateway.ws.allowedOrigins` rifiuta gli handshake cross-site (se omessa, tutte le origin sono accettate e lo si segnala a boot).
@@ -604,23 +604,23 @@ Handler su topic **`rlb-gateway-admin`** (`GATEWAY_ADMIN_TOPIC`):
 
 ***REMOVED******REMOVED*** API `BrokerService`
 
-| Metodo                                                       | Uso                                              |
-| ------------------------------------------------------------ | ------------------------------------------------ |
-| `requestData(topic, action, payload?, headers?, timeout?)`   | RPC request/response (attende la risposta)       |
-| `publishMessage(topic, action, payload, headers?)` → `Promise<boolean>` | event fire-and-forget con publisher confirm |
-| `registerRpc(topic, handler)`                                | consumer RPC manuale                             |
-| `registerHandler(topic, handler)`                            | consumer `handle` / `broadcast` (ritorna void)   |
-| `getRpc(topic)` / `getHandler(topic)`                        | recupera l'handler registrato                    |
-| `events$` / `getEvents$<T>()`                                | Observable degli eventi dei topic `toObservable` |
+| Metodo                                                                  | Uso                                              |
+| ----------------------------------------------------------------------- | ------------------------------------------------ |
+| `requestData(topic, action, payload?, headers?, timeout?)`              | RPC request/response (attende la risposta)       |
+| `publishMessage(topic, action, payload, headers?)` → `Promise<boolean>` | event fire-and-forget con publisher confirm      |
+| `registerRpc(topic, handler)`                                           | consumer RPC manuale                             |
+| `registerHandler(topic, handler)`                                       | consumer `handle` / `broadcast` (ritorna void)   |
+| `getRpc(topic)` / `getHandler(topic)`                                   | recupera l'handler registrato                    |
+| `events$` / `getEvents$<T>()`                                           | Observable degli eventi dei topic `toObservable` |
 
 ***REMOVED******REMOVED******REMOVED*** Decoratori
 
-| Decoratore                                                    | Uso                                  |
-| ------------------------------------------------------------- | ------------------------------------ |
-| `@BrokerAction(topic, action, type?)`                         | lega un metodo a topic/action        |
-| `@BrokerParam(source, name?)`                                 | mappa i parametri dai dati messaggio |
+| Decoratore                                                    | Uso                                    |
+| ------------------------------------------------------------- | -------------------------------------- |
+| `@BrokerAction(topic, action, type?)`                         | lega un metodo a topic/action          |
+| `@BrokerParam(source, name?)`                                 | mappa i parametri dai dati messaggio   |
 | `@BrokerAuth(authName, allowAnonymous?, roles?)`              | metadati di auth (usati dallo scanner) |
-| `@BrokerHTTP(method, path, dataSource?, timeout?, parseRaw?)` | metadati HTTP (usati dallo scanner)  |
+| `@BrokerHTTP(method, path, dataSource?, timeout?, parseRaw?)` | metadati HTTP (usati dallo scanner)    |
 
 ***REMOVED******REMOVED******REMOVED*** Pipe utility
 

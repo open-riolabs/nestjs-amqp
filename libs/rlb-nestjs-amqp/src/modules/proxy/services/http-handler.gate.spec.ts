@@ -7,10 +7,10 @@ jest.mock('jwks-rsa', () => ({
   },
 }));
 
-import { HttpHandlerService } from './http-handler.service';
 import { PathDefinition } from '../config/path-definition.config';
+import { HttpHandlerService } from './http-handler.service';
 
-// End-to-end test of the gateway auth/authz gate as orchestrated by HttpHandlerService.
+// End-to-end test of the gateway auth/auth gate as orchestrated by HttpHandlerService.
 // HttpAuthHandlerService is mocked (its own logic is unit-tested in the .security.spec),
 // so these tests pin the gate's wiring: allowAnonymous short-circuit, 401/403 enforcement,
 // and the anti-spoofing header precedence (auth-derived claims win over forwardHeaders).
@@ -65,7 +65,7 @@ const basePath = (over: Partial<PathDefinition> = {}): PathDefinition => ({
   dataSource: 'body', actions: [], headers: {}, forwardHeaders: {}, redirect: 0, ...over,
 } as PathDefinition);
 
-describe('HttpHandlerService — auth/authz gate', () => {
+describe('HttpHandlerService — auth/auth gate', () => {
   it('allowAnonymous=true: skips enforcement entirely (no checkActions, request proceeds) even with auth+actions', async () => {
     const { svc, broker, auth } = mkService();
     auth.processAuthData.mockResolvedValue({ success: false }); // invalid/absent token

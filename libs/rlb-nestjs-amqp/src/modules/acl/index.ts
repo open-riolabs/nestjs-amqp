@@ -1,5 +1,5 @@
 export * from './acl.module';
-export * from './authz-match';
+export * from './auth-match';
 export * from './cache/acl-cache.service';
 export * from './cache/cache-store';
 export * from './config/acl.config';
@@ -10,3 +10,4 @@ export * from './repository/acl-grant.repository';
 export * from './repository/acl-role.repository';
 export * from './services/acl-management.service';
 export * from './services/acl.service';
+

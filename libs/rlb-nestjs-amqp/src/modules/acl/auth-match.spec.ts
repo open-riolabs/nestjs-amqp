@@ -1,4 +1,4 @@
-import { grantMatchesResource } from './authz-match';
+import { grantMatchesResource } from './auth-match';
 
 const grant = (over: any = {}): any => ({ userId: 'u1', roles: ['admin'], ...over });
 
