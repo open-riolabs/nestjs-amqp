@@ -1,14 +1,19 @@
 import { PathDefinition } from '../../proxy/config/path-definition.config';
+import { RouteFieldChange } from '../models';
 import { StoredHttpPath } from '../repository/http-path.repository';
-import { isValidRoute, routeContent, routeKeyOf } from './route-manifest';
+import { diffRouteFields, isValidRoute, routeContent, routeKeyOf } from './route-manifest';
 
 export interface RouteDiff {
-  /** Routes to insert/update for this service. `added` = true when it is a new row. */
-  upserts: { routeKey: string; existingId?: string; added: boolean; model: StoredHttpPath }[];
+  /** Routes to insert/update for this service. `added` = true when it is a new row; `changes`
+   *  is the per-field diff (present on updates only). */
+  upserts: { routeKey: string; existingId?: string; added: boolean; model: StoredHttpPath; changes?: RouteFieldChange[] }[];
   /** This service's existing rows no longer in the manifest → soft-disable. */
   disables: { id: string; routeKey: string; method?: string; path?: string }[];
   /** Routes skipped because the routeKey is owned by YAML or another service. */
   collisions: { routeKey: string; method?: string; path?: string; conflictWith: string }[];
+  /** Routes left untouched because a user edited them (`modified`): the user's version wins and
+   *  the manifest version is ignored. Surfaced so the sync can log them (info). */
+  skipped: { routeKey: string; method?: string; path?: string }[];
   /** Malformed routes that were dropped. */
   invalid: { route: any }[];
   changed: boolean;
@@ -28,7 +33,7 @@ export function diffRoutes(
   existing: StoredHttpPath[],
   reserved: Map<string, string>,
 ): RouteDiff {
-  const diff: RouteDiff = { upserts: [], disables: [], collisions: [], invalid: [], changed: false };
+  const diff: RouteDiff = { upserts: [], disables: [], collisions: [], skipped: [], invalid: [], changed: false };
   const existingByKey = new Map<string, StoredHttpPath>();
   for (const e of existing || []) if (e.routeKey) existingByKey.set(e.routeKey, e);
   const seen = new Set<string>();
@@ -46,12 +51,16 @@ export function diffRoutes(
     }
 
     const ex = existingByKey.get(key);
+    // A user-edited route (modified=true) is locked: the user's version wins, so the manifest never
+    // overwrites it. Surface it for an info log instead of upserting.
+    if (ex && ex.modified === true) { diff.skipped.push({ routeKey: key, method: r.method, path: r.path }); continue; }
     if (ex && ex.enabled !== false && routeContent(ex) === routeContent(r)) continue; // unchanged
     diff.upserts.push({
       routeKey: key,
       existingId: ex?._id,
       added: !ex,
-      model: { ...r, owner: service, routeKey: key, enabled: true },
+      model: { ...r, owner: service, routeKey: key, enabled: true, source: 'microservice', modified: false },
+      changes: ex ? diffRouteFields(ex, r) : undefined,
     });
   }
 

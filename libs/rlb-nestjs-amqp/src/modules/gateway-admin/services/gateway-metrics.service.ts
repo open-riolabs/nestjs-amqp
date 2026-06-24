@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BrokerAction, BrokerParam } from '../../broker';
 import { GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS } from '../const';
-import { HttpMetric, HttpMetricPoint, MetricSeriesBucket, TrackCallInput } from '../models';
+import { HttpMetric, HttpMetricPoint, HttpMetricRollup, MetricSeriesBucket, MetricSummary, TrackCallInput } from '../models';
 import { HttpMetricRepository } from '../repository/http-metric.repository';
+import { buildSeries, buildSummary, toPrometheus } from '../util/metrics';
 
 @Injectable()
 export class GatewayMetricsService {
@@ -27,6 +28,7 @@ export class GatewayMetricsService {
         mode: input.mode,
         status: input.status,
         durationMs: input.durationMs,
+        code: input.code,
       });
     } catch (error) {
       this.logger.error(error);
@@ -35,17 +37,12 @@ export class GatewayMetricsService {
 
   /** Aggregated counters for the frontend (count / errors / avg duration per route). */
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsGet, 'rpc')
-  async get(@BrokerParam('body', 'route') route?: string): Promise<(HttpMetric & { avgDurationMs: number; })[]> {
+  async get(@BrokerParam('body', 'route') route?: string): Promise<(HttpMetric & { avgDurationMs: number; errorRate: number; })[]> {
     return this.repo.list(route);
   }
 
-  /** Liveness probe for GET /health — a minimal 200 payload, NOT the metrics data. */
-  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.health, 'rpc')
-  async health(): Promise<{ status: string }> {
-    return { status: 'ok' };
-  }
-
-  /** Time-series: bucketed aggregates over `bucketMs`-wide windows, optionally filtered. */
+  /** Time-series: enriched bucketed aggregates (count/errors/avg|min|max + p50/p95/p99 + byStatus),
+   *  computed app-side from the raw points so latency percentiles are available. */
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsSeries, 'rpc')
   async series(
     @BrokerParam('body', 'bucketMs') bucketMs?: number | string,
@@ -55,14 +52,10 @@ export class GatewayMetricsService {
     @BrokerParam('body', 'route') route?: string,
     @BrokerParam('body', 'name') name?: string,
   ): Promise<MetricSeriesBucket[]> {
-    return this.repo.series({
-      bucketMs: Number(bucketMs) || 60_000,
-      from: from != null ? Number(from) : undefined,
-      to: to != null ? Number(to) : undefined,
-      method,
-      route,
-      name,
-    });
+    const f = from != null ? Number(from) : undefined;
+    const t = to != null ? Number(to) : undefined;
+    const points = await this.repo.points({ method, route, name, from: f, to: t });
+    return buildSeries(points, { bucketMs: Number(bucketMs) || 60_000, from: f, to: t, method, route, name });
   }
 
   /** Raw data points (newest first), optionally filtered/limited. */
@@ -80,6 +73,50 @@ export class GatewayMetricsService {
       from: from != null ? Number(from) : undefined,
       to: to != null ? Number(to) : undefined,
       limit: limit != null ? Number(limit) : undefined,
+    });
+  }
+
+  /** Dashboard overview from raw points: totals, error rate, p50/p95/p99, status breakdown, and the
+   *  top-N routes by traffic / errors / p95 latency. */
+  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsSummary, 'rpc')
+  async summary(
+    @BrokerParam('body', 'from') from?: number | string,
+    @BrokerParam('body', 'to') to?: number | string,
+    @BrokerParam('body', 'method') method?: string,
+    @BrokerParam('body', 'route') route?: string,
+    @BrokerParam('body', 'name') name?: string,
+    @BrokerParam('body', 'topN') topN?: number | string,
+  ): Promise<MetricSummary> {
+    const points = await this.repo.points({
+      method, route, name,
+      from: from != null ? Number(from) : undefined,
+      to: to != null ? Number(to) : undefined,
+    });
+    return buildSummary(points, Number(topN) || 10);
+  }
+
+  /** Prometheus text exposition of the rolling counters. The route should set
+   *  `headers: { Content-Type: 'text/plain' }` so the gateway returns it raw (not JSON). */
+  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsPrometheus, 'rpc')
+  async prometheus(@BrokerParam('body', 'route') route?: string): Promise<string> {
+    return toPrometheus(await this.repo.list(route));
+  }
+
+  /** Long-term downsampled rollups (hourly buckets that survive raw-point retention). */
+  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsRollups, 'rpc')
+  async rollups(
+    @BrokerParam('body', 'bucketMs') bucketMs?: number | string,
+    @BrokerParam('body', 'from') from?: number | string,
+    @BrokerParam('body', 'to') to?: number | string,
+    @BrokerParam('body', 'method') method?: string,
+    @BrokerParam('body', 'route') route?: string,
+    @BrokerParam('body', 'name') name?: string,
+  ): Promise<HttpMetricRollup[]> {
+    return this.repo.rollupSeries({
+      bucketMs: Number(bucketMs) || 3_600_000,
+      from: from != null ? Number(from) : undefined,
+      to: to != null ? Number(to) : undefined,
+      method, route, name,
     });
   }
 }

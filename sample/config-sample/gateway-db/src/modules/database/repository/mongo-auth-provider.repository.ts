@@ -62,6 +62,17 @@ export class MongoAuthProviderRepository extends AuthProviderRepository {
     } catch (error) { this.logger.error(error); throw error; }
   }
 
+  async search(q?: string, page = 1, limit = 10): Promise<PaginationModel<StoredAuthProvider>> {
+    try {
+      const fields = ['name', 'type'];
+      const filter: FilterQuery<any> = q ? { $or: fields.map((f) => ({ [f]: { $regex: q, $options: 'i' } })) } : {};
+      const p = page && page > 0 ? page : 1;
+      const total = await this.model.countDocuments(filter).exec();
+      const docs = await this.model.find(filter).skip((p - 1) * limit).limit(limit).exec();
+      return { page: p, limit, total, data: docs.map((o: any) => this.toModel(o)!) };
+    } catch (error) { this.logger.error(error); throw error; }
+  }
+
   // Auth-providers have no id — strip the storage _id so responses are name-keyed only.
   private toModel(raw: any): StoredAuthProvider | null | undefined {
     if (!raw) return raw as null | undefined;

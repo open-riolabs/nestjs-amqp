@@ -2,11 +2,14 @@ import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { GatewayAdminModuleOptions } from './config/gateway-admin.config';
 import { RLB_GW_ADMIN_OPTIONS } from './const';
 import { GatewayAuthService } from './services/gateway-auth.service';
+import { GatewayHealthService } from './services/gateway-health.service';
+import { GatewayMetricsRollupService } from './services/gateway-metrics-rollup.service';
 import { GatewayMetricsService } from './services/gateway-metrics.service';
 import { GatewayPathService } from './services/gateway-path.service';
+import { GatewayRetentionService } from './services/gateway-retention.service';
 import { RouteSyncService } from './services/route-sync.service';
 
-const SERVICES: Provider[] = [GatewayPathService, GatewayAuthService, GatewayMetricsService, RouteSyncService];
+const SERVICES: Provider[] = [GatewayPathService, GatewayAuthService, GatewayMetricsService, GatewayMetricsRollupService, GatewayHealthService, GatewayRetentionService, RouteSyncService];
 const MODULE_EXPORTS = [GatewayPathService, GatewayAuthService, GatewayMetricsService];
 
 @Module({})

@@ -251,6 +251,23 @@ When `mode: rpc` and the broker reply rejects, the error `name` maps to a status
 For **`event`** routes: a successful publish returns `successStatusCode || 202`; a publish failure
 returns `503`.
 
+***REMOVED******REMOVED******REMOVED******REMOVED*** Unified error envelope
+
+**Every** gateway error response — across the whole HTTP surface — shares one shape:
+
+```json
+{ "statusCode": 403, "code": "ForbiddenError", "message": "...", "details": "..." }
+```
+
+- `statusCode` — the HTTP status (mapped from the error `name` as above).
+- `code` — the error `name` (e.g. `ForbiddenError`, `NotFoundError`).
+- `message` — the error message.
+- `details` — the stack, **included only outside production** (omitted when `NODE_ENV=production`).
+
+This applies to **the auth gate too**: the `401`/`403` replies from the built-in auth/action gate
+now use this envelope (previously a bare `{ message: 'Unauthorized' }`). One shape for the whole
+HTTP surface — broker-reply errors and gate rejections alike.
+
 ***REMOVED******REMOVED******REMOVED*** Metrics hook
 
 When `gateway.metrics` and/or a `RLB_GTW_METRICS_HOOK` are present, the gateway emits one
@@ -365,7 +382,7 @@ exposes, among others:
 
 | Method & path | Topic | Action | Mode | Notes |
 | --- | --- | --- | --- | --- |
-| `GET /health` | `rlb-gateway-admin` | `gw-health` | rpc | Returns `{ status: 'ok' }`. |
+| `GET /health` | `rlb-gateway-admin` | `gw-health` | rpc | Readiness probe → `{ status, broker, dependencies }` (`up`/`down`); always HTTP 200. See [gateway-admin](./gateway-admin.md***REMOVED***health--gw-health-readiness-probe). |
 | `GET /acl/check` | `rlb-acl` | `acl-check-action` | rpc | `?userId=&action=&companyId=&resourceId=` → `200 true/false`. |
 | `PUT /acl/actions` | `rlb-acl` | `acl-action-update` | rpc | name-keyed upsert. |
 | `PUT /acl/roles` | `rlb-acl` | `acl-role-update` | rpc | name-keyed upsert. |

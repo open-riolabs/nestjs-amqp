@@ -20,14 +20,17 @@ export const ACL_ACTIONS = {
   listResourcesByUser: 'acl-list-resources-by-user',
   grant: 'acl-grant',
   revoke: 'acl-revoke',
+  grantSearch: 'acl-grant-search',
   invalidate: 'acl-invalidate',
   // Actions & roles are keyed by `name` (no separate id). PUT upserts by name; there is no POST.
   actionUpdate: 'acl-action-update',
   actionDelete: 'acl-action-delete',
   actionList: 'acl-action-list',
   actionGet: 'acl-action-get',
+  actionSearch: 'acl-action-search',
   roleUpdate: 'acl-role-update',
   roleDelete: 'acl-role-delete',
   roleList: 'acl-role-list',
   roleGet: 'acl-role-get',
+  roleSearch: 'acl-role-search',
 } as const;

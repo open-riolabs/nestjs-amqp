@@ -17,4 +17,7 @@ export abstract class AclGrantRepository {
   abstract removeOne(filter: Record<string, any>): Promise<AclGrant>;
   abstract filter(filter: Record<string, any>): Promise<AclGrant[]>;
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclGrant>>;
+  /** Free-text search over grants (access) → matching grants. The implementation runs an optimized
+   *  store query (e.g. a Mongo regex/text index); `limit` caps the result, an empty `q` lists. */
+  abstract search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclGrant>>;
 }

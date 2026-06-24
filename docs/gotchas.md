@@ -123,9 +123,37 @@ collision (`:id` vs `body.id`) the URL param overwrites the payload value. Avoid
 converted to a **binary string** before forwarding. Re-encode carefully on the consumer side
 (e.g. `Buffer.from(str, 'binary')`).
 
-**`/health` is a tiny liveness probe.** It maps to action `gw-health` and returns
-`{ status: 'ok' }` — it is **not** a metrics dump. Use `/admin/metrics*` (`gw-metrics-*`) for
-metrics.
+**`/health` is a readiness probe, and always returns HTTP 200.** It maps to action `gw-health`
+and returns `{ status: 'up'|'down', broker: {...}, dependencies: {...} }` — `status` is `'down'`
+if the broker OR any dependency is down. The broker (AmqpConnection) is checked built-in; DB/redis/
+external checks are **consumer-supplied** via the `RLB_GW_HEALTH_INDICATORS` token (an array of
+`GatewayHealthIndicator { name; check() }`). The HTTP response is **always 200** (the gateway
+forwards an rpc result and can't set 503), so readiness must inspect the `status` field, not the
+HTTP status. It is **not** a metrics dump — use `/admin/metrics*` (`gw-metrics-*`) for metrics.
+
+**Search responses are PAGINATED, not arrays.** Every `*-search` action — `acl-action-search`,
+`acl-role-search`, `acl-grant-search`, `gw-path-search`, `gw-auth-search` — now returns a
+`PaginationModel<T>` (`{ page, limit, total, data }`) and accepts `?q=&page=&limit=`. The rows live
+under `.data`. The `Repository.search(q?, page?, limit?)` contract changed to return
+`Promise<PaginationModel<T>>` — don't iterate the response as a bare array.
+
+**Every gateway error response shares ONE envelope.** All errors across the HTTP surface are
+`{ statusCode, code, message, details? }` — `code` is the error `name`, `details` is the stack
+(included **only outside production**). This includes the **401/403 auth-gate replies** (previously
+`{ message: 'Unauthorized' }`). Parse errors by `code`/`statusCode`, not by ad-hoc message shapes.
+
+**Retention prunes the journal + raw metric points after `retentionDays` (default 90 ≈ 3 months).**
+A daily `GatewayRetentionService` job deletes route-journal rows AND raw metric points older than
+the window via `RouteSyncLogRepository.prune` / `HttpMetricRepository.prunePoints`. Set
+`GatewayAdminModuleOptions.retentionDays` to `0`/negative to disable. Counters and time-series
+aggregates are not pruned — only the raw points.
+
+**Consumer repos must implement the new contract methods.** Beyond the now-paginated
+`search(q?, page?, limit?): Promise<PaginationModel<T>>`, gateway-admin repos gained:
+`RouteSyncLogRepository.query(filter, page?, limit?)` (backs the filtered `gw-route-log-search`),
+`RouteSyncLogRepository.prune(olderThanTs)`, and `HttpMetricRepository.prunePoints(olderThanTs)`
+(both for retention). A consumer that doesn't add them won't satisfy the interface / will break at
+runtime.
 
 ---
 

@@ -79,6 +79,17 @@ export class MongoAclGrantRepository extends AclGrantRepository {
     } catch (error) { this.logger.error(error); throw error; }
   }
 
+  async search(q?: string, page = 1, limit = 10): Promise<PaginationModel<AclGrant>> {
+    try {
+      const fields = ['userId', 'resourceId', 'companyId', 'friendlyName', 'roles'];
+      const filter: FilterQuery<AclGrant> = q ? { $or: fields.map((f) => ({ [f]: { $regex: q, $options: 'i' } })) } : {};
+      const p = page && page > 0 ? page : 1;
+      const total = await this.model.countDocuments(filter).exec();
+      const docs = await this.model.find(filter).skip((p - 1) * limit).limit(limit).exec();
+      return { page: p, limit, total, data: docs.map((o) => this.toModel(o)!) };
+    } catch (error) { this.logger.error(error); throw error; }
+  }
+
   private toModel(raw: any): AclGrant | null | undefined {
     if (!raw) return raw as null | undefined;
     return raw.toJSON({ flattenMaps: false, transform: (doc: any, ret: any) => { ret._id = doc?._id?.toString(); } }) as AclGrant;

@@ -9,6 +9,11 @@ export type StoredHttpPath = Partial<PathDefinition> & {
   owner?: string;
   /** Stable identity `METHOD path` — used by route-sync for upsert/diff. */
   routeKey?: string;
+  /** How the route was created: 'microservice' (route auto-discovery) or 'user' (manual admin CRUD). */
+  source?: 'microservice' | 'user';
+  /** Set true once a user edits the route. Route auto-discovery then SKIPS it (the user's version
+   *  wins) instead of overwriting, and logs it (info). Only meaningful for 'microservice' routes. */
+  modified?: boolean;
 };
 
 /** Repository contract for stored HTTP gateway paths. Implemented by the consuming app. */
@@ -23,6 +28,7 @@ export abstract class HttpPathRepository {
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<StoredHttpPath>>;
   /** Simple (unpaginated) list by filter — mirrors the other repositories' `filter`. */
   abstract filter(filter: Record<string, any>): Promise<StoredHttpPath[]>;
+  abstract search(q?: string, page?: number, limit?: number): Promise<PaginationModel<StoredHttpPath>>;
 
   /** All rows owned by `owner` (route auto-discovery). Concrete default over `filter`. */
   findByOwner(owner: string): Promise<StoredHttpPath[]> {

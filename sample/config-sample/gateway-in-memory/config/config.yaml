@@ -155,6 +155,13 @@ gateway:
       topic: rlb-acl
       action: acl-action-delete
       mode: rpc
+    - name: acl-action-search     ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /acl/actions/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-action-search
+      mode: rpc
 
     ***REMOVED*** --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
     - name: acl-role-list
@@ -185,6 +192,13 @@ gateway:
       topic: rlb-acl
       action: acl-role-delete
       mode: rpc
+    - name: acl-role-search       ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /acl/roles/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-role-search
+      mode: rpc
 
     ***REMOVED*** --- ACL grants (per-user; resourceId optional) ---
     - name: acl-grant
@@ -200,6 +214,13 @@ gateway:
       dataSource: body
       topic: rlb-acl
       action: acl-revoke
+      mode: rpc
+    - name: acl-grant-search      ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /acl/grants/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-grant-search
       mode: rpc
 
     ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
@@ -239,6 +260,13 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
+    - name: gw-path-search        ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/paths/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-path-search
+      mode: rpc
     - name: gw-path-export
       method: GET
       path: /admin/paths/export
@@ -267,12 +295,34 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
+    ***REMOVED*** Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
+    - name: gw-route-log-list
+      method: GET
+      path: /admin/route-log
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-list
+      mode: rpc
+    - name: gw-route-log-search ***REMOVED*** ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+      method: GET
+      path: /admin/route-log/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-search
+      mode: rpc
     - name: gw-auth-list
       method: GET
       path: /admin/auth
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-list
+      mode: rpc
+    - name: gw-auth-search        ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/auth/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-auth-search
       mode: rpc
     - name: gw-auth-upsert        ***REMOVED*** PUT creates-or-updates by name. body: { name, type, ... }
       method: PUT
@@ -315,6 +365,29 @@ gateway:
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-metrics-points
+      mode: rpc
+    - name: gw-metrics-summary
+      method: GET
+      path: /admin/metrics/summary
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-summary
+      mode: rpc
+    - name: gw-metrics-prometheus
+      method: GET
+      path: /admin/metrics/prometheus
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-prometheus
+      mode: rpc
+      headers:
+        Content-Type: text/plain; version=0.0.4
+    - name: gw-metrics-rollups
+      method: GET
+      path: /admin/metrics/rollups
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-rollups
       mode: rpc
     - name: gw-metrics-track
       method: POST

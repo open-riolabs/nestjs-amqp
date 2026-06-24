@@ -11,4 +11,16 @@ export interface GatewayAdminModuleOptions {
     exchange?: string;
     queue?: string;
   };
+  /**
+   * Retention window in DAYS for the route journal AND the raw metric points. Rows older than the
+   * window are pruned daily by GatewayRetentionService. Default 90 (≈3 months); set 0 or negative
+   * to disable pruning entirely.
+   */
+  retentionDays?: number;
+  /**
+   * Retention window in DAYS for the persisted metric ROLLUPS (the hourly downsampled aggregates
+   * that survive raw-point retention). Default 365 (1 year). When > 0 the hourly rollup job runs and
+   * old rollups are pruned at this window; set 0/negative to disable rollups entirely.
+   */
+  rollupRetentionDays?: number;
 }

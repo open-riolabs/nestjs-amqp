@@ -5,9 +5,9 @@ import {
   HttpMetric,
   HttpMetricPoint,
   HttpMetricRepository,
+  HttpMetricRollup,
   HttpPathRepository,
   MetricQuery,
-  MetricSeriesBucket,
   MetricSeriesQuery,
   PaginationModel,
   PathDefinition,
@@ -55,6 +55,10 @@ export class InMemoryHttpPathRepository extends HttpPathRepository {
   async filter(filter: Record<string, any>): Promise<StoredHttpPath[]> {
     return this.col.filter(filter);
   }
+
+  async search(q?: string, page?: number, limit?: number): Promise<PaginationModel<StoredHttpPath>> {
+    return this.col.search(q, Number(page) || 1, Number(limit) || 10);
+  }
 }
 
 @Injectable()
@@ -76,12 +80,17 @@ export class InMemoryAuthProviderRepository extends AuthProviderRepository {
       .filter((p) => p.enabled !== false)
       .map((p) => toPlain(p) as HandlerAuthConfig);
   }
+
+  async search(q?: string, page?: number, limit?: number): Promise<PaginationModel<StoredAuthProvider>> {
+    return this.col.search(q, Number(page) || 1, Number(limit) || 10);
+  }
 }
 
 @Injectable()
 export class InMemoryHttpMetricRepository extends HttpMetricRepository {
   private readonly col = new InMemoryCollection<HttpMetric>();
   private readonly pointsCol = new InMemoryCollection<HttpMetricPoint>();
+  private readonly rollupCol = new InMemoryCollection<HttpMetricRollup>();
 
   async increment(input: TrackCallInput): Promise<void> {
     if (!input?.method || !input?.route) return;
@@ -99,6 +108,7 @@ export class InMemoryHttpMetricRepository extends HttpMetricRepository {
         lastStatus: input.status,
         lastCalledAt: Date.now(),
         totalDurationMs: input.durationMs || 0,
+        lastErrorCode: isError ? input.code : undefined,
       });
       return;
     }
@@ -111,12 +121,17 @@ export class InMemoryHttpMetricRepository extends HttpMetricRepository {
       lastStatus: input.status,
       lastCalledAt: Date.now(),
       totalDurationMs: existing.totalDurationMs + (input.durationMs || 0),
+      lastErrorCode: isError ? input.code : existing.lastErrorCode,
     });
   }
 
-  async list(route?: string): Promise<(HttpMetric & { avgDurationMs: number; })[]> {
+  async list(route?: string): Promise<(HttpMetric & { avgDurationMs: number; errorRate: number; })[]> {
     const rows = route ? this.col.filter({ route }) : this.col.all();
-    return rows.map((m) => ({ ...m, avgDurationMs: m.count > 0 ? Math.round(m.totalDurationMs / m.count) : 0 }));
+    return rows.map((m) => ({
+      ...m,
+      avgDurationMs: m.count > 0 ? Math.round(m.totalDurationMs / m.count) : 0,
+      errorRate: m.count ? m.errorCount / m.count : 0,
+    }));
   }
 
   async record(point: HttpMetricPoint): Promise<void> {
@@ -129,23 +144,36 @@ export class InMemoryHttpMetricRepository extends HttpMetricRepository {
     return query.limit ? rows.slice(0, query.limit) : rows;
   }
 
-  async series(query: MetricSeriesQuery): Promise<MetricSeriesBucket[]> {
-    const width = query.bucketMs > 0 ? query.bucketMs : 60_000;
-    const buckets = new Map<number, MetricSeriesBucket>();
-    for (const p of this.pointsCol.all()) {
-      if (!matchPoint(p, query)) continue;
-      const start = Math.floor(p.ts / width) * width;
-      let b = buckets.get(start);
-      if (!b) { b = { bucketStart: start, count: 0, errorCount: 0, totalDurationMs: 0, avgDurationMs: 0 }; buckets.set(start, b); }
-      b.count++;
-      if ((p.status ?? 0) >= 400) b.errorCount++;
-      const d = p.durationMs ?? 0;
-      b.totalDurationMs += d;
-      b.minDurationMs = b.minDurationMs == null ? d : Math.min(b.minDurationMs, d);
-      b.maxDurationMs = b.maxDurationMs == null ? d : Math.max(b.maxDurationMs, d);
+  async recordRollups(rollups: HttpMetricRollup[]): Promise<void> {
+    for (const r of rollups || []) {
+      // Idempotent upsert keyed by (bucketStart, granularityMs, method, route).
+      this.rollupCol.removeMany({ bucketStart: r.bucketStart, granularityMs: r.granularityMs, method: r.method, route: r.route });
+      this.rollupCol.insert({ ...r });
     }
-    const out = [...buckets.values()].sort((a, b) => a.bucketStart - b.bucketStart);
-    for (const b of out) b.avgDurationMs = b.count > 0 ? Math.round(b.totalDurationMs / b.count) : 0;
-    return out;
+  }
+
+  async rollupSeries(query: MetricSeriesQuery): Promise<HttpMetricRollup[]> {
+    return this.rollupCol.all()
+      .filter((r) => {
+        if (query.from != null && r.bucketStart < query.from) return false;
+        if (query.to != null && r.bucketStart > query.to) return false;
+        if (query.method && r.method !== query.method) return false;
+        if (query.route && r.route !== query.route) return false;
+        if (query.name && r.name !== query.name) return false;
+        return true;
+      })
+      .sort((a, b) => a.bucketStart - b.bucketStart);
+  }
+
+  async pruneRollups(olderThanTs: number): Promise<number> {
+    const stale = this.rollupCol.all().filter((r) => (r.bucketStart ?? 0) < olderThanTs);
+    for (const r of stale) this.rollupCol.removeById((r as any)._id);
+    return stale.length;
+  }
+
+  async prunePoints(olderThanTs: number): Promise<number> {
+    const stale = this.pointsCol.all().filter((p) => (p.ts ?? 0) < olderThanTs);
+    for (const p of stale) this.pointsCol.removeById((p as any)._id);
+    return stale.length;
   }
 }

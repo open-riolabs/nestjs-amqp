@@ -173,6 +173,24 @@ export class AclManagementService {
     return this.roles.findByName(name);
   }
 
+  /** Free-text search over actions → PaginationModel<AclAction> (delegated to the repository's query). */
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.actionSearch, 'rpc')
+  async searchActions(@BrokerParam('body', 'q') q?: string, @BrokerParam('body', 'page') page?: number, @BrokerParam('body', 'limit') limit?: number): Promise<PaginationModel<AclAction>> {
+    return this.actions.search(q, Number(page) || 1, Number(limit) || 10);
+  }
+
+  /** Free-text search over roles → PaginationModel<AclRole> (delegated to the repository's query). */
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.roleSearch, 'rpc')
+  async searchRoles(@BrokerParam('body', 'q') q?: string, @BrokerParam('body', 'page') page?: number, @BrokerParam('body', 'limit') limit?: number): Promise<PaginationModel<AclRole>> {
+    return this.roles.search(q, Number(page) || 1, Number(limit) || 10);
+  }
+
+  /** Free-text search over grants (access) → PaginationModel<AclGrant> (delegated to the repository). */
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.grantSearch, 'rpc')
+  async searchGrants(@BrokerParam('body', 'q') q?: string, @BrokerParam('body', 'page') page?: number, @BrokerParam('body', 'limit') limit?: number): Promise<PaginationModel<AclGrant>> {
+    return this.grants.search(q, Number(page) || 1, Number(limit) || 10);
+  }
+
   async getActionsByNames(names: string[]): Promise<string[]> {
     return this.roles.getActionsByNames(names);
   }

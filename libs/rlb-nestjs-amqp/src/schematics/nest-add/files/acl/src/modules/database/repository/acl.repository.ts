@@ -31,6 +31,7 @@ export class InMemoryAclActionRepository extends AclActionRepository {
   async filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclAction>> { return this.col.paginate(filter, page1(page), lim10(limit)); }
   async retrieveAll(): Promise<AclAction[]> { return this.col.all(); }
   async retrieveAllPaginated(page: number, limit: number): Promise<PaginationModel<AclAction>> { return this.col.paginate({}, page1(page), lim10(limit)); }
+  async search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclAction>> { return this.col.search(q, page1(page), lim10(limit)); }
 }
 
 @Injectable()
@@ -49,6 +50,7 @@ export class InMemoryAclRoleRepository extends AclRoleRepository {
   async filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclRole>> { return this.col.paginate(filter, page1(page), lim10(limit)); }
   async list(): Promise<AclRole[]> { return this.col.all(); }
   async listPaginated(page: number, limit: number): Promise<PaginationModel<AclRole>> { return this.col.paginate({}, page1(page), lim10(limit)); }
+  async search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclRole>> { return this.col.search(q, page1(page), lim10(limit)); }
 
   async getActionsByNames(names: string[]): Promise<string[]> {
     if (!names?.length) return [];
@@ -71,4 +73,5 @@ export class InMemoryAclGrantRepository extends AclGrantRepository {
   async removeOne(filter: Record<string, any>): Promise<AclGrant> { return this.col.removeOne(filter)!; }
   async filter(filter: Record<string, any>): Promise<AclGrant[]> { return this.col.filter(filter); }
   async filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclGrant>> { return this.col.paginate(filter, page1(page), lim10(limit)); }
+  async search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclGrant>> { return this.col.search(q, page1(page), lim10(limit)); }
 }

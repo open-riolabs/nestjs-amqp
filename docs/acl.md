@@ -241,6 +241,7 @@ in `rpc` mode and maps to the action string shown.
 | `GET` | `/acl/actions/get?name=` | `acl-action-get` | Read a single action by `name`. |
 | `PUT` | `/acl/actions` | `acl-action-update` | Upsert by `name`. Body: `{ name, description? }`. |
 | `DELETE` | `/acl/actions` | `acl-action-delete` | Delete by `name`. Body: `{ name }`. |
+| `GET` | `/acl/actions/search?q=` | `acl-action-search` | Free-text search over actions → `AclAction[]` (`?q=&limit=`). |
 
 ***REMOVED******REMOVED******REMOVED*** Roles (name-keyed)
 
@@ -250,6 +251,7 @@ in `rpc` mode and maps to the action string shown.
 | `GET` | `/acl/roles/get?name=` | `acl-role-get` | Read a single role by `name`. |
 | `PUT` | `/acl/roles` | `acl-role-update` | Upsert by `name`. Body: `{ name, actions, description? }`. All `actions` must exist (else `400`). |
 | `DELETE` | `/acl/roles` | `acl-role-delete` | Delete by `name`. Body: `{ name }`. |
+| `GET` | `/acl/roles/search?q=` | `acl-role-search` | Free-text search over roles → `AclRole[]` (`?q=&limit=`). |
 
 ***REMOVED******REMOVED******REMOVED*** Grants (per user + target; admin-gated)
 
@@ -257,6 +259,7 @@ in `rpc` mode and maps to the action string shown.
 |---|---|---|---|
 | `POST` | `/acl/grants` | `acl-grant` | Merge roles into the `(userId, companyId, resourceId)` grant. Body: `{ userId, roles, resourceId?, companyId?, friendlyName? }`. `userId` + `roles` **required**. |
 | `DELETE` | `/acl/grants` | `acl-revoke` | Remove roles from the `(userId, companyId, resourceId)` grant; delete the record once empty. Body: `{ userId, roles, resourceId?, companyId? }`. `userId` + `roles` **required**. |
+| `GET` | `/acl/grants/search?q=` | `acl-grant-search` | Free-text search over grants (access) → `AclGrant[]` (`?q=&limit=`). |
 
 Both operations require `userId` and `roles`; `resourceId` and `companyId` are optional but
 **part of the grant identity and the authorization scope** (not just metadata). Both are

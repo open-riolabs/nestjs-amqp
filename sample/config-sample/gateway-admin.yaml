@@ -117,6 +117,13 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
+    - name: gw-path-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/paths/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-path-search
+      mode: rpc
     - name: gw-path-export ***REMOVED*** enabled paths, ordered static-before-param; used by loadConfig.paths
       method: GET
       path: /admin/paths/export
@@ -145,6 +152,20 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
+    - name: gw-route-log-list ***REMOVED*** who changed what (actor=system | userId); query: ?limit=
+      method: GET
+      path: /admin/route-log
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-list
+      mode: rpc
+    - name: gw-route-log-search ***REMOVED*** ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+      method: GET
+      path: /admin/route-log/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-search
+      mode: rpc
 
     ***REMOVED*** --- Auth-provider management: gw-auth-* (name-keyed PUT-upsert, NO POST) -
     - name: gw-auth-list ***REMOVED*** paginated: ?page=&limit=
@@ -153,6 +174,13 @@ gateway:
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-list
+      mode: rpc
+    - name: gw-auth-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/auth/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-auth-search
       mode: rpc
     - name: gw-auth-upsert ***REMOVED*** PUT creates-or-updates by name. body: { name, type, ... }
       method: PUT
@@ -198,6 +226,30 @@ gateway:
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-metrics-points
+      mode: rpc
+    - name: gw-metrics-summary ***REMOVED*** dashboard overview (totals, percentiles, status breakdown, top-N)
+      method: GET
+      path: /admin/metrics/summary
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-summary
+      mode: rpc
+    - name: gw-metrics-prometheus ***REMOVED*** Prometheus exposition text (returned raw, not JSON-wrapped)
+      method: GET
+      path: /admin/metrics/prometheus
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-prometheus
+      mode: rpc
+      ***REMOVED*** Force a raw text/plain reply (the gateway returns the body verbatim, not JSON).
+      headers:
+        Content-Type: text/plain; version=0.0.4
+    - name: gw-metrics-rollups ***REMOVED*** persisted downsampled rollup series: ?granularityMs=&from=&to=&method=&route=
+      method: GET
+      path: /admin/metrics/rollups
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-rollups
       mode: rpc
     - name: gw-metrics-track ***REMOVED*** fire-and-forget per-call event sink (mode: event)
       method: POST

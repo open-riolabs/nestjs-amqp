@@ -94,6 +94,17 @@ export class MongoAclActionRepository extends AclActionRepository {
     return this.filterPaginated({}, page, limit);
   }
 
+  async search(q?: string, page = 1, limit = 10): Promise<PaginationModel<AclAction>> {
+    try {
+      const fields = ['name', 'description'];
+      const filter: FilterQuery<any> = q ? { $or: fields.map((f) => ({ [f]: { $regex: q, $options: 'i' } })) } : {};
+      const p = page && page > 0 ? page : 1;
+      const total = await this.model.countDocuments(filter).exec();
+      const docs = await this.model.find(filter).skip((p - 1) * limit).limit(limit).exec();
+      return { page: p, limit, total, data: docs.map((o) => this.toModel(o)!) };
+    } catch (error) { this.logger.error(error); throw error; }
+  }
+
   // Actions have no id — strip the storage _id so responses expose only { name, description }.
   private toModel(raw: any): AclAction | null | undefined {
     if (!raw) return raw as null | undefined;

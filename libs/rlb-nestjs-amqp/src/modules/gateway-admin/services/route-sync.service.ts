@@ -9,7 +9,7 @@ import { RouteSyncLogEntry } from '../models';
 import { HttpPathRepository } from '../repository/http-path.repository';
 import { RouteSyncLogRepository } from '../repository/route-sync-log.repository';
 import { diffRoutes } from '../util/route-diff';
-import { routeKeyOf } from '../util/route-manifest';
+import { renderChanges, routeKeyOf } from '../util/route-manifest';
 
 /**
  * Gateway side of route auto-discovery. Consumes route manifests from the shared durable queue
@@ -93,28 +93,35 @@ export class RouteSyncService implements OnApplicationBootstrap {
       for (const u of diff.upserts) {
         if (u.existingId) await this.paths.updateById(u.existingId, u.model);
         else await this.paths.insert(u.model);
-        await this.journal({ service, level: 'info', event: u.added ? 'added' : 'updated', routeKey: u.routeKey, method: u.model.method, path: u.model.path, topic: u.model.topic, action: u.model.action });
+        const rendered = u.changes?.length ? renderChanges(u.changes) : undefined;
+        await this.journal({ service, level: 'info', event: u.added ? 'added' : 'updated', routeKey: u.routeKey, method: u.model.method, path: u.model.path, topic: u.model.topic, action: u.model.action, changes: u.changes, message: rendered });
+        if (rendered) this.logger.log(`[route-sync] ${service}: '${u.routeKey}' updated → ${rendered}`);
       }
       for (const d of diff.disables) {
         await this.paths.updateById(d.id, { enabled: false });
         await this.journal({ service, level: 'info', event: 'removed', routeKey: d.routeKey, method: d.method, path: d.path });
       }
+      for (const s of diff.skipped) {
+        this.logger.log(`[route-sync] ${service}: '${s.routeKey}' is user-modified → manifest update skipped (user version kept)`);
+        await this.journal({ service, level: 'info', event: 'skipped', routeKey: s.routeKey, method: s.method, path: s.path, message: 'route user-modified; manifest update skipped' });
+      }
 
       if (diff.changed) {
         await this.triggerReload();
-        await this.journal({ service, level: 'info', event: 'reload', message: `${diff.upserts.length} upserted, ${diff.disables.length} removed, ${diff.collisions.length} collision(s)` });
-        this.logger.log(`[route-sync] ${service}: ${diff.upserts.length} upserted, ${diff.disables.length} removed, ${diff.collisions.length} collision(s) → reload`);
+        await this.journal({ service, level: 'info', event: 'reload', message: `${diff.upserts.length} upserted, ${diff.disables.length} removed, ${diff.skipped.length} user-modified skipped, ${diff.collisions.length} collision(s)` });
+        this.logger.log(`[route-sync] ${service}: ${diff.upserts.length} upserted, ${diff.disables.length} removed, ${diff.skipped.length} user-modified skipped, ${diff.collisions.length} collision(s) → reload`);
       } else {
-        this.logger.log(`[route-sync] ${service}: no route changes (${diff.collisions.length} collision(s))`);
+        this.logger.log(`[route-sync] ${service}: no route changes (${diff.skipped.length} user-modified skipped, ${diff.collisions.length} collision(s))`);
       }
     } catch (e) {
       this.logger.error(`[route-sync] handle failed: ${(e as Error)?.message}`);
     }
   }
 
-  /** Write a journal entry; never throws (a failing log must not break the sync). */
+  /** Write a journal entry; never throws (a failing log must not break the sync). Auto-discovery
+   *  always acts as 'system' (overridable by the entry, though the sync never sets a user actor). */
   private async journal(entry: Omit<RouteSyncLogEntry, 'ts'>): Promise<void> {
-    try { await this.logs.insert({ ts: Date.now(), ...entry }); }
+    try { await this.logs.insert({ ts: Date.now(), actor: 'system', ...entry }); }
     catch (e) { this.logger.warn(`[route-sync] journal write failed: ${(e as Error)?.message}`); }
   }
 

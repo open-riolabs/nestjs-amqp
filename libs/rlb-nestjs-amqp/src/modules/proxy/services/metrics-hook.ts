@@ -14,6 +14,7 @@ export interface GatewayMetricPoint {
   mode?: string;
   status?: number;
   durationMs?: number;
+  code?: string;
 }
 
 /**

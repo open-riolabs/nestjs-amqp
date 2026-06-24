@@ -84,6 +84,17 @@ export class MongoAclRoleRepository extends AclRoleRepository {
     return this.filterPaginated({}, page, limit);
   }
 
+  async search(q?: string, page = 1, limit = 10): Promise<PaginationModel<AclRole>> {
+    try {
+      const fields = ['name', 'description', 'actions'];
+      const filter: FilterQuery<any> = q ? { $or: fields.map((f) => ({ [f]: { $regex: q, $options: 'i' } })) } : {};
+      const p = page && page > 0 ? page : 1;
+      const total = await this.model.countDocuments(filter).exec();
+      const docs = await this.model.find(filter).skip((p - 1) * limit).limit(limit).exec();
+      return { page: p, limit, total, data: docs.map((o) => this.toModel(o)!) };
+    } catch (error) { this.logger.error(error); throw error; }
+  }
+
   async getActionsByNames(names: string[]): Promise<string[]> {
     try {
       if (!names?.length) return [];

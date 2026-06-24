@@ -340,6 +340,13 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-action-delete
       mode: rpc
+    - name: acl-action-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /acl/actions/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-action-search
+      mode: rpc
     ***REMOVED*** --- ACL management: roles ---
     - name: acl-role-list
       method: GET
@@ -369,6 +376,13 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-role-delete
       mode: rpc
+    - name: acl-role-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /acl/roles/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-role-search
+      mode: rpc
     ***REMOVED*** --- ACL grants (per-user; resourceId/companyId optional) ---
     - name: acl-grant
       method: POST
@@ -383,6 +397,13 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       dataSource: body
       topic: rlb-acl
       action: acl-revoke
+      mode: rpc
+    - name: acl-grant-search ***REMOVED*** access search; query: ?q=&limit=
+      method: GET
+      path: /acl/grants/search
+      dataSource: query
+      topic: rlb-acl
+      action: acl-grant-search
       mode: rpc
     ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
     ***REMOVED*** checkAction(userId, {companyId?, resourceId?}, action): true if the user holds the action
@@ -427,6 +448,13 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
+    - name: gw-path-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/paths/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-path-search
+      mode: rpc
     - name: gw-path-export
       method: GET
       path: /admin/paths/export
@@ -455,12 +483,34 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
+    ***REMOVED*** Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
+    - name: gw-route-log-list
+      method: GET
+      path: /admin/route-log
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-list
+      mode: rpc
+    - name: gw-route-log-search ***REMOVED*** filtered+paginated; query: ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+      method: GET
+      path: /admin/route-log/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-route-log-search
+      mode: rpc
     - name: gw-auth-list
       method: GET
       path: /admin/auth
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-list
+      mode: rpc
+    - name: gw-auth-search ***REMOVED*** query: ?q=&limit=
+      method: GET
+      path: /admin/auth/search
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-auth-search
       mode: rpc
     - name: gw-auth-upsert
       method: PUT
@@ -503,6 +553,29 @@ function adminPaths(controlTopic: string): string {
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-metrics-points
+      mode: rpc
+    - name: gw-metrics-summary ***REMOVED*** dashboard overview; query: ?from=&to=&method=&route=&name=&topN=
+      method: GET
+      path: /admin/metrics/summary
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-summary
+      mode: rpc
+    - name: gw-metrics-prometheus ***REMOVED*** Prometheus text exposition (returned as text/plain)
+      method: GET
+      path: /admin/metrics/prometheus
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-prometheus
+      mode: rpc
+      headers:
+        Content-Type: text/plain; version=0.0.4
+    - name: gw-metrics-rollups ***REMOVED*** long-term downsampled aggregates; query: ?from=&to=&method=&route=
+      method: GET
+      path: /admin/metrics/rollups
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-metrics-rollups
       mode: rpc
     - name: gw-metrics-track
       method: POST

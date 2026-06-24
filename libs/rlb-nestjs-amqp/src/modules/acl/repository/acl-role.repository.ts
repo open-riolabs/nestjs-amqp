@@ -21,4 +21,7 @@ export abstract class AclRoleRepository {
   abstract listPaginated(page: number, limit: number): Promise<PaginationModel<AclRole>>;
   /** Flattened, de-duplicated set of actions granted by the given role names. */
   abstract getActionsByNames(names: string[]): Promise<string[]>;
+  /** Free-text search over roles → matching roles. The implementation runs an optimized store
+   *  query (e.g. a Mongo regex/text index); `limit` caps the result, an empty `q` lists. */
+  abstract search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclRole>>;
 }

@@ -9,5 +9,7 @@ export const AUTH_PROVIDER_MODEL = 'AUTH_PROVIDER_MODEL';
 export const HTTP_METRIC_MODEL = 'HTTP_METRIC_MODEL';
 /** Raw per-request metric data points (time-series source). */
 export const HTTP_METRIC_POINT_MODEL = 'HTTP_METRIC_POINT_MODEL';
+/** Downsampled, pre-aggregated metric rollup buckets (long-term trends). */
+export const METRIC_ROLLUP_MODEL = 'METRIC_ROLLUP_MODEL';
 /** Route auto-discovery journal (one row per added/updated/removed/collision event). */
 export const ROUTE_SYNC_LOG_MODEL = 'ROUTE_SYNC_LOG_MODEL';

@@ -39,7 +39,9 @@ reference them literally. The queue / exchange / routingKey that carry the topic
 
 No id, no POST. `PUT` upserts by `name` (idempotent), `GET` lists (`?page=&limit=`),
 `GET …/get?name=` reads one, `DELETE` removes by `name`. Role upsert: every referenced
-action must already exist (else **400**).
+action must already exist (else **400**). The `*-search` actions (`acl-action-search`,
+`acl-role-search`, `acl-grant-search`) now take `?q=&page=&limit=` and return
+`PaginationModel<T>` (`{ page, limit, total, data }`), not a bare array.
 
 ***REMOVED******REMOVED*** Grants — dual grant/revoke (now GATED)
 
@@ -142,12 +144,15 @@ the fixed library string.
 | acl-action-get | GET | /acl/actions/get | query | acl-action-get |
 | acl-action-upsert | PUT | /acl/actions | body | acl-action-update |
 | acl-action-delete | DELETE | /acl/actions | body | acl-action-delete |
+| acl-action-search | GET | /acl/actions/search | query | acl-action-search (`?q=&page=&limit=` → `PaginationModel<AclAction>`) |
 | acl-role-list | GET | /acl/roles | query | acl-role-list |
 | acl-role-get | GET | /acl/roles/get | query | acl-role-get |
 | acl-role-upsert | PUT | /acl/roles | body | acl-role-update |
 | acl-role-delete | DELETE | /acl/roles | body | acl-role-delete |
+| acl-role-search | GET | /acl/roles/search | query | acl-role-search (`?q=&page=&limit=` → `PaginationModel<AclRole>`) |
 | acl-grant | POST | /acl/grants | body | acl-grant (gated: caller needs `role-management`) |
 | acl-revoke | DELETE | /acl/grants | body | acl-revoke (gated: caller needs `role-management`) |
+| acl-grant-search | GET | /acl/grants/search | query | acl-grant-search — access search (`?q=&page=&limit=` → `PaginationModel<AclGrant>`) |
 | acl-check | GET | /acl/check | query | acl-check-action |
 | acl-list-resources-by-user | GET | /acl/resources | query | acl-list-resources-by-user (+ `auth:`) |
 

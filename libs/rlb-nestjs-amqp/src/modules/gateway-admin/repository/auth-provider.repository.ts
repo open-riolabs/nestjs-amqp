@@ -16,4 +16,5 @@ export abstract class AuthProviderRepository {
   /** Enabled providers mapped to plain HandlerAuthConfig objects. */
   abstract listEnabled(): Promise<HandlerAuthConfig[]>;
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<StoredAuthProvider>>;
+  abstract search(q?: string, page?: number, limit?: number): Promise<PaginationModel<StoredAuthProvider>>;
 }

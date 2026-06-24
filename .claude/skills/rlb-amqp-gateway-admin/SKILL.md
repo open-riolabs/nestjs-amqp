@@ -43,7 +43,21 @@ GatewayAdminModule.forRoot([
 
 Use `forRootAsync` to resolve the **consumer-side** `routeDiscovery { exchange, queue }`
 from config (see Route auto-discovery). Exports `GatewayPathService`,
-`GatewayAuthService`, `GatewayMetricsService`.
+`GatewayAuthService`, `GatewayMetricsService`, `GatewayMetricsRollupService`,
+`GatewayHealthService`, `GatewayRetentionService`.
+
+**Options also carry `retentionDays`** (default `90` ≈ 3 months; `0`/negative disables) **and
+`rollupRetentionDays`** (default `365` ≈ 1 year; `0`/negative disables rollups). A daily
+`GatewayRetentionService` job prunes the route journal + raw metric points (`retentionDays`, via
+`prune`/`prunePoints`) and the hourly rollups (`rollupRetentionDays`, via `pruneRollups`). An hourly
+`GatewayMetricsRollupService` downsamples the previous hour's raw points into persisted
+`HttpMetricRollup` rows (`recordRollups`) so long-term trends survive raw-point pruning;
+`gw-metrics-rollups` reads them back via `rollupSeries`.
+
+**New repo contract methods consumers must implement:** every `*Repository.search(q?, page?, limit?)`
+now returns `Promise<PaginationModel<T>>` (not a bare array); `RouteSyncLogRepository.query(filter,
+page?, limit?)` backs `gw-route-log-search`; `RouteSyncLogRepository.prune` + `HttpMetricRepository.prunePoints`
+back retention.
 
 ***REMOVED******REMOVED*** Broker topic + queue (required)
 
@@ -88,10 +102,13 @@ auth/ACL resources. `create` rejects a `(method, path)` collision (409).
 | --- | --- | --- | --- | --- |
 | POST   | `/admin/paths`        | `gw-path-create` | body  | needs `name,method,path,topic`; 409 on collision |
 | GET    | `/admin/paths`        | `gw-path-list`   | query | `?page=&limit=` |
+| GET    | `/admin/paths/search` | `gw-path-search` | query | free-text → `PaginationModel<StoredHttpPath>`; `?q=&page=&limit=` |
 | GET    | `/admin/paths/export` | `gw-path-export` | query | enabled, ordered; used by `loadConfig.paths` |
 | PUT    | `/admin/paths`        | `gw-path-update` | body  | needs `id`; re-checks collisions |
 | GET    | `/admin/paths/get`    | `gw-path-get`    | query | `?id=` |
 | DELETE | `/admin/paths`        | `gw-path-delete` | body  | `{ id }` |
+| GET    | `/admin/route-log`    | `gw-route-log-list`   | query | route journal (who changed what); `?limit=` |
+| GET    | `/admin/route-log/search` | `gw-route-log-search` | query | filtered + paginated journal → `PaginationModel<RouteSyncLogEntry>`; `?actor=&service=&event=&routeKey=&from=&to=&page=&limit=` |
 
 ***REMOVED******REMOVED*** Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)
 
@@ -104,6 +121,7 @@ DB-stored providers, ON TOP of the static `auth-providers[]` in YAML.
 | PUT    | `/admin/auth`     | `gw-auth-update` | body  | upsert by name; `{ name, type, ... }` |
 | GET    | `/admin/auth/get` | `gw-auth-get`    | query | `?name=` |
 | DELETE | `/admin/auth`     | `gw-auth-delete` | body  | `{ name }` |
+| GET    | `/admin/auth/search` | `gw-auth-search` | query | free-text → `PaginationModel<StoredAuthProvider>`; `?q=&page=&limit=` |
 
 `gw-auth-export` (dump all enabled) also exists; not in the sample YAML.
 
@@ -111,12 +129,30 @@ DB-stored providers, ON TOP of the static `auth-providers[]` in YAML.
 
 | Method | Path | action | mode | dataSource | Returns |
 | --- | --- | --- | --- | --- | --- |
-| GET  | `/admin/metrics`        | `gw-metrics-get`    | rpc   | query | counters/route (`count,errorCount,avgDurationMs`); `?route=` |
-| GET  | `/admin/metrics/series` | `gw-metrics-series` | rpc   | query | buckets: `?bucketMs=60000&from=&to=&method=&route=&name=` |
-| GET  | `/admin/metrics/points` | `gw-metrics-points` | rpc   | query | raw points newest-first: `?method=&route=&from=&to=&limit=` |
-| POST | `/admin/metrics/track`  | `gw-metrics-track`  | event | body  | fire-and-forget sink (wired via `gateway.metrics`) |
+| GET  | `/admin/metrics`            | `gw-metrics-get`        | rpc   | query | counters/route (`count,errorCount,avgDurationMs,errorRate,lastErrorCode`); `?route=` |
+| GET  | `/admin/metrics/series`     | `gw-metrics-series`     | rpc   | query | enriched buckets w/ `p50/p95/p99`+`byStatus`: `?bucketMs=60000&from=&to=&method=&route=&name=` |
+| GET  | `/admin/metrics/points`     | `gw-metrics-points`     | rpc   | query | raw points (incl. error `code`) newest-first: `?method=&route=&from=&to=&limit=` |
+| GET  | `/admin/metrics/summary`    | `gw-metrics-summary`    | rpc   | query | overview `MetricSummary` (totals,errorRate,p50/95/99,byStatus,top-N): `?from=&to=&method=&route=&name=&topN=10` |
+| GET  | `/admin/metrics/prometheus` | `gw-metrics-prometheus` | rpc   | query | Prometheus text exposition of counters (`text/plain`) |
+| GET  | `/admin/metrics/rollups`    | `gw-metrics-rollups`    | rpc   | query | hourly rollups (`HttpMetricRollup[]`, survive retention): `?from=&to=&method=&route=` |
+| POST | `/admin/metrics/track`      | `gw-metrics-track`      | event | body  | fire-and-forget sink (wired via `gateway.metrics`) |
 
-`gw-health` → `{ status: 'ok' }`, a real 200 liveness probe (NOT a metrics dump):
+`series`/`summary` are computed **app-side from raw points** (latency percentiles are exact); the
+counters stay O(1) per route. `prometheus` needs the route's `headers: { Content-Type: text/plain }`.
+
+`gw-health` is a **readiness** probe (NOT a metrics dump). Returns
+`{ status: 'up'|'down', broker: { status, detail? }, dependencies: { <name>: { status, detail? } } }`;
+`status` is `'down'` if the broker OR any dependency is down. The broker (AmqpConnection) is checked
+built-in; DB/redis/external checks are **consumer-supplied** via `RLB_GW_HEALTH_INDICATORS` (array of
+`GatewayHealthIndicator { name; check(): Promise<{status:'up'|'down', detail?}> }`, both exported from
+`@open-rlb/nestjs-amqp`). The HTTP response is **always 200** (the gateway forwards an rpc result,
+can't set 503) — readiness must inspect `status`.
+
+```ts
+{ provide: RLB_GW_HEALTH_INDICATORS, useValue: [
+  { name: 'database', check: async () => ({ status: 'up' }) },
+] satisfies GatewayHealthIndicator[] }
+```
 
 ```yaml
 - name: health
@@ -212,8 +248,12 @@ Wired by `GatewayAdminModule` (NOT YAML). Asserts the fanout exchange, subscribe
 to the durable queue (competing consumers), then per manifest: diffs vs DB scoped
 to the publishing service, applies only changes (insert/update; soft-disable stale
 to `enabled:false`; skip collisions — existing owner keeps `(method,path)`),
-journals every event via `RouteSyncLogRepository`, and publishes `gw-reload` when
-anything changed. Never throws (acks; no poison loop).
+journals every event via `RouteSyncLogRepository` (each row has `actor:'system'`;
+`skipped` rows mark user-modified routes left untouched; `updated` rows carry a
+`changes` per-field diff like `actions: [+x, -y]`), and publishes `gw-reload` when
+anything changed. Never throws (acks; no poison loop). Stored routes carry `source`
+(`'microservice'|'user'`) and `modified`; user CRUD (`gw-path-*`) is audited too —
+`actor`=`X-GTW-AUTH-USERID` (else `'unknown'`), event `created`/`updated`/`deleted`.
 
 ```ts
 GatewayAdminModule.forRootAsync({

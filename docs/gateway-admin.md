@@ -41,6 +41,11 @@ GatewayAdminModule.forRoot([
 
 > The repository classes and DI tokens (`HttpPathRepository`, `AuthProviderRepository`, `HttpMetricRepository`, `RouteSyncLogRepository`, `RLB_GTW_METRICS_HOOK`, …) are all re-exported from `@open-rlb/nestjs-amqp`.
 
+> **New contract methods consumers must implement.** The repository contracts gained methods to support paginated search, the filtered journal query, and retention pruning:
+> - **`*Repository.search(q?, page?, limit?)`** now returns `Promise<PaginationModel<T>>` (`{ page, limit, total, data }`) instead of a bare array — applies to `HttpPathRepository` and `AuthProviderRepository` (and the ACL repos).
+> - **`RouteSyncLogRepository.query(filter, page?, limit?)`** — filtered + paginated journal query (`filter`: `actor`, `service`, `event`, `routeKey`, `from`, `to`), returns `PaginationModel<RouteSyncLogEntry>`. Backs `gw-route-log-search`.
+> - **`RouteSyncLogRepository.prune(olderThanTs)`** and **`HttpMetricRepository.prunePoints(olderThanTs)`** — delete journal rows / raw metric points older than the timestamp. Called by the daily retention job (see `retentionDays`).
+
 The module **exports** `GatewayPathService`, `GatewayAuthService` and `GatewayMetricsService` (handy if another module needs them directly). `RouteSyncService` is wired internally and runs on application bootstrap.
 
 ***REMOVED******REMOVED******REMOVED*** `forRootAsync` — consumer-side `routeDiscovery`
@@ -73,6 +78,8 @@ GatewayAdminModule.forRootAsync({
 | `topic` | `string` | `'rlb-gateway-admin'` | Topic the handlers bind to (leave default). |
 | `routeDiscovery.exchange` | `string` | `'rlb-route-discovery'` | Fanout exchange the gateway consumes manifests from. |
 | `routeDiscovery.queue` | `string` | `'rlb-route-sync'` | Durable shared work-queue (competing consumers). |
+| `retentionDays` | `number` | `90` | Retention window (≈3 months) for the route journal + raw metric points. A daily job (`GatewayRetentionService`) prunes anything older. Set `0`/negative to disable. |
+| `rollupRetentionDays` | `number` | `365` | Retention window (≈1 year) for the persisted hourly metric **rollups** (long-term trends that survive raw-point pruning). When `> 0` the hourly rollup job (`GatewayMetricsRollupService`) runs and old rollups are pruned at this window; `0`/negative disables rollups. |
 
 The consumer side has **no `serviceName`** — the gateway only *receives* manifests and keeps its own `connection_name`. (The `serviceName` lives on the publisher side; see [Route auto-discovery](***REMOVED***route-auto-discovery).)
 
@@ -130,10 +137,13 @@ Wire them as HTTP routes (matches `config.yaml`):
 | --- | --- | --- | --- | --- |
 | `POST`   | `/admin/paths`        | `gw-path-create` | `body`  | requires `name`, `method`, `path`, `topic`; 409 on route collision |
 | `GET`    | `/admin/paths`        | `gw-path-list`   | `query` | paginated (`?page=&limit=`) |
+| `GET`    | `/admin/paths/search` | `gw-path-search` | `query` | free-text search → `PaginationModel<StoredHttpPath>`; `?q=&page=&limit=` |
 | `GET`    | `/admin/paths/export` | `gw-path-export` | `query` | enabled paths, ordered; used by `loadConfig.paths` |
 | `PUT`    | `/admin/paths`        | `gw-path-update` | `body`  | requires `id`; keeps `routeKey` in sync, re-checks collisions |
 | `GET`    | `/admin/paths/get`    | `gw-path-get`    | `query` | `?id=` |
 | `DELETE` | `/admin/paths`        | `gw-path-delete` | `body`  | `{ id }` |
+| `GET`    | `/admin/route-log`    | `gw-route-log-list`   | `query` | route-change journal (`actor` = `system` \| userId, `+/−` per-field diff); `?limit=` |
+| `GET`    | `/admin/route-log/search` | `gw-route-log-search` | `query` | filtered + paginated journal query → `PaginationModel<RouteSyncLogEntry>`; `?actor=&service=&event=&routeKey=&from=&to=&page=&limit=` |
 
 > Note `gw-path-create` is a **POST** (paths *do* have an `id`). This is different from the ACL and auth-provider resources, which are name-keyed PUT-upserts.
 
@@ -146,6 +156,7 @@ Wire them as HTTP routes (matches `config.yaml`):
 | Method | Path | Action | dataSource | Notes |
 | --- | --- | --- | --- | --- |
 | `GET`    | `/admin/auth`     | `gw-auth-list`   | `query` | paginated (`?page=&limit=`) |
+| `GET`    | `/admin/auth/search` | `gw-auth-search` | `query` | free-text search → `PaginationModel<StoredAuthProvider>`; `?q=&page=&limit=` |
 | `PUT`    | `/admin/auth`     | `gw-auth-update` | `body`  | upsert by name; `{ name, type, ... }` |
 | `GET`    | `/admin/auth/get` | `gw-auth-get`    | `query` | `?name=` |
 | `DELETE` | `/admin/auth`     | `gw-auth-delete` | `body`  | `{ name }` |
@@ -162,15 +173,21 @@ There is also `gw-auth-export` (not exposed in the sample YAML) for dumping all 
 
 | Method | Path | Action | mode | dataSource | Returns |
 | --- | --- | --- | --- | --- | --- |
-| `GET`  | `/admin/metrics`        | `gw-metrics-get`    | `rpc`   | `query` | counters per route (`count`, `errorCount`, `avgDurationMs`); `?route=` to filter |
-| `GET`  | `/admin/metrics/series` | `gw-metrics-series` | `rpc`   | `query` | time-series buckets over `bucketMs`-wide windows |
-| `GET`  | `/admin/metrics/points` | `gw-metrics-points` | `rpc`   | `query` | raw data points, newest first |
-| `POST` | `/admin/metrics/track`  | `gw-metrics-track`  | `event` | `body`  | fire-and-forget per-call event sink |
+| `GET`  | `/admin/metrics`            | `gw-metrics-get`        | `rpc`   | `query` | counters per route (`count`, `errorCount`, `avgDurationMs`, `errorRate`, `lastErrorCode`); `?route=` to filter |
+| `GET`  | `/admin/metrics/series`     | `gw-metrics-series`     | `rpc`   | `query` | time-series buckets (count/errors/avg·min·max + **p50/p95/p99** + `byStatus`) |
+| `GET`  | `/admin/metrics/points`     | `gw-metrics-points`     | `rpc`   | `query` | raw data points, newest first |
+| `GET`  | `/admin/metrics/summary`    | `gw-metrics-summary`    | `rpc`   | `query` | dashboard overview: totals, error rate, percentiles, status breakdown, top-N |
+| `GET`  | `/admin/metrics/prometheus` | `gw-metrics-prometheus` | `rpc`   | `query` | Prometheus text exposition of the counters (`text/plain`) |
+| `GET`  | `/admin/metrics/rollups`    | `gw-metrics-rollups`    | `rpc`   | `query` | long-term hourly rollups (survive raw-point retention) |
+| `POST` | `/admin/metrics/track`      | `gw-metrics-track`      | `event` | `body`  | fire-and-forget per-call event sink |
 
-- **`gw-metrics-get`** — aggregated counters for a dashboard (count / errors / average duration per route).
-- **`gw-metrics-series`** — bucketed aggregates. Params: `bucketMs` (default `60000`), `from`, `to`, `method`, `route`, `name`. Returns `MetricSeriesBucket[]` (`bucketStart`, `count`, `errorCount`, `avgDurationMs`, …).
-- **`gw-metrics-points`** — raw `HttpMetricPoint[]`. Params: `method`, `route`, `from`, `to`, `limit`.
-- **`gw-metrics-track`** — `mode: event` (fire-and-forget). Increments the rolling counters **and** appends a raw data point. This is the action you wire under `gateway.metrics`:
+- **`gw-metrics-get`** — aggregated counters for a dashboard (count / errors / avg duration + **`errorRate`** + **`lastErrorCode`** per route).
+- **`gw-metrics-series`** — enriched bucketed aggregates, computed app-side from the raw points. Params: `bucketMs` (default `60000`), `from`, `to`, `method`, `route`, `name`. Returns `MetricSeriesBucket[]` (`bucketStart`, `count`, `errorCount`, `avgDurationMs`, `min/maxDurationMs`, **`p50/p95/p99`**, **`byStatus`** `{2xx,3xx,4xx,5xx}`).
+- **`gw-metrics-points`** — raw `HttpMetricPoint[]` (each now carries the error **`code`** from the unified envelope). Params: `method`, `route`, `from`, `to`, `limit`.
+- **`gw-metrics-summary`** — dashboard overview computed from the raw points. Params: `from`, `to`, `method`, `route`, `name`, `topN` (default `10`). Returns `MetricSummary`: `totalRequests`, `totalErrors`, `errorRate`, `avgDurationMs`, `p50/p95/p99`, `byStatus`, and the top-N routes by traffic / errors / p95 latency.
+- **`gw-metrics-prometheus`** — Prometheus text exposition (v0.0.4) of the rolling counters (`gateway_requests_total`, `gateway_request_errors_total`, `gateway_request_duration_ms_sum`). The route sets `headers: { Content-Type: text/plain }` so the gateway returns it raw. Percentiles need histograms and are not emitted here — use `summary`/`series` for those.
+- **`gw-metrics-rollups`** — persisted **hourly** downsampled aggregates (`HttpMetricRollup[]`) that survive raw-point retention, for long-term trends. An hourly job (`GatewayMetricsRollupService`) rolls the previous hour's points up; old rollups are pruned at `rollupRetentionDays`. Params: `from`, `to`, `method`, `route`.
+- **`gw-metrics-track`** — `mode: event` (fire-and-forget). Increments the rolling counters (incl. `lastErrorCode`) **and** appends a raw data point (incl. the error `code`). This is the action you wire under `gateway.metrics`:
 
 ```yaml
 gateway:
@@ -179,9 +196,37 @@ gateway:
     action: gw-metrics-track
 ```
 
-***REMOVED******REMOVED******REMOVED*** `/health` → `gw-health`
+***REMOVED******REMOVED******REMOVED*** `/health` → `gw-health` (readiness probe)
 
-`/health` maps to the **`gw-health`** action, which returns a tiny `{ status: 'ok' }` — a real 200 liveness probe, **not** a metrics dump:
+`/health` maps to the **`gw-health`** action — a **readiness** probe (not a metrics dump). It returns:
+
+```json
+{
+  "status": "up",                                  // 'down' if the broker OR any dependency is down
+  "broker": { "status": "up", "detail": "..." },   // AmqpConnection, checked built-in
+  "dependencies": {
+    "database": { "status": "up", "detail": "..." }
+  }
+}
+```
+
+The broker (AmqpConnection) is checked built-in. DB / redis / external checks are **consumer-supplied**: register indicators under the `RLB_GW_HEALTH_INDICATORS` token.
+
+```ts
+import { RLB_GW_HEALTH_INDICATORS, GatewayHealthIndicator } from '@open-rlb/nestjs-amqp';
+
+{
+  provide: RLB_GW_HEALTH_INDICATORS,
+  useValue: [
+    { name: 'database', check: async () => ({ status: 'up' }) },
+    // { name: 'redis', check: async () => ({ status: 'down', detail: 'timeout' }) },
+  ] satisfies GatewayHealthIndicator[],
+}
+
+// interface GatewayHealthIndicator { name: string; check(): Promise<{ status: 'up' | 'down'; detail?: string }> }
+```
+
+> The HTTP response is **always `200`** with this body — the gateway forwards an rpc result and can't set `503`. Readiness checks must inspect the `status` field, not the HTTP status.
 
 ```yaml
 - name: health
@@ -243,6 +288,10 @@ export class InfluxMetricsHook implements GatewayMetricsHook {
 ```
 
 Enable with: `INFLUX_URL=http://localhost:8086 INFLUX_TOKEN=<token> INFLUX_ORG=<org> INFLUX_BUCKET=gateway`.
+
+***REMOVED******REMOVED******REMOVED*** Retention
+
+Both the route-change journal and the raw metric points grow unbounded otherwise, so a daily job (`GatewayRetentionService`) prunes anything older than `GatewayAdminModuleOptions.retentionDays` (**default `90`** ≈ 3 months). It calls `RouteSyncLogRepository.prune(olderThanTs)` and `HttpMetricRepository.prunePoints(olderThanTs)`. Set `retentionDays` to `0` or a negative number to disable pruning entirely. (Counters and time-series aggregates are not pruned — only the raw points behind them.)
 
 ---
 
@@ -309,10 +358,16 @@ For each manifest it:
 
 1. **Diffs** the incoming routes against the DB scoped to the publishing service (route identity = `method + path`).
 2. **Applies** only what changed: insert/update new routes; soft-disable stale ones (`enabled: false`). Routes that collide with a YAML route or with another owner's route are **skipped** (the existing owner keeps the `(method, path)`).
-3. **Journals** every change via `RouteSyncLogRepository` — one row per `added` / `updated` / `removed` / `collision` / `invalid` / `reload` event.
+3. **Journals** every change via `RouteSyncLogRepository` — one row per `added` / `updated` / `removed` / `skipped` / `collision` / `invalid` / `reload` event. Every row carries an **`actor`** (`'system'` for auto-discovery), and an `updated` row also carries a **`changes`** per-field diff (e.g. `actions: [+booking-read, -admin]`, `timeout: [+1000, -5000]`).
 4. **Triggers a reload** when anything changed, by publishing the canonical **`gw-reload`** action (`GW_RELOAD_ACTION`) to `gateway.reloadTopic`. The gateway's control-topic subscriber rebuilds its routes **only** for `gw-reload`, so it stays decoupled from any other control traffic.
 
 The handler never throws — errors are logged and the message is acked (no poison loop). An empty manifest for a service that has existing routes soft-disables them all (and logs a warning), so a mis-firing publisher is visible in the journal rather than silently destructive.
+
+***REMOVED******REMOVED******REMOVED******REMOVED*** Ownership, user edits & audit (`source` / `modified` / `actor`)
+
+Every stored route carries `source` — `'microservice'` (auto-discovered) or `'user'` (created via `gw-path-create`) — and `modified`, set `true` the moment a user edits an auto-discovered route. When a manifest re-announces a route a user has edited, the sync **skips** it (the user's version wins) and journals a `skipped` row with an info log; auto-discovery never overwrites it again.
+
+User route CRUD is audited the same way: `gw-path-create` / `gw-path-update` / `gw-path-delete` each write a journal row with `actor = <userId>` (from the forwarded `X-GTW-AUTH-USERID`, else `'unknown'`), `event` = `created` / `updated` / `deleted`, and — on update — the same `changes` per-field diff. So the journal answers "who changed what": `'system'` for auto-discovery, the user's id for manual edits.
 
 > The topic names `rlb-acl` / `rlb-gateway-admin` and all action strings (`gw-path-*`, `gw-auth-*`, `gw-metrics-*`, `gw-health`, `gw-reload`) are decorator-bound and **not configurable**. Only the route-discovery `exchange` / `queue` are configurable — and they must match on both sides.
 

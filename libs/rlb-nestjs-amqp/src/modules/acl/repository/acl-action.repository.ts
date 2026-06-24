@@ -22,4 +22,7 @@ export abstract class AclActionRepository {
   abstract filterPaginated(filter: Record<string, any>, page?: number, limit?: number): Promise<PaginationModel<AclAction>>;
   abstract retrieveAll(): Promise<AclAction[]>;
   abstract retrieveAllPaginated(page: number, limit: number): Promise<PaginationModel<AclAction>>;
+  /** Free-text search over actions → matching actions. The implementation runs an optimized store
+   *  query (e.g. a Mongo regex/text index); `limit` caps the result, an empty `q` lists. */
+  abstract search(q?: string, page?: number, limit?: number): Promise<PaginationModel<AclAction>>;
 }

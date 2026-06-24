@@ -18,6 +18,7 @@ const HttpMetricPointSchema = new mongoose.Schema({
   mode: String,
   status: Number,
   durationMs: Number,
+  code: String,
 });
 
 // Exported for tests.

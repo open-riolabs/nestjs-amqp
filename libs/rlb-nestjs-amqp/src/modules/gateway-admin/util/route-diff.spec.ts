@@ -66,4 +66,26 @@ describe('diffRoutes', () => {
     const d = diffRoutes('svc', [route(), route({ actions: ['x'] })], [], new Map());
     expect(d.upserts).toHaveLength(1);
   });
+
+  it('marks inserted routes source=microservice, modified=false', () => {
+    const d = diffRoutes('svc', [route()], [], new Map());
+    expect(d.upserts[0].model).toMatchObject({ source: 'microservice', modified: false });
+  });
+
+  it('skips a user-modified route (modified=true): no upsert, recorded in skipped, not changed', () => {
+    const r = route({ actions: ['x'] }); // manifest carries a different version
+    const ex = { _id: '1', owner: 'svc', enabled: true, modified: true, routeKey: routeKeyOf(r), ...route() };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts).toHaveLength(0);
+    expect(d.skipped).toEqual([{ routeKey: 'GET /x', method: 'GET', path: '/x' }]);
+    expect(d.changed).toBe(false);
+  });
+
+  it('an updated route carries a per-field changes diff; an added route does not', () => {
+    const r = route({ actions: ['admin'] });
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), ...route() }; // actions: []
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts[0].changes).toEqual([{ field: 'actions', added: ['admin'], removed: [] }]);
+    expect(diffRoutes('svc', [route()], [], new Map()).upserts[0].changes).toBeUndefined();
+  });
 });

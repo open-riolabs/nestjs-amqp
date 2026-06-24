@@ -10,6 +10,16 @@ import { HttpAuthHandlerService } from "./http-auth-handler.service";
 import { GatewayMetricPoint, GatewayMetricsHook, RLB_GTW_METRICS_HOOK } from "./metrics-hook";
 import multer = require('multer');
 
+/** Maps a thrown BrokerHttpError name → HTTP status (unmapped → 500). Used by the single error envelope. */
+const ERROR_STATUS: Record<string, number> = {
+  BadRequestError: 400,
+  InvalidParamsErrror: 400,
+  UnauthorizedError: 401,
+  ForbiddenError: 403,
+  NotFoundError: 404,
+  ConflictError: 409,
+};
+
 @Injectable()
 export class HttpHandlerService implements OnModuleInit {
 
@@ -168,7 +178,7 @@ export class HttpHandlerService implements OnModuleInit {
       if (path.allowAnonymous !== true) {
         // (1) Authentication — a configured provider must validate the request.
         if (path.auth && !authData?.success) {
-          res.status(401).json({ message: "Unauthorized" });
+          this.sendError(res, { name: 'Unauthorized', message: 'Unauthorized' }, 401);
           this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
           return;
         }
@@ -176,7 +186,7 @@ export class HttpHandlerService implements OnModuleInit {
         // gateway extracts the request's (companyId, resourceId) and requires an exact grant match.
         const resourceCtx = this.httpAuthHandlerService.extractResourceContext(req);
         if (!(await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx))) {
-          res.status(403).json({ message: "Forbidden" });
+          this.sendError(res, { name: 'Forbidden', message: 'Forbidden' }, 403);
           this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
           return;
         }
@@ -232,7 +242,7 @@ export class HttpHandlerService implements OnModuleInit {
             res.status(path.successStatusCode || 202).setHeaders(headers).end();
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'EVENT'`);
           } catch (error) {
-            res.status(503).json(this.utils.error2Object(error, this.appConfig.environment !== 'production'));
+            this.sendError(res, error, 503);
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
           }
         } else if (path.mode === "rpc") {
@@ -265,15 +275,7 @@ export class HttpHandlerService implements OnModuleInit {
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | PROCESSED 'NO CONTENT'`);
             return;
           } catch (error) {
-            switch (error.name) {
-              case "BadRequestError": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              case "ConflictError": res.status(409).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              case "ForbiddenError": res.status(403).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              case "InvalidParamsErrror": res.status(400).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              case "NotFoundError": res.status(404).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              case "UnauthorizedError": res.status(401).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-              default: res.status(500).json(this.utils.error2Object(error, this.appConfig.environment !== 'production')); break;
-            }
+            this.sendError(res, error);
             this.logger.log(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
           }
         }
@@ -282,12 +284,7 @@ export class HttpHandlerService implements OnModuleInit {
         }
       } catch (error) {
         this.logger.error(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ERROR '${error.name}' ${error.message}`);
-        if (this.appConfig.environment === "development") {
-          res.status(500).json(error);
-        }
-        else {
-          res.status(500).json({ message: "Internal server error", name: error.name });
-        }
+        this.sendError(res, error);
       }
     });
   }
@@ -316,6 +313,7 @@ export class HttpHandlerService implements OnModuleInit {
         mode: path.mode,
         status: res.statusCode,
         durationMs: finishedAt - startedAt,
+        code: (res as any).__errorCode,
       };
       // (1) broker sink — feeds the gateway-admin metrics handler when gateway.metrics is set.
       if (hasBrokerSink) {
@@ -332,6 +330,22 @@ export class HttpHandlerService implements OnModuleInit {
         }
       }
     });
+  }
+
+  /**
+   * Single error envelope for EVERY failure branch — `{ statusCode, code, message, details? }`.
+   * `code` is the thrown error's name (or the supplied status reason); `statusCodeOverride` is for
+   * the auth gate / event paths that don't throw a typed error. `details` (stack) is included only
+   * outside production. This replaces the previous per-branch shapes so a frontend has one contract.
+   */
+  private sendError(res: Response, error: any, statusCodeOverride?: number): void {
+    const code = (error && typeof error === 'object' && error.name) ? String(error.name) : 'Error';
+    const statusCode = statusCodeOverride ?? ERROR_STATUS[code] ?? 500;
+    const message = typeof error === 'string' ? error : (error?.message ?? 'Internal server error');
+    const body: { statusCode: number; code: string; message: string; details?: unknown } = { statusCode, code, message };
+    if (this.appConfig.environment !== 'production' && error?.stack) body.details = error.stack;
+    (res as any).__errorCode = code; // stashed so trackMetrics can record WHICH error occurred
+    res.status(statusCode).json(body);
   }
 
   private httpHeaders(req: Request, path: PathDefinition): { [k: string]: string | string[] | number; } {

@@ -15,6 +15,7 @@ import { aclGrantModel } from './schema/acl-grant.schema';
 import { authProviderModel } from './schema/auth-provider.schema';
 import { httpMetricModel } from './schema/http-metric.schema';
 import { httpMetricPointModel } from './schema/http-metric-point.schema';
+import { httpMetricRollupModel } from './schema/http-metric-rollup.schema';
 import { httpPathModel } from './schema/http-path.schema';
 import { routeSyncLogModel } from './schema/route-sync-log.schema';
 
@@ -32,7 +33,7 @@ export interface DatabaseConfig {
   };
 }
 
-const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel, httpMetricPointModel, routeSyncLogModel];
+const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel, httpMetricPointModel, httpMetricRollupModel, routeSyncLogModel];
 const REPOSITORIES = [MongoAclActionRepository, MongoAclRoleRepository, MongoAclGrantRepository, MongoHttpPathRepository, MongoAuthProviderRepository, MongoHttpMetricRepository, MongoRouteSyncLogRepository];
 @Global()
 @Module({

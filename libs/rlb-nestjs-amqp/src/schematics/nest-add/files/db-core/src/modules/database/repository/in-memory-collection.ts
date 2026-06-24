@@ -20,6 +20,26 @@ function matches(item: any, filter: Record<string, any>): boolean {
   return true;
 }
 
+/** True when any string/number/boolean anywhere in `value` (deep, incl. array elements) contains
+ *  `q` (case-insensitive). Empty/absent `q` matches everything. Powers the RAM `search`. */
+function matchesText(value: unknown, q?: string): boolean {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  const seen = new Set<unknown>();
+  function walk(v: unknown): boolean {
+    if (v == null) return false;
+    if (typeof v === 'string') return v.toLowerCase().includes(needle);
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v).toLowerCase().includes(needle);
+    if (typeof v === 'object') {
+      if (seen.has(v)) return false;
+      seen.add(v);
+      return Object.values(v as Record<string, unknown>).some(walk);
+    }
+    return false;
+  }
+  return walk(value);
+}
+
 /**
  * Tiny in-memory collection that mimics the slice of Mongo behavior the repositories
  * need (CRUD by id/filter, `$in`, pagination). Returns shallow copies so callers can't
@@ -111,6 +131,15 @@ export class InMemoryCollection<T extends { _id?: string }> {
 
   all(): T[] {
     return [...this.items.values()].map((v) => ({ ...v }));
+  }
+
+  /** Free-text scan: every doc whose any string/number/boolean field (deep) contains `q`,
+   *  paginated. The RAM equivalent of a store's optimized search query. */
+  search(q?: string, page = 1, limit = 10): PaginationModel<T> {
+    const data = this.all().filter((v) => matchesText(v, q));
+    const p = page < 1 ? 1 : page;
+    const start = (p - 1) * limit;
+    return { page: p, limit, total: data.length, data: data.slice(start, start + limit) };
   }
 
   paginate(filter: Record<string, any>, page = 1, limit = 10): PaginationModel<T> {

@@ -36,6 +36,12 @@ export class GatewayAuthService {
     return this.repo.filterPaginated({}, Number(page) || 1, Number(limit) || 10);
   }
 
+  /** Free-text search over stored auth-providers → PaginationModel<StoredAuthProvider> (delegated). */
+  @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authSearch, 'rpc')
+  async search(@BrokerParam('body', 'q') q?: string, @BrokerParam('body', 'page') page?: number, @BrokerParam('body', 'limit') limit?: number): Promise<PaginationModel<StoredAuthProvider>> {
+    return this.repo.search(q, Number(page) || 1, Number(limit) || 10);
+  }
+
   /** Exposes all enabled auth-providers (to be read in addition to YAML / for the frontend). */
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.authExport, 'rpc')
   async export(): Promise<HandlerAuthConfig[]> {
