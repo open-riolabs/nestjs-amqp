@@ -14,6 +14,8 @@ const HttpPathSchema = new mongoose.Schema({
   auth: String,
   allowAnonymous: Boolean,
   roles: [String],
+  // Action names the caller must hold to use this route (OR-semantics); supersedes `roles` gating.
+  actions: Schema.Types.Mixed,
   timeout: Number,
   binary: Boolean,
   parseRaw: Boolean,
@@ -26,6 +28,10 @@ const HttpPathSchema = new mongoose.Schema({
   // stable identity `METHOD path` used by the route-sync for upsert/diff/collision detection.
   owner: String,
   routeKey: String,
+  // Provenance ('microservice' = auto-discovered, 'user' = manually managed) and whether a
+  // user has edited an auto-discovered row (so the route-sync can skip overwriting it).
+  source: String,
+  modified: Boolean,
 });
 
 // Exported for tests.

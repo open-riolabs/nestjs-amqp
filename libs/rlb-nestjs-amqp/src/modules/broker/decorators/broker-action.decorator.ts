@@ -6,7 +6,10 @@ const ARGUMENT_NAMES = /([^\s,]+)/g;
 export type BrokerParamSource = 'body' | 'body-full' | 'header' | 'tag' | 'action' | 'topic';
 export type BrokerActionType = 'rpc' | 'event';
 export type BrokerHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-export type BrokerHttpDataSource = 'query' | 'body' | 'params';
+/** Where the gateway builds the RPC payload from for an HTTP route. The combined modes merge
+ *  params+query+body with a precedence (the LAST-named source wins on key conflicts):
+ *  `body-query` → {...params, ...query, ...body} (body wins); `query-body` → query wins. */
+export type BrokerHttpDataSource = 'query' | 'body' | 'params' | 'body-query' | 'query-body';
 
 export function BrokerAction(topic: string, action: string, type?: BrokerActionType): MethodDecorator {
   return (target, propertyKey, descriptor) => {

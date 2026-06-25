@@ -14,6 +14,15 @@ describe('buildPathDefinitionsFromMeta', () => {
     expect(defs.find(d => d.method === 'GET')).toMatchObject({ topic: 'orders', action: 'order.quote', auth: 'r', allowAnonymous: true, mode: 'rpc' });
   });
 
+  it('passes through the full dataSource set, incl. body-query / query-body', () => {
+    const meta = { t: { a: { type: 'rpc', http: [
+      { method: 'POST', path: '/bq', dataSource: 'body-query' },
+      { method: 'GET', path: '/qb', dataSource: 'query-body' },
+    ] } } };
+    const defs = buildPathDefinitionsFromMeta(meta);
+    expect(defs.map((d) => d.dataSource).sort()).toEqual(['body-query', 'query-body']);
+  });
+
   it('returns [] for empty meta and defaults mode from the @BrokerAction type', () => {
     expect(buildPathDefinitionsFromMeta({})).toEqual([]);
     const defs = buildPathDefinitionsFromMeta({ t: { a: { type: 'event', auth: [], http: [{ method: 'POST', path: '/x', dataSource: 'body' }] } } });

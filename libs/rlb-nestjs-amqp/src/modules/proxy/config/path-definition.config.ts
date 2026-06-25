@@ -1,3 +1,5 @@
+import type { BrokerHttpDataSource } from '../../broker/decorators/broker-action.decorator';
+
 export interface PathDefinition {
   name: string;
   method: string;
@@ -6,7 +8,8 @@ export interface PathDefinition {
   topic: string;
   action: string;
   successStatusCode?: number;
-  dataSource: 'body' | 'query' | 'params' | 'body-query' | 'query-body';
+  // Single source of truth: the same set the @BrokerHTTP decorator accepts (see BrokerHttpDataSource).
+  dataSource: BrokerHttpDataSource;
   mode: 'event' | 'rpc';
   auth?: string;
   allowAnonymous?: boolean;
