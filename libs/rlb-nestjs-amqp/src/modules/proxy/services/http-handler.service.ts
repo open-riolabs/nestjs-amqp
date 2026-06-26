@@ -3,9 +3,10 @@ import { HttpAdapterHost } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { NextFunction, Request, Response, Router } from "express";
 import { BrokerService } from "../../broker";
-import { GW_RELOAD_ACTION, RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
+import { GW_AUTH_RELOAD_ACTION, GW_RELOAD_ACTION, RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
+import { AuthProviderRegistry } from "./auth-provider-registry.service";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
 import { GatewayMetricPoint, GatewayMetricsHook, RLB_GTW_METRICS_HOOK } from "./metrics-hook";
 import multer = require('multer');
@@ -42,6 +43,7 @@ export class HttpHandlerService implements OnModuleInit {
     private readonly broker: BrokerService,
     private readonly utils: UtilsService,
     private readonly httpAuthHandlerService: HttpAuthHandlerService,
+    private readonly authRegistry: AuthProviderRegistry,
     @Inject(RLB_AMQP_APP_OPTIONS) private readonly appConfig: AppConfig,
     @Inject(RLB_AMQP_GATEWAY_OPTIONS) private readonly gatewayConfig: GatewayConfig,
     @Optional() @Inject(RLB_GTW_METRICS_HOOK) private readonly metricsHook?: GatewayMetricsHook,
@@ -61,6 +63,7 @@ export class HttpHandlerService implements OnModuleInit {
       if (this.dynamicRouter) return this.dynamicRouter(req, res, next);
       next();
     });
+    await this.authRegistry.reload(); // load DB auth-providers into RAM before building routes
     await this.reload();
 
     // Optional multi-instance reload: subscribe to a broadcast control topic so every
@@ -72,8 +75,16 @@ export class HttpHandlerService implements OnModuleInit {
           // Only the dedicated reload action rebuilds routes. Any other message on the control topic
           // (e.g. microservice config / route-discovery signals) is NOT a route reload and is ignored
           // here — this keeps the HTTP-forced reload decoupled from that traffic.
-          if (msg?.action && msg.action !== GW_RELOAD_ACTION) {
-            this.logger.debug(`[RELOAD] ignoring control message '${msg.action}' (not '${GW_RELOAD_ACTION}')`);
+          const action = msg?.action;
+          // Deliberate, SEPARATE auth reload: re-read DB auth-providers into RAM (no route rebuild).
+          if (action === GW_AUTH_RELOAD_ACTION) {
+            this.logger.log(`[RELOAD] '${GW_AUTH_RELOAD_ACTION}' received on '${reloadTopic}' — reloading auth-providers into RAM`);
+            await this.authRegistry.reload();
+            return;
+          }
+          // Only gw-reload (or an action-less control message) rebuilds routes; anything else is ignored.
+          if (action && action !== GW_RELOAD_ACTION) {
+            this.logger.debug(`[RELOAD] ignoring control message '${action}' (not '${GW_RELOAD_ACTION}'/'${GW_AUTH_RELOAD_ACTION}')`);
             return;
           }
           this.logger.log(`[RELOAD] '${GW_RELOAD_ACTION}' received on '${reloadTopic}' — rebuilding routes`);
@@ -343,7 +354,10 @@ export class HttpHandlerService implements OnModuleInit {
     const statusCode = statusCodeOverride ?? ERROR_STATUS[code] ?? 500;
     const message = typeof error === 'string' ? error : (error?.message ?? 'Internal server error');
     const body: { statusCode: number; code: string; message: string; details?: unknown } = { statusCode, code, message };
-    if (this.appConfig.environment !== 'production' && error?.stack) body.details = error.stack;
+    // A structured error payload (e.g. a ConflictError's conflicting routes) takes precedence; else
+    // expose the stack for debugging (non-prod only).
+    if (error?.details !== undefined) body.details = error.details;
+    else if (this.appConfig.environment !== 'production' && error?.stack) body.details = error.stack;
     (res as any).__errorCode = code; // stashed so trackMetrics can record WHICH error occurred
     res.status(statusCode).json(body);
   }

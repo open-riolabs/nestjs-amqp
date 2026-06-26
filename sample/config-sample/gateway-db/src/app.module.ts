@@ -1,11 +1,10 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { AclActionRepository, AclGrantRepository, AclModule, AclRoleRepository, AclService, AppConfig, AuthProviderRepository, BrokerModule, BrokerTopic, GatewayAdminModule, GatewayConfig, HandlerAuthConfig, HttpMetricRepository, HttpPathRepository, ProxyModule, RabbitMQConfig, RLB_ACL_CACHE_STORE, RLB_GTW_ACL_ROLE_SERVICE, RLB_GTW_METRICS_HOOK, RouteSyncLogRepository } from '@open-rlb/nestjs-amqp';
+import { AclActionRepository, AclGrantRepository, AclModule, AclRoleRepository, AclService, AppConfig, AuthProviderRepository, BrokerModule, BrokerTopic, GatewayAdminModule, GatewayConfig, HandlerAuthConfig, HttpMetricRepository, HttpPathRepository, ProxyModule, RabbitMQConfig, RLB_ACL_CACHE_STORE, RLB_GTW_ACL_ROLE_SERVICE, RLB_GTW_AUTH_PROVIDER_SOURCE, RouteSyncLogRepository } from '@open-rlb/nestjs-amqp';
 import { AppService } from './app.service';
 import { InMemoryAclStore } from './cache/in-memory-acl-store';
 import yamlConfig from './config/config.loader';
-import { InfluxMetricsHook } from './metrics/influx-metrics-hook';
 import { DatabaseModule } from './modules/database/database.module';
 import { MongoAclActionRepository } from './modules/database/repository/mongo-acl-action.repository';
 import { MongoAclGrantRepository } from './modules/database/repository/mongo-acl-grant.repository';
@@ -42,8 +41,10 @@ import { MongoRouteSyncLogRepository } from './modules/database/repository/mongo
         // In-process action gate: action-protected paths (e.g. /protected) resolve the caller's
         // grants via AclService.checkAction instead of a broker round-trip.
         { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
-        // In-proxy metrics hook → InfluxDB (no-op until INFLUX_URL/TOKEN/ORG env are set).
-        { provide: RLB_GTW_METRICS_HOOK, useClass: InfluxMetricsHook },
+        // DB auth-provider source for the runtime registry; activated by a deliberate gw-auth-reload.
+        { provide: RLB_GTW_AUTH_PROVIDER_SOURCE, useExisting: MongoAuthProviderRepository },
+        // Metric points are written to Influx by InfluxPointStore (via the broker track event,
+        // batched) — no per-request in-proxy hook, so a metrics failure can't touch the request path.
       ],
     }),
     AclModule.forRoot(

@@ -3,8 +3,8 @@ import { Request } from 'express';
 import { ProcessedAuthData } from '..';
 import { AclResourceContext } from '../../acl/auth-match';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
-import { RLB_AMQP_AUTH_OPTIONS } from '../../broker/const';
 import { PathDefinition } from '../config/path-definition.config';
+import { AuthProviderRegistry } from './auth-provider-registry.service';
 import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
 import { JwtService } from './jwt.service';
 
@@ -15,7 +15,7 @@ export class HttpAuthHandlerService {
 
   constructor(
     @Optional() @Inject(RLB_GTW_ACL_ROLE_SERVICE) private readonly aclRoleService: IAclRoleService,
-    @Inject(RLB_AMQP_AUTH_OPTIONS) private readonly authProviders: HandlerAuthConfig[],
+    private readonly registry: AuthProviderRegistry,
     private readonly jwtService: JwtService) {
   }
 
@@ -23,7 +23,7 @@ export class HttpAuthHandlerService {
 
     let out: ProcessedAuthData = { success: false };
     if (!path?.auth) return out;
-    const authConfig = this.authProviders.find(o => o.name === path.auth);
+    const authConfig = this.registry.find(path.auth);
     // Unknown provider is a misconfiguration: fail closed (success:false) instead of
     // throwing, so the request gets a predictable 401 rather than crashing the handler.
     // The mistake is surfaced loudly at boot by HttpHandlerService.registerPath().
@@ -45,7 +45,7 @@ export class HttpAuthHandlerService {
 
   /** Returns the configured auth provider by name, or undefined. */
   findProvider(name: string): HandlerAuthConfig | undefined {
-    return this.authProviders.find(o => o.name === name);
+    return this.registry.find(name);
   }
 
   /** Verifies a raw JWT against a provider, returning the decoded payload or undefined. */
@@ -190,7 +190,7 @@ export class HttpAuthHandlerService {
     // there is no userId to evaluate against the ACL. A path that enforces actions MUST declare
     // `auth` (mirrors the WebSocket event behaviour).
     if (!path?.auth) return false;
-    const authConfig = this.authProviders.find(o => o.name === path.auth);
+    const authConfig = this.registry.find(path.auth);
     if (!authConfig) {
       this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}' → denying authorization check.`);
       return false;

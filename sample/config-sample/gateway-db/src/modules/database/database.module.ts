@@ -1,5 +1,7 @@
+import { HttpModule } from '@nestjs/axios';
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { InfluxPointStore } from '../../metrics/influx-point.store';
 import { MongooseModule, MongooseModuleFactoryOptions } from '@nestjs/mongoose';
 import { stringify } from 'querystring';
 import { DATA_CONNECTION_NAME } from './connections';
@@ -14,7 +16,6 @@ import { aclActionModel, aclRoleModel } from './schema/acl-action.schema';
 import { aclGrantModel } from './schema/acl-grant.schema';
 import { authProviderModel } from './schema/auth-provider.schema';
 import { httpMetricModel } from './schema/http-metric.schema';
-import { httpMetricPointModel } from './schema/http-metric-point.schema';
 import { httpMetricRollupModel } from './schema/http-metric-rollup.schema';
 import { httpPathModel } from './schema/http-path.schema';
 import { routeSyncLogModel } from './schema/route-sync-log.schema';
@@ -33,11 +34,12 @@ export interface DatabaseConfig {
   };
 }
 
-const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel, httpMetricPointModel, httpMetricRollupModel, routeSyncLogModel];
+const MODELS = [aclActionModel, aclRoleModel, aclGrantModel, httpPathModel, authProviderModel, httpMetricModel, httpMetricRollupModel, routeSyncLogModel];
 const REPOSITORIES = [MongoAclActionRepository, MongoAclRoleRepository, MongoAclGrantRepository, MongoHttpPathRepository, MongoAuthProviderRepository, MongoHttpMetricRepository, MongoRouteSyncLogRepository];
 @Global()
 @Module({
   imports: [
+    HttpModule,
     MongooseModule.forRootAsync({
       connectionName: DATA_CONNECTION_NAME,
       imports: [ConfigModule],
@@ -45,7 +47,7 @@ const REPOSITORIES = [MongoAclActionRepository, MongoAclRoleRepository, MongoAcl
       useFactory: dbFactory,
     }),
   ],
-  providers: [...MODELS, ...REPOSITORIES],
+  providers: [...MODELS, InfluxPointStore, ...REPOSITORIES],
   exports: [...MODELS, ...REPOSITORIES]
 })
 export class DatabaseModule { }

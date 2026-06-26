@@ -403,6 +403,13 @@ gateway:
       topic: rlb-gateway-control
       action: gw-reload
       mode: event
+    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+      method: POST
+      path: /admin/auth/reload
+      dataSource: body
+      topic: rlb-gateway-control
+      action: gw-auth-reload
+      mode: event
 
     ***REMOVED*** --- PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction) ---
     ***REMOVED*** `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId

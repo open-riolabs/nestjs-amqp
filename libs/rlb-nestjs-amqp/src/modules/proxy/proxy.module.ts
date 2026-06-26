@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { HandlerAuthConfig } from '../broker/config/handler-auth.config';
 import { RLB_AMQP_AUTH_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from '../broker/const';
 import { GatewayConfig } from './config/path-definition.config';
+import { AuthProviderRegistry } from './services/auth-provider-registry.service';
 import { HttpAuthHandlerService } from './services/http-auth-handler.service';
 import { HttpHandlerService } from './services/http-handler.service';
 import { JwtService } from './services/jwt.service';
@@ -26,8 +27,8 @@ export interface ProxyModuleAsyncOptions {
 @Global()
 @Module({
   imports: [ConfigModule, HttpModule],
-  providers: [HttpHandlerService, JwtService, HttpAuthHandlerService, WebSocketService],
-  exports: [HttpHandlerService]
+  providers: [HttpHandlerService, JwtService, HttpAuthHandlerService, AuthProviderRegistry, WebSocketService],
+  exports: [HttpHandlerService, AuthProviderRegistry]
 })
 export class ProxyModule {
 

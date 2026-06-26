@@ -4,9 +4,13 @@
  * ConflictError→409, InvalidParamsErrror→400). Throw these from handlers to drive the response code.
  */
 export class BrokerHttpError extends Error {
-  constructor(message?: string) {
+  /** Optional structured payload surfaced in the unified error envelope as `details` (e.g. a
+   *  ConflictError carrying the list of conflicting routes). */
+  readonly details?: unknown;
+  constructor(message?: string, details?: unknown) {
     super(message);
     this.name = new.target.name;
+    this.details = details;
   }
 }
 

@@ -30,6 +30,7 @@ const mkService = () => {
   const gatewayConfig: any = { headerPrefix: 'X-GTW-AUTH-', paths: [], events: [] };
   const svc = new HttpHandlerService(
     {} as any, broker as any, utils as any, auth as any,
+    { reload: jest.fn() } as any, // AuthProviderRegistry (unused by registerPath/handler tests)
     { environment: 'test' } as any, gatewayConfig as any,
   );
   return { svc, broker, auth, gatewayConfig };

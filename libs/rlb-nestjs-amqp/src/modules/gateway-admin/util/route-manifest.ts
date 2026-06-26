@@ -21,6 +21,26 @@ function canonicalRoute(r: any) {
  *  content-hashing and field diffing. Persistence/ownership fields are intentionally excluded. */
 const ROUTE_FIELDS = Object.keys(canonicalRoute({}));
 
+/** Route fields a user may override via the admin WITHOUT locking the whole route. When the user
+ *  changes ONLY these, route auto-discovery keeps managing every OTHER field but PRESERVES the
+ *  user's value for these (tracked per-route in `userOverrides`). Any other field the user changes
+ *  marks the route `modified` (full lock). `enabled` is included even though it is a persistence
+ *  field (not in ROUTE_FIELDS) — the diff handles it explicitly. */
+export const USER_OVERRIDABLE_FIELDS = ['enabled', 'actions', 'allowAnonymous', 'timeout', 'redirect', 'successStatusCode'];
+
+/** Take an incoming (MS) route but KEEP the stored route's value for every CONTENT field the user
+ *  has overridden (`userOverrides`). `enabled` is skipped here (handled by the diff — it is not a
+ *  content field). Returns `incoming` unchanged when there are no content overrides. */
+export function applyUserOverrides(incoming: any, existing: any, userOverrides?: string[]): any {
+  if (!userOverrides?.length || !existing) return incoming;
+  const merged = { ...incoming };
+  for (const f of userOverrides) {
+    if (f === 'enabled') continue;
+    merged[f] = existing[f];
+  }
+  return merged;
+}
+
 /**
  * Order-independent JSON serialization: object keys are sorted recursively so two
  * semantically-equal objects (same content, different key order — e.g. `headers`) serialize

@@ -9,21 +9,28 @@ import {
   TrackCallInput,
 } from '@open-rlb/nestjs-amqp';
 import { FilterQuery, Model, Types } from 'mongoose';
-import { HTTP_METRIC_MODEL, HTTP_METRIC_POINT_MODEL, METRIC_ROLLUP_MODEL } from '../connections';
+import { InfluxPointStore } from '../../../metrics/influx-point.store';
+import { HTTP_METRIC_MODEL, METRIC_ROLLUP_MODEL } from '../connections';
 
+/**
+ * Hybrid metrics store: rolling counters (`http-metric`) and hourly rollups (`http-metric-rollup`)
+ * live in Mongo; the high-volume raw POINTS are delegated to {@link InfluxPointStore} (InfluxDB) so
+ * they stay off the application DB. The HttpMetricRepository contract is unchanged, so the gateway
+ * service / AMQP actions / HTTP routes are identical — only the points backend moved.
+ */
 @Injectable()
 export class MongoHttpMetricRepository extends HttpMetricRepository {
   private readonly logger = new Logger(MongoHttpMetricRepository.name);
 
   constructor(
     @Inject(HTTP_METRIC_MODEL) private readonly model: Model<any>,
-    @Inject(HTTP_METRIC_POINT_MODEL) private readonly pointModel: Model<any>,
     @Inject(METRIC_ROLLUP_MODEL) private readonly rollupModel: Model<any>,
+    private readonly pointStore: InfluxPointStore,
   ) {
     super();
   }
 
-  // --- rolling counters (per method+route) -----------------------------------
+  // --- rolling counters (per method+route) — Mongo ---------------------------
 
   async increment(input: TrackCallInput): Promise<void> {
     const isError = (input.status ?? 0) >= 400;
@@ -63,30 +70,21 @@ export class MongoHttpMetricRepository extends HttpMetricRepository {
     } catch (error) { this.logger.error(error); throw error; }
   }
 
-  // --- raw points / time-series ----------------------------------------------
+  // --- raw points — InfluxDB -------------------------------------------------
 
   async record(point: HttpMetricPoint): Promise<void> {
-    if (!point?.method || !point?.route) return;
-    try {
-      await this.pointModel.insertMany([{ ...point, _id: new Types.ObjectId(), ts: point.ts ?? Date.now() }]);
-    } catch (error) { this.logger.error(error); throw error; }
+    this.pointStore.record(point); // buffered, non-blocking
   }
 
   async points(query: MetricQuery): Promise<HttpMetricPoint[]> {
-    try {
-      const q = this.pointModel.find(this.buildMatch(query)).sort({ ts: -1 });
-      if (query.limit) q.limit(query.limit);
-      const data = await q.exec();
-      return data.map((o: any) => this.toPoint(o));
-    } catch (error) { this.logger.error(error); throw error; }
+    return this.pointStore.query(query);
   }
 
   async prunePoints(olderThanTs: number): Promise<number> {
-    try { return (await this.pointModel.deleteMany({ ts: { $lt: olderThanTs } }).exec()).deletedCount ?? 0; }
-    catch (error) { this.logger.error(error); throw error; }
+    return this.pointStore.prune(olderThanTs);
   }
 
-  // --- rollups (downsampled long-term aggregates) ----------------------------
+  // --- rollups (downsampled long-term aggregates) — Mongo --------------------
 
   async recordRollups(rollups: HttpMetricRollup[]): Promise<void> {
     if (!rollups?.length) return;
@@ -127,24 +125,6 @@ export class MongoHttpMetricRepository extends HttpMetricRepository {
   async pruneRollups(olderThanTs: number): Promise<number> {
     try { return (await this.rollupModel.deleteMany({ bucketStart: { $lt: olderThanTs } }).exec()).deletedCount ?? 0; }
     catch (error) { this.logger.error(error); throw error; }
-  }
-
-  /** Builds a Mongo filter from a MetricQuery: method/route/name + inclusive [from,to] ts window. */
-  private buildMatch(q: MetricQuery): FilterQuery<any> {
-    const match: FilterQuery<any> = {};
-    if (q.method) match.method = q.method;
-    if (q.route) match.route = q.route;
-    if (q.name) match.name = q.name;
-    if (q.from != null || q.to != null) {
-      match.ts = {};
-      if (q.from != null) match.ts.$gte = q.from;
-      if (q.to != null) match.ts.$lte = q.to;
-    }
-    return match;
-  }
-
-  private toPoint(raw: any): HttpMetricPoint {
-    return raw.toJSON({ flattenMaps: false, transform: (doc: any, ret: any) => { ret._id = doc?._id?.toString(); } }) as HttpMetricPoint;
   }
 
   /** Builds a rollup filter from a MetricSeriesQuery: method/route/name + inclusive [from,to] on bucketStart. */

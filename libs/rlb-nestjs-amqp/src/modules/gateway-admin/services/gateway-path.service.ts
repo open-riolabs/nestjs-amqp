@@ -7,7 +7,7 @@ import { RouteSyncLogEntry } from '../models';
 import { HttpPathRepository, StoredHttpPath } from '../repository/http-path.repository';
 import { RouteSyncLogRepository } from '../repository/route-sync-log.repository';
 import { orderPaths } from '../util/path-order';
-import { diffRouteFields, renderChanges, routeKeyOf } from '../util/route-manifest';
+import { diffRouteFields, renderChanges, routeKeyOf, USER_OVERRIDABLE_FIELDS } from '../util/route-manifest';
 
 @Injectable()
 export class GatewayPathService {
@@ -40,11 +40,14 @@ export class GatewayPathService {
 
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.pathUpdate, 'rpc')
   async update(
-    @BrokerParam('body', 'id') id: string,
-    @BrokerParam('body-full') model: StoredHttpPath,
+    @BrokerParam('body-full') body: StoredHttpPath & { id?: string; releaseOverrides?: string[] | string },
     @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
   ): Promise<StoredHttpPath> {
+    // Pull control-only keys out of the persisted model: `id`/`_id` (identity, never columns) and
+    // `releaseOverrides` (a directive to hand soft fields back to the MS, not route data).
+    const { id, _id, releaseOverrides, ...rest } = (body || {}) as any;
     if (!id) throw new BadRequestError('id is required');
+    let model: StoredHttpPath = rest;
     const existing = await this.repo.findById(id);
     // If the update changes the route identity (method+path), re-check it does not collide
     // with another existing route, and keep the routeKey in sync.
@@ -54,15 +57,31 @@ export class GatewayPathService {
       model = { ...model, routeKey };
     }
     // Diff the effective new state (existing merged with the partial body) so fields the user did
-    // NOT send are not reported as removed.
-    const changes = existing ? diffRouteFields(existing, { ...existing, ...model }) : [];
-    // A user edit marks the route as modified, so route auto-discovery skips it on the next manifest
-    // (the user's version wins) and logs it instead of overwriting.
-    const updated = await this.repo.updateById(id, { ...model, modified: true });
+    // NOT send are not reported as removed. `enabled` is a persistence field (not in diffRouteFields),
+    // so detect its flip separately and fold it into the change set for both auditing and classifying.
+    const contentChanges = existing ? diffRouteFields(existing, { ...existing, ...model }) : [];
+    const enabledChanged = !!existing && model?.enabled !== undefined && (model.enabled !== false) !== (existing.enabled !== false);
+    const changes = enabledChanged
+      ? [...contentChanges, { field: 'enabled', added: [model.enabled !== false], removed: [existing!.enabled !== false] }]
+      : contentChanges;
+
+    // Classify the changed fields: a HARD field (anything not in USER_OVERRIDABLE_FIELDS) locks the
+    // whole route (modified=true → route auto-discovery skips it); SOFT-only edits do NOT lock — the
+    // MS keeps managing the other fields, and these fields' user values are PRESERVED (userOverrides).
+    const changedFields = changes.map((c) => c.field);
+    const changedHard = changedFields.filter((f) => !USER_OVERRIDABLE_FIELDS.includes(f));
+    const changedSoft = changedFields.filter((f) => USER_OVERRIDABLE_FIELDS.includes(f));
+    const released = Array.isArray(releaseOverrides) ? releaseOverrides : releaseOverrides ? [releaseOverrides] : [];
+    const overrides = new Set<string>([...(existing?.userOverrides || []), ...changedSoft]);
+    for (const f of released) overrides.delete(f); // reset a single override → MS resumes that field
+    const userOverrides = [...overrides];
+    const modified = changedHard.length > 0 ? true : !!existing?.modified;
+
+    const updated = await this.repo.updateById(id, { ...model, modified, userOverrides });
     const actor = currentUser ?? 'unknown';
     const rendered = renderChanges(changes);
     await this.journal({ service: updated?.owner ?? existing?.owner ?? 'manual', actor, level: 'info', event: 'updated', routeKey: updated?.routeKey ?? existing?.routeKey, method: updated?.method ?? existing?.method, path: updated?.path ?? existing?.path, changes, message: rendered });
-    this.logger.log(`[gw-path] ${actor} updated '${updated?.routeKey ?? existing?.routeKey}'${rendered ? ` → ${rendered}` : ''}`);
+    this.logger.log(`[gw-path] ${actor} updated '${updated?.routeKey ?? existing?.routeKey}'${modified ? ' [locked]' : userOverrides.length ? ` [overrides: ${userOverrides.join(',')}]` : ''}${rendered ? ` → ${rendered}` : ''}`);
     return updated;
   }
 

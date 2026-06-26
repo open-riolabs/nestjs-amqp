@@ -1,7 +1,7 @@
 import { PathDefinition } from '../../proxy/config/path-definition.config';
 import { RouteFieldChange } from '../models';
 import { StoredHttpPath } from '../repository/http-path.repository';
-import { diffRouteFields, isValidRoute, routeContent, routeKeyOf } from './route-manifest';
+import { applyUserOverrides, diffRouteFields, isValidRoute, routeContent, routeKeyOf } from './route-manifest';
 
 export interface RouteDiff {
   /** Routes to insert/update for this service. `added` = true when it is a new row; `changes`
@@ -51,16 +51,23 @@ export function diffRoutes(
     }
 
     const ex = existingByKey.get(key);
-    // A user-edited route (modified=true) is locked: the user's version wins, so the manifest never
-    // overwrites it. Surface it for an info log instead of upserting.
+    // A fully user-edited route (modified=true, i.e. a HARD-field change) is locked: the user's
+    // version wins, so the manifest never overwrites it. Surface it for an info log.
     if (ex && ex.modified === true) { diff.skipped.push({ routeKey: key, method: r.method, path: r.path }); continue; }
-    if (ex && ex.enabled !== false && routeContent(ex) === routeContent(r)) continue; // unchanged
+    // Soft per-field overrides: keep the user's value for the fields they changed (userOverrides),
+    // let the MS own every other field. `enabled` is handled here (not a content field): if the user
+    // overrode it, keep the stored state (e.g. left OFF); otherwise the MS (re)enables the route.
+    const overrides = ex?.userOverrides || [];
+    const merged = applyUserOverrides(r, ex, overrides);
+    const exEnabled = ex ? ex.enabled !== false : true;
+    const newEnabled = overrides.includes('enabled') ? exEnabled : true;
+    if (ex && newEnabled === exEnabled && routeContent(merged) === routeContent(ex)) continue; // unchanged
     diff.upserts.push({
       routeKey: key,
       existingId: ex?._id,
       added: !ex,
-      model: { ...r, owner: service, routeKey: key, enabled: true, source: 'microservice', modified: false },
-      changes: ex ? diffRouteFields(ex, r) : undefined,
+      model: { ...merged, owner: service, routeKey: key, enabled: newEnabled, source: 'microservice', modified: false, userOverrides: overrides },
+      changes: ex ? diffRouteFields(ex, merged) : undefined,
     });
   }
 

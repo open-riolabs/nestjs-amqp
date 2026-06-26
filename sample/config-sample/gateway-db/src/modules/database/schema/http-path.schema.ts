@@ -32,6 +32,10 @@ const HttpPathSchema = new mongoose.Schema({
   // user has edited an auto-discovered row (so the route-sync can skip overwriting it).
   source: String,
   modified: Boolean,
+  // Soft per-field user overrides (subset of enabled/actions/allowAnonymous/timeout/redirect/
+  // successStatusCode): route auto-discovery preserves these fields' user values while still
+  // updating every other field. Released per-field via gw-path-update `releaseOverrides`.
+  userOverrides: [String],
 });
 
 // Exported for tests.

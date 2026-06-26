@@ -20,6 +20,7 @@ import {
   RabbitMQConfig,
   RLB_ACL_CACHE_STORE,
   RLB_GTW_ACL_ROLE_SERVICE,
+  RLB_GTW_AUTH_PROVIDER_SOURCE,
   RLB_GTW_METRICS_HOOK,
   RouteSyncLogRepository,
 } from '@open-rlb/nestjs-amqp';
@@ -64,6 +65,8 @@ import { RouteDiscoveryDemoService } from './samples/route-discovery-demo.servic
       }),
       providers: [
         { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
+        // DB auth-provider source for the runtime registry; activated by a deliberate gw-auth-reload.
+        { provide: RLB_GTW_AUTH_PROVIDER_SOURCE, useExisting: InMemoryAuthProviderRepository },
         // Example in-proxy metrics hook → InfluxDB (no-op until INFLUX_URL/TOKEN/ORG env are set).
         { provide: RLB_GTW_METRICS_HOOK, useClass: InfluxMetricsHook },
       ],

@@ -18,18 +18,33 @@ export class JwtService implements OnModuleInit {
 
   onModuleInit() {
     for (const cfg of this.authConfig || []) {
-      if (cfg.type === "jwks") {
-        this.jwksClients[cfg.name] = new JwksClient({
-          jwksUri: cfg.jwksUri,
-          cache: true,
-          rateLimit: true,
-          jwksRequestsPerMinute: 10,
-          requestAgent: new Agent({ rejectUnauthorized: cfg.httpsAllowUnauthorized !== true })
-        });
-      }
+      this.jwksClientFor(cfg); // pre-build YAML JWKS clients (DB providers build lazily on first use)
       // Fail-fast visibility for insecure / incomplete provider configs.
       this.validateProviderConfig(cfg);
     }
+  }
+
+  /** Lazily build + cache the JWKS client for a provider, so DB-added providers work without a
+   *  restart. Returns undefined for non-jwks providers / those missing a jwksUri. */
+  private jwksClientFor(cfg: HandlerAuthConfig): JwksClient | undefined {
+    if (cfg?.type !== 'jwks' || !cfg.jwksUri) return undefined;
+    let client = this.jwksClients[cfg.name];
+    if (!client) {
+      client = new JwksClient({
+        jwksUri: cfg.jwksUri,
+        cache: true,
+        rateLimit: true,
+        jwksRequestsPerMinute: 10,
+        requestAgent: new Agent({ rejectUnauthorized: cfg.httpsAllowUnauthorized !== true }),
+      });
+      this.jwksClients[cfg.name] = client;
+    }
+    return client;
+  }
+
+  /** Drop all cached JWKS clients so a reload picks up changed jwksUri/config. */
+  resetClients(): void {
+    for (const k of Object.keys(this.jwksClients)) delete this.jwksClients[k];
   }
 
   /** Logs misconfigurations that would otherwise fail silently or fail-open. */
@@ -88,8 +103,9 @@ export class JwtService implements OnModuleInit {
       this.logger.warn("No auth config provided for JWT verification");
       return Promise.resolve(undefined);
     }
-    if (!this.jwksClients[authConfig.name]) {
-      this.logger.warn(`No jwks client found for ${authConfig.name}`);
+    const client = this.jwksClientFor(authConfig);
+    if (!client) {
+      this.logger.warn(`No jwks client for ${authConfig.name} (missing jwksUri?)`);
       return Promise.resolve(undefined);
     }
 
@@ -105,7 +121,7 @@ export class JwtService implements OnModuleInit {
 
       verify(token,
         (header: JwtHeader, callback: SigningKeyCallback) => {
-          this.jwksClients[authConfig.name].getSigningKey(header.kid, (err, key) => {
+          client.getSigningKey(header.kid, (err, key) => {
             if (err) {
               this.logger.error(`[JWKS] [${authConfig.name}] Error getting signing key`, err);
               callback(err);

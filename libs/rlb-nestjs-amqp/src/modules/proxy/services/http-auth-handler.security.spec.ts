@@ -9,7 +9,7 @@ jest.mock('jwks-rsa', () => ({
 
 import { HttpAuthHandlerService } from './http-auth-handler.service';
 
-const make = () => new HttpAuthHandlerService(undefined as any, [], {} as any);
+const make = () => new HttpAuthHandlerService(undefined as any, { find: () => undefined } as any, {} as any);
 const req = (authorization?: string) => ({ headers: { authorization } } as any);
 const basic = (u: string, p: string) => 'Basic ' + Buffer.from(`${u}:${p}`).toString('base64');
 
@@ -72,7 +72,7 @@ describe('HttpAuthHandlerService — auth checks', () => {
 
 const provider = { name: 'p', type: 'jwks', uidClaim: 'USERID', headerPrefix: 'X-GTW-AUTH-' } as any;
 const makeWithAcl = (acl: any, providers: any[] = [provider]) =>
-  new HttpAuthHandlerService(acl, providers as any, {} as any);
+  new HttpAuthHandlerService(acl, { find: (n: string) => providers.find((p) => p.name === n) } as any, {} as any);
 
 describe('HttpAuthHandlerService — action-based ACL (checkActions, HTTP path)', () => {
   const path = (over: any = {}) => ({ auth: 'p', actions: ['admin'], ...over } as any);

@@ -269,6 +269,13 @@ gateway:
       topic: rlb-gateway-control
       action: gw-reload
       mode: event
+    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+      method: POST
+      path: /admin/auth/reload
+      dataSource: body
+      topic: rlb-gateway-control
+      action: gw-auth-reload
+      mode: event
 
   ***REMOVED*** Load DB-stored routes (in addition to gateway.paths above) on boot and on
   ***REMOVED*** every reload by pointing loadConfig.paths at the gw-path-export responder.

@@ -88,4 +88,39 @@ describe('diffRoutes', () => {
     expect(d.upserts[0].changes).toEqual([{ field: 'actions', added: ['admin'], removed: [] }]);
     expect(diffRoutes('svc', [route()], [], new Map()).upserts[0].changes).toBeUndefined();
   });
+
+  // --- soft per-field user overrides (userOverrides) -------------------------------
+  it('preserves a user-overridden field (timeout) while still applying the MS change to other fields', () => {
+    const r = route({ action: 'a2', timeout: 1000 });   // MS changed action AND timeout
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), userOverrides: ['timeout'], ...route({ action: 'a1', timeout: 9000 }) };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts).toHaveLength(1);
+    expect(d.upserts[0].model.action).toBe('a2');   // MS change applied
+    expect(d.upserts[0].model.timeout).toBe(9000);  // user override preserved
+    expect(d.upserts[0].model.userOverrides).toEqual(['timeout']);
+  });
+
+  it('does NOT upsert when the MS changes ONLY a user-overridden field', () => {
+    const r = route({ timeout: 1000 });
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), userOverrides: ['timeout'], ...route({ timeout: 9000 }) };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts).toHaveLength(0);
+    expect(d.changed).toBe(false);
+  });
+
+  it('keeps a user-disabled route OFF (enabled override) while applying MS content changes', () => {
+    const r = route({ action: 'a2' });
+    const ex = { _id: '1', owner: 'svc', enabled: false, routeKey: routeKeyOf(r), userOverrides: ['enabled'], ...route({ action: 'a1' }) };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts).toHaveLength(1);
+    expect(d.upserts[0].model.enabled).toBe(false);  // stays OFF (user override)
+    expect(d.upserts[0].model.action).toBe('a2');    // MS change applied
+  });
+
+  it('does NOT re-enable a user-disabled route (enabled override) when nothing else changed', () => {
+    const r = route();
+    const ex = { _id: '1', owner: 'svc', enabled: false, routeKey: routeKeyOf(r), userOverrides: ['enabled'], ...r };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts).toHaveLength(0);
+  });
 });

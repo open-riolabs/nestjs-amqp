@@ -3,60 +3,131 @@ app:
   host: 0.0.0.0
   environment: "development"
 
-***REMOVED*** MongoDB connection. DatabaseModule.dbFactory builds the connection URI from these fields. For a
-***REMOVED*** local single-node dev Mongo, auth:false is enough. For an authenticated cluster / replica set,
-***REMOVED*** set auth:true, fill user/password, list every host (host accepts a single string OR an array),
-***REMOVED*** and add options.replicaSet / options.authSource as needed.
 data-mongodb:
   protocol: mongodb
-  host: localhost:27017
-  user: REPLACE_ME
-  password: REPLACE_ME
-  database: amqp-gateway
-  auth: false
+  host:
+    - REDACTED-MONGO-HOST:27018
+    - REDACTED-MONGO-HOST:27019
+    - REDACTED-MONGO-HOST:27020
+  user: REDACTED-MONGO-USER
+  password: REDACTED-MONGO-PASSWORD
+  database: tfr-gateway
+  auth: true
   options:
+    replicaSet: rs0
     authSource: admin
     readPreference: primary
 
-***REMOVED*** Time-series sink for the in-proxy metrics hook (InfluxMetricsHook). Read from here like every
-***REMOVED*** other setting (no env vars). No-op until url+token+org are ALL set — leave token/org blank to
-***REMOVED*** keep the gateway booting without an InfluxDB instance.
 influx:
-  url: http://localhost:8086
-  token:
-  org:
-  bucket: gateway
+  url: https://REDACTED-INFLUX-HOST
+  token: REDACTED-INFLUX-TOKEN
+  org: sicily-action
+  orgID: e6cef0c3225ee70d
+  bucket: gtw-test
 
 auth-providers:
-  - name: gateway-jwks
+  - name: transfeero-affiliate-jwks
     type: jwks
     jwtMap:
       - sub:userId
       - email:email
-      - preferred_username:username
       - roles:roles
+      - name:name
+      - username:username
     rolesClaim: roles
     headerPrefix: "X-GTW-AUTH-"
-    ***REMOVED*** uidClaim = the mapped header SUFFIX that carries the user id (jwtMap sub:userId →
-    ***REMOVED*** X-GTW-AUTH-USERID). Required by the in-process action gate to identify the caller; without
-    ***REMOVED*** it, actions-protected paths fail closed (403). Replaces the old `usernameClaim`.
-    uidClaim: USERID
     outProp: $auth
-    issuer: https://auth.example.com/realms/demo
-    tokenUrl: https://auth.example.com/realms/demo/protocol/openid-connect/token
-    jwksUri: https://auth.example.com/realms/demo/protocol/openid-connect/certs
+    issuer: https://login.transfeero.com/realms/transfeero-dev
+    tokenUrl: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/certs
     algorithms:
       - RS256
     clientId: admin
-    ***REMOVED***clientSecret:
-    ***REMOVED***audience:
     scopes:
       - openid
       - profile
+  - name: transfeero-admin-jwks
+    type: jwks
+    jwtMap:
+      - sub:userId
+      - email:email
+      - roles:roles
+      - name:name
+      - username:username
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    issuer: https://login.transfeero.com/realms/transfeero-dev
+    tokenUrl: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/certs
+    algorithms:
+      - RS256
+    clientId: admin
+    scopes:
+      - openid
+      - profile
+  - name: transfeero-customer-jwks
+    type: jwks
+    jwtMap:
+      - sub:userId
+      - email:email
+      - roles:roles
+      - name:name
+      - username:username
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    issuer: https://login.transfeero.com/realms/transfeero-dev
+    tokenUrl: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/certs
+    algorithms:
+      - RS256
+    clientId: admin
+    scopes:
+      - openid
+      - profile
+  - name: transfeero-partner-jwks
+    type: jwks
+    jwtMap:
+      - sub:userId
+      - email:email
+      - roles:roles
+      - name:name
+      - username:username
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    issuer: https://login.transfeero.com/realms/transfeero-dev
+    tokenUrl: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/token
+    jwksUri: https://login.transfeero.com/realms/transfeero-dev/protocol/openid-connect/certs
+    algorithms:
+      - RS256
+    clientId: admin
+    scopes:
+      - openid
+      - profile
+  - name: transfeero-int-cmp-1
+    type: str-compare
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    secret: your-secret
+  - name: transfeero-nino-key
+    type: str-compare
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    secret: REDACTED-AUTH-SECRET-NINO
+  - name: transfeero-nino-partner-verify-key
+    type: str-compare
+    rolesClaim: roles
+    headerPrefix: "X-GTW-AUTH-"
+    outProp: $auth
+    secret: REDACTED-AUTH-SECRET-NINO-PARTNER
 
 broker:
   name: "rabbitmq"
-  uri: "amqp://localhost:5672/"
+  uri: "amqp://REDACTED-AMQP-HOST:5672/"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
@@ -70,69 +141,190 @@ broker:
         username: guest
         password: guest
   exchanges:
-    - name: rlb
+    - name: tfr-gateway
       type: direct
       createExchangeIfNotExists: true
       options:
         durable: true
 
   queues:
-    ***REMOVED*** Queue consumed by the ACL backend handlers (AclService / AclManagementService).
     - name: rlb-acl
-      exchange: rlb
+      exchange: tfr-gateway
       routingKey: rlb-acl
       createQueueIfNotExists: true
       options:
         durable: true
-    ***REMOVED*** Queue consumed by the gateway-admin backend handlers.
     - name: rlb-gateway-admin
-      exchange: rlb
+      exchange: tfr-gateway
       routingKey: rlb-gateway-admin
       createQueueIfNotExists: true
       options:
         durable: true
-    ***REMOVED*** Queue for the route-discovery demo microservice (RouteDiscoveryDemoService).
-    - name: demo-ms
-      exchange: rlb
-      routingKey: demo-ms
-      createQueueIfNotExists: true
-      options:
-        durable: true
-
-  ***REMOVED*** replyQueues:
-  ***REMOVED***   rlb: rlb-reply
 
 topics:
-  ***REMOVED*** Topic the @BrokerAction handlers of the ACL module bind to (ACL_TOPIC = 'rlb-acl').
   - name: rlb-acl
     mode: rpc
     queue: rlb-acl
-    exchange: rlb
+    exchange: tfr-gateway
     routingKey: rlb-acl
-  ***REMOVED*** Topic the gateway-admin handlers bind to (GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin').
   - name: rlb-gateway-admin
     mode: rpc
     queue: rlb-gateway-admin
-    exchange: rlb
+    exchange: tfr-gateway
     routingKey: rlb-gateway-admin
-  ***REMOVED*** Broadcast control topic: the gateway subscribes (per-instance queue) and rebuilds its
-  ***REMOVED*** Express routes at runtime when a message arrives. A direct exchange + same routingKey
-  ***REMOVED*** fans out to every instance's queue (each instance needs a distinct connection_name).
-  - name: rlb-gateway-control
+  - name: tfr-gateway-control
     mode: broadcast
-    exchange: rlb
-    routingKey: rlb-gateway-control
-  ***REMOVED*** Topic the route-discovery demo microservice binds its @BrokerAction handlers to.
-  - name: demo-ms
+    exchange: tfr-gateway
+    routingKey: tfr-gateway-control
+
+  - name: debug
+    queue: debug
+    exchange: debug
+    routingKey: debug
     mode: rpc
-    queue: demo-ms
-    exchange: rlb
-    routingKey: demo-ms
+  - name: rlb-drive
+    exchange: rlb-drive
+    routingKey: rlb-drive
+    queue: rlb-drive
+    mode: rpc
+  - name: rlb-gateway
+    exchange: tfr-gateway
+    routingKey: rlb-gateway
+    queue: rlb-gateway
+    mode: rpc
+  - name: billing
+    queue: billing
+    exchange: billing
+    routingKey: billing
+    mode: rpc
+  - name: logger
+    queue: logger
+    exchange: logger
+    routingKey: logger
+    mode: rpc
+  - name: airlabs
+    queue: airlabs
+    exchange: booking
+    routingKey: airlabs
+    mode: rpc
+  - name: pricing
+    queue: pricing
+    exchange: pricing
+    routingKey: pricing
+    mode: rpc
+  - name: booking
+    queue: booking
+    exchange: booking
+    routingKey: booking
+    mode: rpc
+  - name: autocomplete
+    queue: autocomplete
+    exchange: booking
+    routingKey: autocomplete
+    mode: rpc
+  - name: customer
+    queue: customer
+    exchange: booking
+    routingKey: customer
+    mode: rpc
+  - name: airports
+    queue: airports
+    exchange: booking
+    routingKey: airports
+    mode: rpc
+  - name: review
+    queue: review
+    exchange: review
+    routingKey: review
+    mode: rpc
+  - name: no-show
+    queue: no-show
+    exchange: no-show
+    routingKey: no-show
+    mode: rpc
+  - name: payment
+    queue: payment
+    exchange: payment
+    routingKey: payment
+    mode: rpc
+  - name: template
+    queue: template
+    exchange: template
+    routingKey: template
+    mode: rpc
+  - name: debug
+    queue: debug
+    exchange: debug
+    routingKey: debug
+    mode: rpc
+  - name: cloud-files
+    queue: cloud-files
+    exchange: cloud-files
+    routingKey: cloud-files
+    mode: rpc
+  - name: phone
+    queue: phone
+    exchange: phone
+    routingKey: phone
+    mode: rpc
+  - name: partners
+    queue: partners
+    exchange: partners
+    routingKey: partners
+    mode: rpc
+  - name: administrative
+    queue: administrative
+    exchange: administrative
+    routingKey: administrative
+    mode: rpc
+  - name: payouts
+    queue: payouts
+    exchange: payouts
+    routingKey: payouts
+    mode: rpc
+  - name: gtw-auth
+    queue: gtw
+    exchange: gtw
+    routingKey: gtw-auth
+    mode: rpc
+  - name: versioning
+    queue: versioning
+    exchange: versioning
+    routingKey: versioning
+    mode: rpc
+  - name: tfr-drive
+    queue: tfr-drive
+    exchange: tfr-drive
+    routingKey: tfr-drive
+    mode: rpc
+  - name: tlc
+    queue: tlc
+    exchange: tlc
+    routingKey: tlc
+    mode: rpc
+  - name: hardware-monitor
+    queue: hardware-monitor
+    exchange: hardware-monitor
+    routingKey: hardware-monitor
+    mode: rpc
+  - name: converter
+    queue: converter
+    exchange: rpc.tfr.converter
+    routingKey: converter
+    mode: rpc
 
 gateway:
   mode: gateway
+  reloadTopic: tfr-gateway-control
+  loadConfig:
+    paths:
+      topic: rlb-gateway-admin
+      action: gw-path-export
+  metrics:
+    topic: rlb-gateway-admin
+    action: gw-metrics-track
+
   paths:
-    ***REMOVED*** --- health ---
     - name: health
       method: GET
       path: /health
@@ -141,7 +333,6 @@ gateway:
       action: gw-health
       mode: rpc
 
-    ***REMOVED*** --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
     - name: acl-action-list
       method: GET
       path: /acl/actions
@@ -149,36 +340,39 @@ gateway:
       topic: rlb-acl
       action: acl-action-list
       mode: rpc
-    - name: acl-action-get ***REMOVED*** query: ?name=
+      auth: transfeero-admin-jwks
+    - name: acl-action-get
       method: GET
       path: /acl/actions/get
       dataSource: query
       topic: rlb-acl
       action: acl-action-get
       mode: rpc
-    - name: acl-action-upsert ***REMOVED*** PUT creates-or-updates by name. body: { name, description? }
+      auth: transfeero-admin-jwks
+    - name: acl-action-upsert
       method: PUT
       path: /acl/actions
       dataSource: body
       topic: rlb-acl
       action: acl-action-update
       mode: rpc
-    - name: acl-action-delete ***REMOVED*** body: { name }
+      auth: transfeero-admin-jwks
+    - name: acl-action-delete
       method: DELETE
       path: /acl/actions
       dataSource: body
       topic: rlb-acl
       action: acl-action-delete
       mode: rpc
-    - name: acl-action-search ***REMOVED*** query: ?q=&limit=
+      auth: transfeero-admin-jwks
+    - name: acl-action-search
       method: GET
       path: /acl/actions/search
       dataSource: query
       topic: rlb-acl
       action: acl-action-search
       mode: rpc
-
-    ***REMOVED*** --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
+      auth: transfeero-admin-jwks
     - name: acl-role-list
       method: GET
       path: /acl/roles
@@ -186,36 +380,39 @@ gateway:
       topic: rlb-acl
       action: acl-role-list
       mode: rpc
-    - name: acl-role-get ***REMOVED*** query: ?name=
+      auth: transfeero-admin-jwks
+    - name: acl-role-get
       method: GET
       path: /acl/roles/get
       dataSource: query
       topic: rlb-acl
       action: acl-role-get
       mode: rpc
-    - name: acl-role-upsert ***REMOVED*** PUT creates-or-updates by name. body: { name, actions, description? }
+      auth: transfeero-admin-jwks
+    - name: acl-role-upsert
       method: PUT
       path: /acl/roles
       dataSource: body
       topic: rlb-acl
       action: acl-role-update
       mode: rpc
-    - name: acl-role-delete ***REMOVED*** body: { name }
+      auth: transfeero-admin-jwks
+    - name: acl-role-delete
       method: DELETE
       path: /acl/roles
       dataSource: body
       topic: rlb-acl
       action: acl-role-delete
       mode: rpc
-    - name: acl-role-search ***REMOVED*** query: ?q=&limit=
+      auth: transfeero-admin-jwks
+    - name: acl-role-search
       method: GET
       path: /acl/roles/search
       dataSource: query
       topic: rlb-acl
       action: acl-role-search
       mode: rpc
-
-    ***REMOVED*** --- ACL grants (per-user; resourceId optional) ---
+      auth: transfeero-admin-jwks
     - name: acl-grant
       method: POST
       path: /acl/grants
@@ -223,6 +420,7 @@ gateway:
       topic: rlb-acl
       action: acl-grant
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: acl-revoke
       method: DELETE
       path: /acl/grants
@@ -230,18 +428,15 @@ gateway:
       topic: rlb-acl
       action: acl-revoke
       mode: rpc
-    - name: acl-grant-search ***REMOVED*** query: ?q=&limit=
+      auth: transfeero-admin-jwks
+    - name: acl-grant-search
       method: GET
       path: /acl/grants/search
       dataSource: query
       topic: rlb-acl
       action: acl-grant-search
       mode: rpc
-
-    ***REMOVED*** ACL check {userId, action, companyId?, resourceId?}. checkAction: true if the user holds
-    ***REMOVED*** `action` via any role on the EXACT (companyId, resourceId); both ids absent ⇒ resource-less
-    ***REMOVED*** grants only (no wildcard). A read → GET; query: ?userId=&action=role-management&companyId=&resourceId=
-    ***REMOVED*** Returns 200 with `true`/`false` (no longer an empty 204 on the negative case).
+      auth: transfeero-admin-jwks
     - name: acl-check-action
       method: GET
       path: /acl/check
@@ -249,7 +444,7 @@ gateway:
       topic: rlb-acl
       action: acl-check-action
       mode: rpc
-
+      auth: transfeero-admin-jwks
     - name: acl-list-resources-by-user
       method: GET
       path: /acl/resources
@@ -257,13 +452,7 @@ gateway:
       topic: rlb-acl
       action: acl-list-resources-by-user
       mode: rpc
-      auth: gateway-jwks
-
-    ***REMOVED*** PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction).
-    ***REMOVED*** `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId
-    ***REMOVED*** from the token, extracts the request's (companyId, resourceId), and passes if the user
-    ***REMOVED*** holds AT LEAST ONE of these actions on that (companyId, resourceId). With no companyId/
-    ***REMOVED*** resourceId on the request, a resource-less grant of one of these actions is required.
+      auth: transfeero-admin-jwks
     - name: protected-resource
       method: GET
       path: /protected
@@ -271,8 +460,8 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-get
       mode: rpc
-      auth: gateway-jwks
-      actions: [gateway-access]
+      auth: transfeero-admin-jwks
+      roles: [user, admin]
 
     - name: gw-path-create
       method: POST
@@ -281,6 +470,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-create
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-path-list
       method: GET
       path: /admin/paths
@@ -288,13 +478,15 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
-    - name: gw-path-search ***REMOVED*** query: ?q=&limit=
+      auth: transfeero-admin-jwks
+    - name: gw-path-search
       method: GET
       path: /admin/paths/search
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-path-search
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-path-export
       method: GET
       path: /admin/paths/export
@@ -302,20 +494,23 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-export
       mode: rpc
-    - name: gw-path-update ***REMOVED*** body: { id, name, method, path, topic, action, mode, ... }
+      auth: transfeero-admin-jwks
+    - name: gw-path-update
       method: PUT
       path: /admin/paths
       dataSource: body
       topic: rlb-gateway-admin
       action: gw-path-update
       mode: rpc
-    - name: gw-path-get ***REMOVED*** query: ?id=
+      auth: transfeero-admin-jwks
+    - name: gw-path-get
       method: GET
       path: /admin/paths/get
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-path-get
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-path-delete
       method: DELETE
       path: /admin/paths
@@ -323,7 +518,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
-    ***REMOVED*** Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
+      auth: transfeero-admin-jwks
     - name: gw-route-log-list
       method: GET
       path: /admin/route-log
@@ -331,13 +526,15 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-route-log-list
       mode: rpc
-    - name: gw-route-log-search ***REMOVED*** ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+      auth: transfeero-admin-jwks
+    - name: gw-route-log-search
       method: GET
       path: /admin/route-log/search
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-route-log-search
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-auth-list
       method: GET
       path: /admin/auth
@@ -345,27 +542,31 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-auth-list
       mode: rpc
-    - name: gw-auth-search ***REMOVED*** query: ?q=&limit=
+      auth: transfeero-admin-jwks
+    - name: gw-auth-search
       method: GET
       path: /admin/auth/search
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-search
       mode: rpc
-    - name: gw-auth-upsert ***REMOVED*** PUT creates-or-updates by name. body: { name, type, ... }
+      auth: transfeero-admin-jwks
+    - name: gw-auth-upsert
       method: PUT
       path: /admin/auth
       dataSource: body
       topic: rlb-gateway-admin
       action: gw-auth-update
       mode: rpc
-    - name: gw-auth-get ***REMOVED*** query: ?name=
+      auth: transfeero-admin-jwks
+    - name: gw-auth-get
       method: GET
       path: /admin/auth/get
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-get
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-auth-delete
       method: DELETE
       path: /admin/auth
@@ -373,6 +574,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-auth-delete
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-metrics-get
       method: GET
       path: /admin/metrics
@@ -380,7 +582,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-get
       mode: rpc
-    ***REMOVED*** Time-series: bucketed aggregates. query: ?bucketMs=60000&from=&to=&method=&route=&name=
+      auth: transfeero-admin-jwks
     - name: gw-metrics-series
       method: GET
       path: /admin/metrics/series
@@ -388,7 +590,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-series
       mode: rpc
-    ***REMOVED*** Raw data points (newest first). query: ?method=&route=&from=&to=&limit=
+      auth: transfeero-admin-jwks
     - name: gw-metrics-points
       method: GET
       path: /admin/metrics/points
@@ -396,7 +598,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-points
       mode: rpc
-    ***REMOVED*** Dashboard overview: totals, percentiles, status breakdown, top-N routes.
+      auth: transfeero-admin-jwks
     - name: gw-metrics-summary
       method: GET
       path: /admin/metrics/summary
@@ -404,7 +606,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-summary
       mode: rpc
-    ***REMOVED*** Prometheus exposition text — returned raw (text/plain), not JSON-wrapped.
+      auth: transfeero-admin-jwks
     - name: gw-metrics-prometheus
       method: GET
       path: /admin/metrics/prometheus
@@ -412,9 +614,9 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-prometheus
       mode: rpc
+      auth: transfeero-admin-jwks
       headers:
         Content-Type: text/plain; version=0.0.4
-    ***REMOVED*** Persisted downsampled rollup series. query: ?granularityMs=&from=&to=&method=&route=
     - name: gw-metrics-rollups
       method: GET
       path: /admin/metrics/rollups
@@ -422,6 +624,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-metrics-rollups
       mode: rpc
+      auth: transfeero-admin-jwks
     - name: gw-metrics-track
       method: POST
       path: /admin/metrics/track
@@ -433,19 +636,17 @@ gateway:
       method: POST
       path: /admin/reload
       dataSource: body
-      topic: rlb-gateway-control
+      topic: tfr-gateway-control
       action: gw-reload
       mode: event
-
-  loadConfig:
-    paths:
-      topic: rlb-gateway-admin
-      action: gw-path-export
-
-  reloadTopic: rlb-gateway-control
-
-  metrics:
-    topic: rlb-gateway-admin
-    action: gw-metrics-track
+      auth: transfeero-admin-jwks
+    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+      method: POST
+      path: /admin/auth/reload
+      dataSource: body
+      topic: tfr-gateway-control
+      action: gw-auth-reload
+      mode: event
+      auth: transfeero-admin-jwks
 
   events: []

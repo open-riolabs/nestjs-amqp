@@ -13,6 +13,10 @@ export const RLB_BROKER_PARAM_METADATA_KEY = 'rlb-broker:param';
  *  everything except this action, so an HTTP-forced reload stays decoupled from that traffic. */
 export const GW_RELOAD_ACTION = 'gw-reload';
 
+/** Deliberate, SEPARATE control action that reloads the DB auth-providers into RAM (activating UI
+ *  changes). Independent of GW_RELOAD_ACTION (routes) and never auto-fired on auth CRUD. */
+export const GW_AUTH_RELOAD_ACTION = 'gw-auth-reload';
+
 /** Route auto-discovery (a microservice announces its HTTP routes to the gateway). */
 export const RLB_ROUTE_DISCOVERY_OPTIONS = 'RLB_ROUTE_DISCOVERY_OPTIONS';
 /** Dedicated durable exchange microservices publish their route manifests to. */

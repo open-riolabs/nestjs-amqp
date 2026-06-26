@@ -11,9 +11,15 @@ export type StoredHttpPath = Partial<PathDefinition> & {
   routeKey?: string;
   /** How the route was created: 'microservice' (route auto-discovery) or 'user' (manual admin CRUD). */
   source?: 'microservice' | 'user';
-  /** Set true once a user edits the route. Route auto-discovery then SKIPS it (the user's version
-   *  wins) instead of overwriting, and logs it (info). Only meaningful for 'microservice' routes. */
+  /** Set true once a user edits a HARD field. Route auto-discovery then SKIPS the whole route (the
+   *  user's version wins) instead of overwriting, and logs it (info). Only meaningful for
+   *  'microservice' routes. */
   modified?: boolean;
+  /** Soft per-field user overrides: the subset of USER_OVERRIDABLE_FIELDS (enabled, actions,
+   *  allowAnonymous, timeout, redirect, successStatusCode) the user changed via the admin WITHOUT
+   *  locking the route. Route auto-discovery preserves these fields' values while still updating
+   *  every other field. Released per-field by passing `releaseOverrides` to gw-path-update. */
+  userOverrides?: string[];
 };
 
 /** Repository contract for stored HTTP gateway paths. Implemented by the consuming app. */

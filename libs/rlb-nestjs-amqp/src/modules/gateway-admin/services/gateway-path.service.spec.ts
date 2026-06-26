@@ -21,16 +21,37 @@ describe('GatewayPathService — user CRUD audit (actor + changes)', () => {
     expect(logs.insert).toHaveBeenCalledWith(expect.objectContaining({ actor: 'user-1', event: 'created', routeKey: 'GET /x' }));
   });
 
-  it('update: marks modified, journals event=updated, and the changes diff reflects existing-vs-merged', async () => {
+  it('update: a SOFT field (actions) does NOT lock — modified stays false, tracked in userOverrides; changes reflect existing-vs-merged', async () => {
     const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', actions: ['admin'], timeout: 5000, owner: 'svc', routeKey: 'GET /x' };
     const repo = mkRepo({ findById: jest.fn(async () => existing) });
     const logs = mkLogs();
     // Partial body: only `actions` is sent; `timeout` must NOT appear as removed.
-    await new GatewayPathService(repo, logs).update('g1', { actions: ['booking-read'] } as any, 'user-2');
-    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: true }));
+    await new GatewayPathService(repo, logs).update({ id: 'g1', actions: ['booking-read'] } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: false, userOverrides: ['actions'] }));
     const entry = logs.insert.mock.calls[0][0];
     expect(entry).toMatchObject({ actor: 'user-2', event: 'updated', routeKey: 'GET /x' });
     expect(entry.changes).toEqual([{ field: 'actions', added: ['booking-read'], removed: ['admin'] }]);
+  });
+
+  it('update: a HARD field (auth) locks the whole route (modified=true)', async () => {
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', auth: null, owner: 'svc', routeKey: 'GET /x' };
+    const repo = mkRepo({ findById: jest.fn(async () => existing) });
+    await new GatewayPathService(repo, mkLogs()).update({ id: 'g1', auth: 'jwt' } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: true }));
+  });
+
+  it('update: disabling a route is a SOFT override (enabled), not a lock', async () => {
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', enabled: true, owner: 'svc', routeKey: 'GET /x' };
+    const repo = mkRepo({ findById: jest.fn(async () => existing) });
+    await new GatewayPathService(repo, mkLogs()).update({ id: 'g1', enabled: false } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: false, userOverrides: ['enabled'] }));
+  });
+
+  it('update: releaseOverrides resets a single field (MS resumes it) without touching the others', async () => {
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', timeout: 9000, owner: 'svc', routeKey: 'GET /x', userOverrides: ['timeout', 'redirect'] };
+    const repo = mkRepo({ findById: jest.fn(async () => existing) });
+    await new GatewayPathService(repo, mkLogs()).update({ id: 'g1', releaseOverrides: ['timeout'] } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ userOverrides: ['redirect'] }));
   });
 
   it('delete: journals event=deleted; a missing X-GTW-AUTH-USERID header → actor=unknown', async () => {

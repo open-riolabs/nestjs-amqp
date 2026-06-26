@@ -84,6 +84,14 @@ export class RouteSyncService implements OnApplicationBootstrap {
 
       // --- Apply + journal (one entry per change) ------------------------------
       for (const c of diff.collisions) {
+        // A collision with YAML or a manually-managed admin route ('manual') is an INTENTIONAL
+        // operator override — re-journaling it on every announce is pure noise. Keep it as a debug
+        // log only. A cross-SERVICE collision (two microservices claiming the same route) IS a real
+        // conflict, so it stays a warn + a journal entry.
+        if (c.conflictWith === 'yaml' || c.conflictWith === 'manual') {
+          this.logger.debug(`[route-sync] ${service}: '${c.routeKey}' already owned by '${c.conflictWith}' → skipped`);
+          continue;
+        }
         this.logger.warn(`[route-sync] ${service}: collision on '${c.routeKey}' (owned by '${c.conflictWith}') → skipped`);
         await this.journal({ service, level: 'warn', event: 'collision', routeKey: c.routeKey, method: c.method, path: c.path, conflictWith: c.conflictWith, message: `route '${c.routeKey}' already owned by '${c.conflictWith}'; skipped` });
       }

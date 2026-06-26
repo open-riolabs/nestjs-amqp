@@ -20,8 +20,9 @@ auto-discovery. All handlers bind to the topic `rlb-gateway-admin`
 ***REMOVED******REMOVED*** Fixed vs configurable
 
 - FIXED (write exactly): topic names `rlb-gateway-admin`, control action
-  `gw-reload`, and all action strings `gw-path-*` / `gw-auth-*` / `gw-metrics-*`
-  / `gw-health` (from `GW_ADMIN_ACTIONS` + `GW_RELOAD_ACTION`).
+  `gw-reload` + `gw-auth-reload`, and all action strings `gw-path-*` / `gw-auth-*`
+  / `gw-metrics-*` / `gw-health` (from `GW_ADMIN_ACTIONS` + `GW_RELOAD_ACTION` +
+  `GW_AUTH_RELOAD_ACTION`).
 - CONFIGURABLE: each topic's exchange/queue/routingKey, and the route-discovery
   exchange/queue (defaults `rlb-route-discovery` / `rlb-route-sync`) — which must
   match on the publisher AND consumer sides.
@@ -104,7 +105,7 @@ auth/ACL resources. `create` rejects a `(method, path)` collision (409).
 | GET    | `/admin/paths`        | `gw-path-list`   | query | `?page=&limit=` |
 | GET    | `/admin/paths/search` | `gw-path-search` | query | free-text → `PaginationModel<StoredHttpPath>`; `?q=&page=&limit=` |
 | GET    | `/admin/paths/export` | `gw-path-export` | query | enabled, ordered; used by `loadConfig.paths` |
-| PUT    | `/admin/paths`        | `gw-path-update` | body  | needs `id`; re-checks collisions |
+| PUT    | `/admin/paths`        | `gw-path-update` | body  | needs `id`; re-checks collisions; soft fields → `userOverrides` (no lock); `releaseOverrides:[]` resets one |
 | GET    | `/admin/paths/get`    | `gw-path-get`    | query | `?id=` |
 | DELETE | `/admin/paths`        | `gw-path-delete` | body  | `{ id }` |
 | GET    | `/admin/route-log`    | `gw-route-log-list`   | query | route journal (who changed what); `?limit=` |
@@ -120,7 +121,7 @@ DB-stored providers, ON TOP of the static `auth-providers[]` in YAML.
 | GET    | `/admin/auth`     | `gw-auth-list`   | query | `?page=&limit=` |
 | PUT    | `/admin/auth`     | `gw-auth-update` | body  | upsert by name; `{ name, type, ... }` |
 | GET    | `/admin/auth/get` | `gw-auth-get`    | query | `?name=` |
-| DELETE | `/admin/auth`     | `gw-auth-delete` | body  | `{ name }` |
+| DELETE | `/admin/auth`     | `gw-auth-delete` | body  | `{ name, force? }`; **409** if DB routes still reference it (conflicting routes in error `details.routes`); `force:true` clears `auth` on them first, then deletes |
 | GET    | `/admin/auth/search` | `gw-auth-search` | query | free-text → `PaginationModel<StoredAuthProvider>`; `?q=&page=&limit=` |
 
 `gw-auth-export` (dump all enabled) also exists; not in the sample YAML.
@@ -183,12 +184,18 @@ ProxyModule.forRootAsync({ /* ... */ providers: [
 (`sample/config-sample/gateway-db` ships an `InfluxMetricsHook` that is a no-op
 until `INFLUX_URL/TOKEN/ORG` env are set.)
 
-***REMOVED******REMOVED*** Runtime reload — `gw-reload`
+***REMOVED******REMOVED*** Runtime reload — `gw-reload` (routes) + `gw-auth-reload` (auth)
 
-The ONLY control action that forces a route rebuild. Published to the
-**broadcast control topic** (`gateway.reloadTopic`, NOT `rlb-gateway-admin`),
-`mode: event`. The control-topic subscriber ignores everything except
-`gw-reload`, staying decoupled from other control traffic.
+Two SEPARATE control actions, both published to the **broadcast control topic**
+(`gateway.reloadTopic`, NOT `rlb-gateway-admin`), `mode: event`. The control-topic
+subscriber handles only these two and ignores everything else.
+
+- **`gw-reload`** → rebuilds the route table (YAML + `loadConfig.paths` DB export).
+- **`gw-auth-reload`** → reloads the DB auth-providers into RAM (the runtime
+  `AuthProviderRegistry`), merged with YAML (DB overrides by name). DELIBERATE:
+  NOT auto-fired on auth CRUD and NOT triggered by `gw-reload`. The gateway wires
+  the DB source via `{ provide: RLB_GTW_AUTH_PROVIDER_SOURCE, useExisting:
+  <AuthProviderRepository impl> }` in `ProxyModule.forRootAsync`.
 
 ```yaml
 - name: gw-reload
@@ -198,9 +205,18 @@ The ONLY control action that forces a route rebuild. Published to the
   topic: rlb-gateway-control   ***REMOVED*** the broadcast control topic
   action: gw-reload
   mode: event
+- name: gw-auth-reload         ***REMOVED*** reload DB auth-providers into RAM (separate, deliberate)
+  method: POST
+  path: /admin/auth/reload
+  dataSource: body
+  topic: rlb-gateway-control
+  action: gw-auth-reload
+  mode: event
 ```
 
 Seed DB routes via `POST /admin/paths`, then `POST /admin/reload` — no restart.
+Edit DB auth-providers via `PUT /admin/auth`, then `POST /admin/auth/reload` to
+activate them (a conscious choice).
 
 ***REMOVED******REMOVED*** Route auto-discovery (publisher vs consumer)
 
@@ -249,11 +265,24 @@ to the durable queue (competing consumers), then per manifest: diffs vs DB scope
 to the publishing service, applies only changes (insert/update; soft-disable stale
 to `enabled:false`; skip collisions — existing owner keeps `(method,path)`),
 journals every event via `RouteSyncLogRepository` (each row has `actor:'system'`;
-`skipped` rows mark user-modified routes left untouched; `updated` rows carry a
+`skipped` rows mark fully-locked routes left untouched; `updated` rows carry a
 `changes` per-field diff like `actions: [+x, -y]`), and publishes `gw-reload` when
 anything changed. Never throws (acks; no poison loop). Stored routes carry `source`
-(`'microservice'|'user'`) and `modified`; user CRUD (`gw-path-*`) is audited too —
-`actor`=`X-GTW-AUTH-USERID` (else `'unknown'`), event `created`/`updated`/`deleted`.
+(`'microservice'|'user'`), `modified` and `userOverrides`; user CRUD (`gw-path-*`) is
+audited too — `actor`=`X-GTW-AUTH-USERID` (else `'unknown'`), event
+`created`/`updated`/`deleted`.
+
+**Edit lock is field-level.** A user edit to a HARD field (method, path, dataSource,
+topic, action, mode, auth, name, parseRaw, binary, headers, forwardHeaders) sets
+`modified:true` → auto-discovery SKIPS the whole route (user wins). A user edit to a
+SOFT field — `enabled`, `actions`, `allowAnonymous`, `timeout`, `redirect`,
+`successStatusCode` — does NOT lock: it is recorded in `userOverrides[]`, and auto-
+discovery keeps updating every OTHER field while PRESERVING the user's value for the
+overridden ones (user sets `timeout` → MS later renames `action`: action updates,
+timeout stays; user disables → route stays OFF while content keeps updating). Hand a
+field back to the MS via `gw-path-update` `releaseOverrides: ['timeout']` (drops it
+from `userOverrides`). Cross-owner collisions with `yaml`/`manual` are debug-logged
+only (intentional override); cross-service collisions stay `warn` + journaled.
 
 ```ts
 GatewayAdminModule.forRootAsync({

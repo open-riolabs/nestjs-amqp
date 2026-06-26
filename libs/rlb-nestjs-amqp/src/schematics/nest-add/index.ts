@@ -590,6 +590,13 @@ function adminPaths(controlTopic: string): string {
       dataSource: body
       topic: ${controlTopic}
       action: gw-reload
+      mode: event
+    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+      method: POST
+      path: /admin/auth/reload
+      dataSource: body
+      topic: ${controlTopic}
+      action: gw-auth-reload
       mode: event`;
 }
 
@@ -602,6 +609,7 @@ function buildImportStatements(sel: Resolved): string {
   if (sel.gatewayConfig) libSymbols.push('GatewayConfig', 'HandlerAuthConfig', 'ProxyModule');
   if (sel.acl) libSymbols.push('AclActionRepository', 'AclGrantRepository', 'AclModule', 'AclRoleRepository', 'AclService', 'RLB_ACL_CACHE_STORE', 'RLB_GTW_ACL_ROLE_SERVICE');
   if (sel.admin || sel.routeReception) libSymbols.push('AuthProviderRepository', 'GatewayAdminModule', 'HttpMetricRepository', 'HttpPathRepository', 'RouteSyncLogRepository');
+  if (sel.admin && sel.gatewayConfig) libSymbols.push('RLB_GTW_AUTH_PROVIDER_SOURCE');
   const lib = `import { ${[...new Set(libSymbols)].sort().join(', ')} } from '@open-rlb/nestjs-amqp';`;
 
   const lines = [lib, `import { ConfigModule, ConfigService } from '@nestjs/config';`, `import yamlConfig from './config/config.loader';`];
@@ -630,12 +638,12 @@ function brokerForRootAsync(): string {
 }
 
 function proxyForRootAsync(sel: Resolved): string {
-  const providers = sel.acl
-    ? `[
-        // Action-gated paths resolve the caller's identity via AclService (in-process, no broker hop).
-        { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },
-      ]`
-    : `[]`;
+  const provs: string[] = [];
+  if (sel.acl) provs.push(`        // Action-gated paths resolve the caller's identity via AclService (in-process, no broker hop).
+        { provide: RLB_GTW_ACL_ROLE_SERVICE, useExisting: AclService },`);
+  if (sel.admin) provs.push(`        // DB auth-provider source for the runtime registry; activated by a deliberate gw-auth-reload.
+        { provide: RLB_GTW_AUTH_PROVIDER_SOURCE, useExisting: InMemoryAuthProviderRepository },`);
+  const providers = provs.length ? `[\n${provs.join('\n')}\n      ]` : `[]`;
   return `ProxyModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
