@@ -12,6 +12,9 @@ const RouteSyncLogSchema = new mongoose.Schema({
   ts: { type: Number, index: true },
   service: String,
   level: String,
+  // Who triggered it: 'system' (route auto-discovery) or the acting user's id (manual CRUD).
+  // Required for the ?actor= filter on /admin/route-log/search to ever match a stored row.
+  actor: String,
   event: String,
   routeKey: String,
   method: String,
@@ -20,6 +23,8 @@ const RouteSyncLogSchema = new mongoose.Schema({
   action: String,
   owner: String,
   conflictWith: String,
+  // Per-field diff of what changed (present on updates), e.g. actions: [+x, -y].
+  changes: Schema.Types.Mixed,
   message: String,
 });
 

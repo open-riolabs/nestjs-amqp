@@ -14,6 +14,9 @@ const HttpMetricSchema = new mongoose.Schema({
   lastStatus: Number,
   lastCalledAt: Number,
   totalDurationMs: { type: Number, default: 0 },
+  // Error name/code of the most recent error response (status >= 400), from the unified envelope.
+  // The repo writes it on error; without it Mongoose strict mode drops it and gw-metrics-get omits it.
+  lastErrorCode: String,
 });
 
 // Exported for tests.
