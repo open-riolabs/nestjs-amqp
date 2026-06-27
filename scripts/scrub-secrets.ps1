@@ -89,10 +89,15 @@ if (-not (Test-Path $SecretsFile)) {
 ***REMOVED*** git-filter-repo --replace-text rules. One per line: <literal-secret>==><replacement>
 ***REMOVED*** Put the ACTUAL leaked values on the LEFT. They are replaced in EVERY commit/blob.
 ***REMOVED*** Lines starting with ***REMOVED*** are ignored. NEVER commit this file.
-PUT-MONGO-PASSWORD-HERE==>REDACTED
-PUT-RABBITMQ-PASSWORD-HERE==>REDACTED
-PUT-RABBITMQ-USERNAME-HERE==>REDACTED
-PUT-REDIS-PASSWORD-HERE==>REDACTED
+***REMOVED*** Known leak source in this repo: sample/config-sample/gateway-db/config/config.yaml (mongo creds,
+***REMOVED*** influx token, auth-provider str-compare secrets) + history of config/config.yaml (amqp host).
+PUT-MONGO-PASSWORD-HERE==>REDACTED-MONGO-PASSWORD
+PUT-MONGO-USERNAME-HERE==>REDACTED-MONGO-USER
+PUT-INFLUX-TOKEN-HERE==>REDACTED-INFLUX-TOKEN
+PUT-AUTH-PROVIDER-SECRET-HERE==>REDACTED-AUTH-SECRET
+PUT-RABBITMQ-PASSWORD-HERE==>REDACTED-RABBITMQ-PASSWORD
+***REMOVED*** Optional infra disclosure — uncomment and fill to also scrub internal hosts/IPs (public repo):
+***REMOVED*** 10.0.0.1==>REDACTED-DB-HOST
 '@ | Set-Content -Encoding UTF8 $SecretsFile
   Ok   "Template written: $SecretsFile"
   Warn 'Fill it with the real leaked values, then re-run this script.'
