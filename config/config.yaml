@@ -7,7 +7,7 @@ auth-providers: []
 
 broker:
   name: "rabbitmq"
-  uri: "amqp://amqp.riolabs.net:5672/test"
+  uri: "amqp://localhost:5672/"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
   connectionManagerOptions:
@@ -18,8 +18,8 @@ broker:
         connection_name: "whatsapp-gateway"
       credentials:
         mechanism: PLAIN
-        username: test
-        password: test
+        username: guest
+        password: guest
 
   exchanges:
     # Direct exchange used by RPC sample (1:1 routing on a known queue).
