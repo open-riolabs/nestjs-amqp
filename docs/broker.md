@@ -1,4 +1,4 @@
-***REMOVED*** Broker
+# Broker
 
 The **broker** is the core of `@open-rlb/nestjs-amqp`. It wraps a managed RabbitMQ connection and turns plain NestJS providers into AMQP message handlers via decorators, while giving you a small imperative API (`BrokerService`) for publishing, RPC, and fire-and-forget messaging.
 
@@ -6,7 +6,7 @@ A broker can act as a **microservice** (it consumes a topic and answers requests
 
 ---
 
-***REMOVED******REMOVED*** Base features
+## Base features
 
 - **Decorator-driven handlers** — annotate any provider method with `@BrokerAction(topic, action)`; the library scans your modules at boot and subscribes an RPC consumer per topic that dispatches by `action`.
 - **Flat parameter binding** — `@BrokerParam(source, name?, pipe?)` maps a single message field to a single method argument. No destructuring.
@@ -18,7 +18,7 @@ A broker can act as a **microservice** (it consumes a topic and answers requests
 
 ---
 
-***REMOVED******REMOVED*** Nest config (app config)
+## Nest config (app config)
 
 Register the module once in your root `AppModule` with `BrokerModule.forRoot(options, topics, appOptions?)`:
 
@@ -42,7 +42,7 @@ export class AppModule {}
 
 The three arguments map directly to the three top-level YAML blocks (`broker:`, `topics:`, `app:`). `options` and `topics` are **required** — `forRoot` throws if either is missing.
 
-***REMOVED******REMOVED******REMOVED*** Async configuration
+### Async configuration
 
 When the config has to be resolved asynchronously (e.g. fetched, or assembled from `ConfigService`), use `forRootAsync`. The factory returns one object with `{ options, topics, appOptions? }`:
 
@@ -58,7 +58,7 @@ BrokerModule.forRootAsync({
 });
 ```
 
-***REMOVED******REMOVED******REMOVED*** Route discovery & `serviceName → connection_name`
+### Route discovery & `serviceName → connection_name`
 
 Route auto-discovery for the **publisher** (a microservice announcing its HTTP routes) now lives **inside the broker config** as `options.routeDiscovery` — not as a separate module argument. It carries `{ serviceName, publishOnBoot?, exchange?, queue? }`.
 
@@ -68,9 +68,9 @@ Route auto-discovery for the **publisher** (a microservice announcing its HTTP r
 
 ---
 
-***REMOVED******REMOVED*** YAML config
+## YAML config
 
-***REMOVED******REMOVED******REMOVED*** The `broker:` block (`RabbitMQConfig`)
+### The `broker:` block (`RabbitMQConfig`)
 
 This is passed verbatim as the first argument to `forRoot`. Key fields:
 
@@ -81,7 +81,7 @@ This is passed verbatim as the first argument to `forRoot`. Key fields:
 | `exchanges` | Exchanges to assert (`name`, `type`, `options`, …). |
 | `queues` | Queues to assert and bind (`name`, `exchange`, `routingKey`, …). |
 | `defaultRpcTimeout` | Default RPC timeout in ms (falls back to `10000`). |
-| `replyQueues` | `{ [exchange]: queueName }` — fixed reply queues per exchange for RPC (see [RPC](***REMOVED***rpc)). |
+| `replyQueues` | `{ [exchange]: queueName }` — fixed reply queues per exchange for RPC (see [RPC](#rpc)). |
 | `connectionManagerOptions` | Passed to `amqp-connection-manager`; holds `connection_name`, credentials, heartbeats. |
 | `connectionInitOptions` | `{ wait?, timeout?, reject?, … }` — whether to block on a healthy connection at boot (default `wait: true`, `timeout: 5000`, `reject: true`). |
 | `defaultAlternateExchange` | String or object. Asserts an alternate exchange and attaches it to declared exchanges so unroutable messages are diverted instead of dropped. |
@@ -92,13 +92,13 @@ This is passed verbatim as the first argument to `forRoot`. Key fields:
 broker:
   uri: "amqp://broker.example.net:5672/my-vhost"
   routeDiscovery:
-    serviceName: demo-ms       ***REMOVED*** also becomes connection_name unless set below
+    serviceName: demo-ms       # also becomes connection_name unless set below
     publishOnBoot: true
   connectionManagerOptions:
     heartbeatIntervalInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: "my-service-1"   ***REMOVED*** explicit name wins over serviceName
+        connection_name: "my-service-1"   # explicit name wins over serviceName
   exchanges:
     - name: rlb
       type: direct
@@ -110,7 +110,7 @@ broker:
       options: { durable: true }
 ```
 
-***REMOVED******REMOVED******REMOVED*** The `topics:` block (`BrokerTopic[]`)
+### The `topics:` block (`BrokerTopic[]`)
 
 Each topic names a logical channel and binds it to a `mode`. The mode decides how the broker wires it and what `BrokerService`/decorators do with it.
 
@@ -121,7 +121,8 @@ Each topic names a logical channel and binds it to a `mode`. The mode decides ho
 | `queue` | Queue name (rpc / handle). |
 | `exchange` | Exchange name. |
 | `routingKey` | Routing key (broadcast / topic exchanges). |
-| `errorBehavior` | Connection-level behaviour on handler failure for the decorator path. Default `REQUEUE`. |
+| `errorBehavior` | Legacy connection-level behaviour on handler failure (`ack`/`nack`/`requeue`) for the decorator path. Prefer `retry`. |
+| `retry` | Per-topic retry policy (`maxAttempts`, `delayMs`, `onExhausted`, `deadLetter`) — see *Retry policy* below. Overrides the broker-level `retry`. |
 | `mandatory` | Publish with the AMQP `mandatory` flag (unroutable → returned). Default `false`. |
 | `persistent` | Publish with delivery-mode 2 (survives a broker restart if the queue is durable). Default `false`. |
 | `toObservable` | For `handle`: emit incoming messages onto `BrokerService.events$` instead of invoking a handler function. |
@@ -146,25 +147,64 @@ topics:
     routingKey: rlb-gateway-control
 ```
 
+### Retry policy (`broker.retry` / `topics[].retry`)
+
+What happens when a handler throws. The legacy default (infinite immediate nack-requeue) is
+gone — it hot-looped poison messages forever, pinning a prefetch slot and one CPU. Failed
+messages now follow a **bounded retry policy**:
+
+```yaml
+broker:
+  retry:
+    maxAttempts: 5            # total attempts, including the first delivery (default 5)
+    delayMs: 5000             # wait between attempts via a TTL wait-queue (default 0 = immediate)
+    onExhausted: dead-letter  # dead-letter | drop (default: dead-letter if deadLetter set, else drop)
+    deadLetter:
+      exchange: rlb-dlx       # MUST be declared in broker.exchanges (not auto-asserted)
+      # routingKey: my-key    # default: the message's original routing key
+```
+
+Mechanics:
+
+- On failure the original is **acked** and a copy is re-published with an incremented
+  `x-retry-count` header — immediately, or through the TTL wait-queue
+  `` `<queue>.retry.<delayMs>` `` (dead-letters back to the work queue; asserted on demand,
+  self-expiring) when `delayMs` > 0.
+- On exhaustion the copy goes to `deadLetter.exchange` with `x-retry-error` /
+  `x-retry-origin-queue` diagnostic headers (or is dropped with an error log).
+- An exhausted message that carries `replyTo` also gets an **error reply**
+  (`RetryExhaustedError`, mapped by the gateway to HTTP **502**) so the RPC caller fails fast
+  instead of burning its timeout.
+- **Deserialization failures skip retries** (the payload can never become valid) and go
+  straight to dead-letter/drop. Same for `@BrokerParam` pipe/validation failures, which reply
+  the error immediately without retrying.
+- If a re-publish itself fails (broker gone mid-flight) the message falls back to a single
+  nack-requeue — nothing is lost.
+
+Precedence per consumer: subscription `errorHandler` > subscription/topic `retry` > topic
+`errorBehavior` > broker `retry` > `defaultRpcErrorHandler`/`defaultSubscribeErrorBehavior`
+(legacy, if explicitly configured) > built-in default (**5 attempts, no delay, drop**).
+Handlers that deliberately return `Nack` keep their explicit ack/requeue semantics.
+
 ---
 
-***REMOVED******REMOVED*** Microservice implementation
+## Microservice implementation
 
 Decorate any provider method. The metadata scanner discovers it at boot and subscribes an RPC consumer per topic that dispatches incoming messages by `action`.
 
-***REMOVED******REMOVED******REMOVED*** `@BrokerAction(topic, action, type?)`
+### `@BrokerAction(topic, action, type?)`
 
 - `topic` — must match a `topics:` entry (an `rpc` topic).
 - `action` — the dispatch key. **`(topic, action)` must be unique** across your whole app — two handlers claiming the same pair collide.
 - `type` — `'rpc'` (default semantics, replies) or `'event'`.
 
-A single method may declare **multiple** `@BrokerAction`s (one method servicing several actions). When it does, any `@BrokerHTTP` on that method **must name its `action`** (the `action` option) to bind to the right `@BrokerAction` deterministically — decorator order is never used. This http↔action pairing is independent of auth; auth is paired separately by route name (see [`@BrokerAuth`](***REMOVED***brokerauthauthname-allowanonymous-actions-httpname)).
+A single method may declare **multiple** `@BrokerAction`s (one method servicing several actions). When it does, any `@BrokerHTTP` on that method **must name its `action`** (the `action` option) to bind to the right `@BrokerAction` deterministically — decorator order is never used. This http↔action pairing is independent of auth; auth is paired separately by route name (see [`@BrokerAuth`](#brokerauthauthname-allowanonymous-actions-httpname)).
 
-***REMOVED******REMOVED******REMOVED*** `@BrokerHTTP(method, path, dataSource, options?)`
+### `@BrokerHTTP(method, path, dataSource, options?)`
 
 Exposes the method as an HTTP route, published to a gateway via [route auto-discovery](./gateway-admin.md). `dataSource` is `'query' | 'body' | 'params'`. Notable options: `name` (optional route name used for auth pairing), `action` (disambiguates when the method declares **multiple** `@BrokerAction`), plus `successStatusCode`, `timeout`, `parseRaw`, `binary`, `redirect`, `headers`, `forwardHeaders`. `@BrokerHTTP` does **not** carry auth — auth lives in a decoupled `@BrokerAuth`.
 
-***REMOVED******REMOVED******REMOVED*** `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`
+### `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`
 
 Auth for an HTTP route, kept **decoupled** from `@BrokerHTTP`. It pairs to a specific `@BrokerHTTP` route by `httpName` === that route's `name`.
 
@@ -190,7 +230,7 @@ Because auth pairs by route name rather than by action, two HTTP paths for the *
 getBooking(@BrokerParam('params', 'id') id: string) { /* … */ }
 ```
 
-***REMOVED******REMOVED******REMOVED*** `@BrokerParam(source, name?, pipe?)`
+### `@BrokerParam(source, name?, pipe?)`
 
 Each parameter binds to exactly one field of the incoming message. **One source per argument — no object destructuring**; declare a separate parameter for every field you need (the "flat params" rule). An optional `pipe` (a `PipeTransform`) is applied to the resolved value.
 
@@ -226,7 +266,7 @@ export class OrdersService {
 
 ---
 
-***REMOVED******REMOVED*** Event handling
+## Event handling
 
 Beyond request/response, three modes cover one-way messaging:
 
@@ -251,7 +291,7 @@ broker.events$.subscribe((e) => console.log(e.action, e.payload));
 
 ---
 
-***REMOVED******REMOVED*** RPC
+## RPC
 
 Call another service and await its response with `requestData`:
 
@@ -272,7 +312,7 @@ const result = await broker.requestData<Req, Res>(
 
 ---
 
-***REMOVED******REMOVED*** Graceful shutdown
+## Graceful shutdown
 
 `ShutdownStateService` coordinates an orderly drain so in-flight work finishes before the process dies. Enable Nest's shutdown hooks in `main.ts` for it to fire:
 
@@ -293,7 +333,7 @@ Register a drainer for any background pipeline you own:
 shutdownState.register('my-pipeline', () => myStream.drain());
 ```
 
-***REMOVED******REMOVED******REMOVED*** `DrainableStream`
+### `DrainableStream`
 
 A helper for RxJS pipelines belonging to one service. Add `takeUntilShutdown()` as the last operator before `.subscribe()`; on `drain()` it signals all tracked streams and resolves once they complete (so buffered items in `concatMap`/`mergeMap` finish first):
 

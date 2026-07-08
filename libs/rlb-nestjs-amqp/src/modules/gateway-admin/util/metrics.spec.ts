@@ -46,6 +46,6 @@ describe('metrics util', () => {
     const out = toPrometheus([{ method: 'GET', route: '/x', count: 5, errorCount: 1, totalDurationMs: 100, avgDurationMs: 20, errorRate: 0.2 } as any]);
     expect(out).toContain('gateway_requests_total{method="GET",route="/x"} 5');
     expect(out).toContain('gateway_request_errors_total{method="GET",route="/x"} 1');
-    expect(out).toContain('***REMOVED*** TYPE gateway_requests_total counter');
+    expect(out).toContain('# TYPE gateway_requests_total counter');
   });
 });

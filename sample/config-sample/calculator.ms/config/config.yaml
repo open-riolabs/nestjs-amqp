@@ -1,6 +1,6 @@
 app:
-  ***REMOVED*** This is a pure AMQP microservice (main.ts calls app.init(), not app.listen()), so `port`/`host`
-  ***REMOVED*** are unused — kept only to satisfy AppConfig. The service is reachable over the broker, not HTTP.
+  # This is a pure AMQP microservice (main.ts calls app.init(), not app.listen()), so `port`/`host`
+  # are unused — kept only to satisfy AppConfig. The service is reachable over the broker, not HTTP.
   port: 3001
   host: 0.0.0.0
   environment: "development"
@@ -9,16 +9,16 @@ auth-providers: []
 
 broker:
   name: "rabbitmq"
-  ***REMOVED*** Point this at your RabbitMQ instance (vhost included after the last slash).
-  ***REMOVED*** guest/guest only authenticates from localhost — replace for any remote broker.
+  # Point this at your RabbitMQ instance (vhost included after the last slash).
+  # guest/guest only authenticates from localhost — replace for any remote broker.
   uri: "amqp://localhost:5672/"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
-  ***REMOVED*** Route auto-discovery (publisher side) lives INSIDE the broker block.
-  ***REMOVED*** `serviceName` is BOTH the ownership key a gateway uses to group/replace this microservice's
-  ***REMOVED*** routes AND — because no clientProperties.connection_name is set below — the AMQP connection_name
-  ***REMOVED*** (BrokerModule promotes serviceName → connection_name when none is set explicitly).
-  ***REMOVED*** `publishOnBoot: true` announces every @BrokerHTTP route to the gateway fan-out exchange at boot.
+  # Route auto-discovery (publisher side) lives INSIDE the broker block.
+  # `serviceName` is BOTH the ownership key a gateway uses to group/replace this microservice's
+  # routes AND — because no clientProperties.connection_name is set below — the AMQP connection_name
+  # (BrokerModule promotes serviceName → connection_name when none is set explicitly).
+  # `publishOnBoot: true` announces every @BrokerHTTP route to the gateway fan-out exchange at boot.
   routeDiscovery:
     serviceName: calculator.ms
     publishOnBoot: true
@@ -49,7 +49,7 @@ broker:
         exclusive: false
 
 topics:
-  ***REMOVED*** The @BrokerAction("calculator", ...) handlers in AppService bind to this RPC topic.
+  # The @BrokerAction("calculator", ...) handlers in AppService bind to this RPC topic.
   - name: calculator
     exchange: calculator
     routingKey: "calculator"

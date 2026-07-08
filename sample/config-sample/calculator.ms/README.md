@@ -1,4 +1,4 @@
-***REMOVED*** calculator.ms — pure AMQP microservice sample
+# calculator.ms — pure AMQP microservice sample
 
 A minimal `@open-rlb/nestjs-amqp` microservice that does exactly two things:
 
@@ -9,7 +9,7 @@ It is the smallest end-to-end illustration of the **publisher** side of route di
 
 ---
 
-***REMOVED******REMOVED*** Purpose
+## Purpose
 
 This service is an **AMQP-only** microservice. There is **no HTTP server**: `src/main.ts` calls `app.init()`, not `app.listen()`.
 
@@ -33,13 +33,13 @@ So one method definition serves both the AMQP contract and the future HTTP contr
 
 ---
 
-***REMOVED******REMOVED*** Use cases
+## Use cases
 
-- **The publisher side of route discovery.** This service announces its own routes; a gateway (the consumer) persists and serves them. See [How route discovery works here](***REMOVED***how-route-discovery-works-here).
+- **The publisher side of route discovery.** This service announces its own routes; a gateway (the consumer) persists and serves them. See [How route discovery works here](#how-route-discovery-works-here).
 - **The simplest possible `BrokerModule` wiring.** No gateway, no ACL, no auth, no database — just `ConfigModule` + `BrokerModule.forRootAsync` + one provider.
 - **How `serviceName` promotes to `connection_name`.** The service sets its identity exactly once, under `broker.routeDiscovery.serviceName`, and the broker reuses it as the AMQP `connection_name`.
 
-***REMOVED******REMOVED******REMOVED*** Module wiring
+### Module wiring
 
 ```ts
 // src/app.module.ts
@@ -63,13 +63,13 @@ export class AppModule {}
 
 The factory forwards just three blocks: `broker`, `topics`, `app`. Route auto-discovery is **not** a separate module argument — it lives **inside the broker block** as `broker.routeDiscovery`, and `BrokerModule` reads `options.routeDiscovery` itself.
 
-***REMOVED******REMOVED******REMOVED*** `serviceName → connection_name`
+### `serviceName → connection_name`
 
 In `config/config.yaml` no explicit AMQP `connection_name` is set (there is no `connectionManagerOptions.connectionOptions.clientProperties.connection_name`). Because `broker.routeDiscovery.serviceName` **is** set, `BrokerModule` promotes it to the AMQP `connection_name`. An explicit `connection_name` would always win — but here there is none, so the service is identified on the broker as `calculator.ms`, the same string used as its route-ownership key.
 
 ---
 
-***REMOVED******REMOVED*** The five operations
+## The five operations
 
 All handlers live in `src/app.service.ts`. Parameters are bound **flat** — one `@BrokerParam` per argument, no object destructuring.
 
@@ -81,7 +81,7 @@ All handlers live in `src/app.service.ts`. Parameters are bound **flat** — one
 | `div`  | `@BrokerAction("calculator","div")` | `POST /calculator/div`  | `body.values: number[]`  | left-to-right division (first element is the numerator) |
 | `sqrt` | `@BrokerAction("calculator","sqrt")`| `POST /calculator/sqrt` | `body.value: number`     | `Math.sqrt(value)`                       |
 
-***REMOVED******REMOVED******REMOVED*** Request shape
+### Request shape
 
 - `sum` / `sub` / `mul` / `div` take an **array** under `values`. The handler binds it with `@BrokerParam("body", "values")`.
 
@@ -99,23 +99,23 @@ The topic name `calculator` and the action strings (`sum`, `sub`, `mul`, `div`, 
 
 ---
 
-***REMOVED******REMOVED*** How route discovery works here
+## How route discovery works here
 
 This service is the **publisher**. The route-discovery config sits inside the broker block:
 
 ```yaml
-***REMOVED*** config/config.yaml
+# config/config.yaml
 broker:
   routeDiscovery:
-    serviceName: calculator.ms   ***REMOVED*** ownership key + promoted to AMQP connection_name
-    publishOnBoot: true          ***REMOVED*** announce every @BrokerHTTP route at boot
+    serviceName: calculator.ms   # ownership key + promoted to AMQP connection_name
+    publishOnBoot: true          # announce every @BrokerHTTP route at boot
 ```
 
 On bootstrap (since `serviceName` is set and `publishOnBoot` is not `false`), the publisher maps this app's `@BrokerHTTP` / `@BrokerAction` metadata into a route manifest and publishes it to the route-discovery **fanout exchange** as a durable, persistent message. The durable queue buffers it even if no gateway is up yet — it is delivered once one connects.
 
 `broker.routeDiscovery` also accepts `exchange` and `queue` (defaults `rlb-route-discovery` / `rlb-route-sync`). They are omitted here, so the defaults apply. These **are** configurable, but the values must match on both the publisher and the consuming gateway.
 
-***REMOVED******REMOVED******REMOVED*** Pair it with a gateway to see the routes appear
+### Pair it with a gateway to see the routes appear
 
 Run this service alongside one of the gateway samples (the **consumer** of route manifests):
 
@@ -128,7 +128,7 @@ With both running against the same RabbitMQ instance (and matching route-discove
 
 ---
 
-***REMOVED******REMOVED*** How to run
+## How to run
 
 This service needs **only RabbitMQ**. No database, no gateway (the gateway is optional, for observing route discovery).
 
@@ -136,7 +136,7 @@ This service needs **only RabbitMQ**. No database, no gateway (the gateway is op
 
    ```yaml
    broker:
-     uri: "amqp://localhost:5672/"   ***REMOVED*** vhost after the last slash; replace for a remote broker
+     uri: "amqp://localhost:5672/"   # vhost after the last slash; replace for a remote broker
    ```
 
    The sample uses `guest`/`guest`, which only authenticates from `localhost`. For any remote broker (e.g. `amqp://localhost:5672/` → your host), replace the credentials under `connectionManagerOptions.connectionOptions.credentials`.
@@ -154,6 +154,6 @@ This service needs **only RabbitMQ**. No database, no gateway (the gateway is op
 
 ---
 
-***REMOVED******REMOVED*** Dependency note
+## Dependency note
 
 This sample's `package.json` pins `@open-rlb/nestjs-amqp` at `^2.0.5`. When run **in-tree** (inside this repo), it resolves to the **local workspace** copy of the library rather than the published package — so changes to the library are picked up directly without a publish/reinstall cycle.

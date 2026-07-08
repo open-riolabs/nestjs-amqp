@@ -170,7 +170,7 @@ export class InfluxPointStore implements OnApplicationBootstrap, OnModuleDestroy
   /** Quoted string value (Flux filter / line-protocol string field): escape backslash and quote. */
   private str(v: any): string { return String(v ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"'); }
 
-  /** Parse Influx annotated CSV into points. Handles multiple tables (***REMOVED***annotation block + header + rows). */
+  /** Parse Influx annotated CSV into points. Handles multiple tables (#annotation block + header + rows). */
   private parseCsv(csv: string): HttpMetricPoint[] {
     const out: HttpMetricPoint[] = [];
     let header: string[] | null = null;
@@ -178,7 +178,7 @@ export class InfluxPointStore implements OnApplicationBootstrap, OnModuleDestroy
     for (const raw of csv.split('\n')) {
       const line = raw.replace(/\r$/, '');
       if (!line.trim()) { header = null; expectHeader = false; continue; }
-      if (line.startsWith('***REMOVED***')) { expectHeader = true; continue; }
+      if (line.startsWith('#')) { expectHeader = true; continue; }
       const cells = this.splitCsv(line);
       if (expectHeader || !header) { header = cells; expectHeader = false; continue; }
       const row: Record<string, string> = {};

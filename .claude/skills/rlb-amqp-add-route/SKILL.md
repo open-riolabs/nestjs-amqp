@@ -3,7 +3,7 @@ name: rlb-amqp-add-route
 description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload or raw body. Generates the YAML path fragment and flags required bootstrap/ACL wiring.
 ---
 
-***REMOVED*** Add an HTTP gateway route (gateway.paths[])
+# Add an HTTP gateway route (gateway.paths[])
 
 Read first:
 - `.claude/skills/rlb-amqp/references/config-schema.md` (the `gateway.paths[]` section)
@@ -14,7 +14,7 @@ The target `topic`+`action` should already have a handler (otherwise also run
 `rlb-amqp-add-action`). The route only needs the topic to exist in `topics[]`.
 Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 
-***REMOVED******REMOVED*** Decide
+## Decide
 
 - **mode**: `rpc` (return the handler's reply) or `event` (publish-and-confirm, no reply).
 - **dataSource**: how the payload is assembled — `req.params` are ALWAYS merged in, plus:
@@ -26,7 +26,7 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 - Extras: `timeout` (rpc), `successStatusCode`, `binary`, `redirect`, `parseRaw`, static
   `headers`, `forwardHeaders`.
 
-***REMOVED******REMOVED*** PathDefinition fields (all of them)
+## PathDefinition fields (all of them)
 
 | Field | Notes |
 | --- | --- |
@@ -49,25 +49,25 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 
 Uploaded multipart files (any field) are attached as `$files` (buffers → binary strings).
 
-***REMOVED******REMOVED*** YAML fragment
+## YAML fragment
 
 ```yaml
 gateway:
   paths:
     - name: <unique-name>
-      method: POST                 ***REMOVED*** GET | POST | PUT | DELETE | PATCH
+      method: POST                 # GET | POST | PUT | DELETE | PATCH
       path: /resource/:id?
       dataSource: body
       topic: <topic>
       action: <action>
-      mode: rpc                    ***REMOVED*** or event
-      auth: gateway-jwks           ***REMOVED*** optional
-      actions: [resource.write]    ***REMOVED*** optional → needs RLB_GTW_ACL_ROLE_SERVICE; checked on (companyId, resourceId)
-      timeout: 7000                ***REMOVED*** rpc only
+      mode: rpc                    # or event
+      auth: gateway-jwks           # optional
+      actions: [resource.write]    # optional → needs RLB_GTW_ACL_ROLE_SERVICE; checked on (companyId, resourceId)
+      timeout: 7000                # rpc only
       successStatusCode: 201
 ```
 
-***REMOVED******REMOVED*** The 3-case auth gate
+## The 3-case auth gate
 
 For every request the gateway runs `processAuthData` (best-effort), then:
 
@@ -86,7 +86,7 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 > `actions` WITHOUT `auth` is a misconfiguration: no identity → fails closed (every request
 > `403`, logged loudly at boot).
 
-***REMOVED******REMOVED*** Status mapping
+## Status mapping
 
 **`rpc`** reply → status:
 
@@ -111,7 +111,7 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 
 **`event`** route: successful publish → `successStatusCode || 202`; publish failure → `503`.
 
-***REMOVED******REMOVED*** Required wiring to flag
+## Required wiring to flag
 
 - If `parseRaw: true` → bootstrap with `NestFactory.create(AppModule, { rawBody: true })`.
 - If `actions` is used → an `IAclRoleService` (`checkAction`) must be registered via
@@ -123,7 +123,7 @@ For every request the gateway runs `processAuthData` (best-effort), then:
   (e.g. `X-GTW-AUTH-USERID`) — read them with `@BrokerParam('header', ...)`. Request headers
   can never override mapped claim headers (anti-spoofing).
 
-***REMOVED******REMOVED*** Verify
+## Verify
 
 - topic exists in `topics[]` and resolves.
 - route-param vs body/query key collisions are intentional (params always merge in).

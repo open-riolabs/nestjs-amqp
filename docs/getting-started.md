@@ -1,4 +1,4 @@
-***REMOVED*** Getting Started
+# Getting Started
 
 `@open-rlb/nestjs-amqp` is a NestJS toolkit for building RabbitMQ microservices and an HTTP/WebSocket
 gateway in front of them. This page gets you from an empty (or existing) NestJS project to a running
@@ -8,7 +8,7 @@ wiring by hand.
 See also: [Broker](./broker.md) · [Gateway](./gateway.md) · [ACL](./acl.md) ·
 [Gateway Admin](./gateway-admin.md) · [Gotchas](./gotchas.md).
 
-***REMOVED******REMOVED*** Install
+## Install
 
 ```bash
 npm i @open-rlb/nestjs-amqp
@@ -18,14 +18,14 @@ The package depends on a few standard NestJS pieces. If they are not already in 
 
 ```bash
 npm i @nestjs/config @nestjs/axios js-yaml
-***REMOVED*** only if you use the gateway (HTTP + WebSocket):
+# only if you use the gateway (HTTP + WebSocket):
 npm i @nestjs/platform-ws
 ```
 
 You also need a reachable RabbitMQ instance — that is the only external dependency for the in-memory
 demo wiring shown below. ACL and gateway-admin persistence can stay fully in RAM (see their pages).
 
-***REMOVED******REMOVED*** The `nest add` schematic
+## The `nest add` schematic
 
 The fastest way to bootstrap is the schematic. From a NestJS project root:
 
@@ -50,7 +50,7 @@ It patches your project in place rather than scaffolding a new app. Concretely i
 - **`.claude/skills/`** — copies the bundled Claude skills into your project so the assistant can help
   add actions, routes and WebSocket events.
 
-***REMOVED******REMOVED******REMOVED*** Flags
+### Flags
 
 The schematic exposes two boolean prompts/flags (both default **on**):
 
@@ -60,7 +60,7 @@ The schematic exposes two boolean prompts/flags (both default **on**):
 | `--skills` | `true` | Copy the Claude skill files into `.claude/skills`. Pass `--skills=false` to skip. |
 
 ```bash
-***REMOVED*** microservice only, no gateway, no skills
+# microservice only, no gateway, no skills
 nest add @open-rlb/nestjs-amqp --gateway=false --skills=false
 ```
 
@@ -68,12 +68,12 @@ nest add @open-rlb/nestjs-amqp --gateway=false --skills=false
 > locations (falling back to a recursive search). If it cannot find them it prints a warning and leaves
 > the manual wiring to you — the next section shows exactly what to add.
 
-***REMOVED******REMOVED*** Minimal manual wiring
+## Minimal manual wiring
 
 If you prefer to wire it yourself (or the schematic could not locate your files), here is the smallest
 correct setup. It is the same shape the schematic produces.
 
-***REMOVED******REMOVED******REMOVED*** `src/app.module.ts`
+### `src/app.module.ts`
 
 `BrokerModule` owns the broker connection, topics and app options. Add `ProxyModule` only if you want
 the HTTP/WebSocket gateway; a pure microservice can omit it (and `HttpModule`).
@@ -128,7 +128,7 @@ export class AppModule {}
 > ACL and gateway-admin live in separate modules — see [ACL](./acl.md) and
 > [Gateway Admin](./gateway-admin.md) for `AclModule.forRoot(...)` / `GatewayAdminModule.forRoot(...)`.
 
-***REMOVED******REMOVED******REMOVED*** `src/main.ts`
+### `src/main.ts`
 
 For the gateway you must enable `rawBody` and register the WebSocket adapter. A pure microservice can
 use a plain `NestFactory.create(AppModule)`.
@@ -151,7 +151,7 @@ async function bootstrap() {
 bootstrap();
 ```
 
-***REMOVED******REMOVED******REMOVED*** `src/config/config.loader.ts`
+### `src/config/config.loader.ts`
 
 Config is plain YAML loaded into `@nestjs/config`. A tiny loader reads the file and returns the parsed
 object — every `config.get<T>('...')` call above resolves against it.
@@ -170,7 +170,7 @@ export default () =>
 > Adjust `YAML_CONFIG_FILENAME` to wherever your file lives relative to the process working directory
 > (e.g. a monorepo app might use `apps/my-app/config/config.yaml`).
 
-***REMOVED******REMOVED******REMOVED*** `config/config.yaml`
+### `config/config.yaml`
 
 A minimal config: the `app` server options, the `broker` connection with one exchange/queue, and one
 `topic`. Add the `gateway` and `auth-providers` blocks only when you run the gateway.
@@ -181,7 +181,7 @@ app:
   host: 0.0.0.0
   environment: development
 
-auth-providers: [] ***REMOVED*** gateway only — JWT/JWKS providers; see ./gateway.md
+auth-providers: [] # gateway only — JWT/JWKS providers; see ./gateway.md
 
 broker:
   name: rabbitmq
@@ -193,7 +193,7 @@ broker:
     reconnectTimeInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: my-service ***REMOVED*** must be distinct per instance
+        connection_name: my-service # must be distinct per instance
   exchanges:
     - name: rlb
       type: direct
@@ -215,7 +215,7 @@ topics:
     exchange: rlb
     routingKey: example.queue
 
-***REMOVED*** --- gateway only ---
+# --- gateway only ---
 gateway:
   mode: gateway
   paths:
@@ -231,7 +231,7 @@ gateway:
 > `GET /health` maps to the gateway-admin action **`gw-health`** and returns `{ status: 'ok' }` — it is a
 > liveness probe, not a metrics dump.
 
-***REMOVED******REMOVED*** What's next
+## What's next
 
 - [Broker](./broker.md) — topics, `@BrokerAction` / `@BrokerParam`, `BrokerService`, and the rpc / handle
   / broadcast / event modes.

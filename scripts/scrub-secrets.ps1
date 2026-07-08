@@ -1,4 +1,4 @@
-<***REMOVED***
+<#
 .SYNOPSIS
   Remove leaked secrets from the ENTIRE git history (every commit) with git-filter-repo,
   on a throwaway mirror clone, verify, then optionally force-push.
@@ -27,11 +27,11 @@
   Force-push the rewritten history to RepoUrl (asks for an explicit FORCE confirmation).
 
 .EXAMPLE
-  .\scripts\scrub-secrets.ps1                 ***REMOVED*** 1st run: writes the template, stops
-  ***REMOVED*** ...edit the template with the real leaked values...
-  .\scripts\scrub-secrets.ps1                 ***REMOVED*** rewrite locally + verify (no push)
-  .\scripts\scrub-secrets.ps1 -Push           ***REMOVED*** after rotating + verifying: push
-***REMOVED***>
+  .\scripts\scrub-secrets.ps1                 # 1st run: writes the template, stops
+  # ...edit the template with the real leaked values...
+  .\scripts\scrub-secrets.ps1                 # rewrite locally + verify (no push)
+  .\scripts\scrub-secrets.ps1 -Push           # after rotating + verifying: push
+#>
 [CmdletBinding()]
 param(
   [string]$RepoUrl,
@@ -46,7 +46,7 @@ function Ok($m)   { Write-Host $m -ForegroundColor Green }
 function Warn($m) { Write-Host $m -ForegroundColor Yellow }
 function Die($m)  { Write-Host "ERROR: $m" -ForegroundColor Red; exit 1 }
 
-***REMOVED*** --- prerequisites ----------------------------------------------------------
+# --- prerequisites ----------------------------------------------------------
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Die 'git not found in PATH.' }
 
 if (-not $RepoUrl) {
@@ -55,8 +55,8 @@ if (-not $RepoUrl) {
 }
 Info "Target repo : $RepoUrl"
 
-***REMOVED*** Resolve how to invoke git-filter-repo: as a git subcommand, a standalone exe, or — when
-***REMOVED*** only the Python package is installed (pip without its Scripts dir on PATH) — the module.
+# Resolve how to invoke git-filter-repo: as a git subcommand, a standalone exe, or — when
+# only the Python package is installed (pip without its Scripts dir on PATH) — the module.
 $FR_EXE = $null
 $FR_PRE = @()
 git filter-repo --version *> $null
@@ -82,22 +82,22 @@ if (-not $FR_EXE) {
 }
 Info "filter-repo  : $FR_EXE $($FR_PRE -join ' ')"
 
-***REMOVED*** --- secrets / replacements file -------------------------------------------
+# --- secrets / replacements file -------------------------------------------
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 if (-not (Test-Path $SecretsFile)) {
   @'
-***REMOVED*** git-filter-repo --replace-text rules. One per line: <literal-secret>==><replacement>
-***REMOVED*** Put the ACTUAL leaked values on the LEFT. They are replaced in EVERY commit/blob.
-***REMOVED*** Lines starting with ***REMOVED*** are ignored. NEVER commit this file.
-***REMOVED*** Known leak source in this repo: sample/config-sample/gateway-db/config/config.yaml (mongo creds,
-***REMOVED*** influx token, auth-provider str-compare secrets) + history of config/config.yaml (amqp host).
+# git-filter-repo --replace-text rules. One per line: <literal-secret>==><replacement>
+# Put the ACTUAL leaked values on the LEFT. They are replaced in EVERY commit/blob.
+# Lines starting with # are ignored. NEVER commit this file.
+# Known leak source in this repo: sample/config-sample/gateway-db/config/config.yaml (mongo creds,
+# influx token, auth-provider str-compare secrets) + history of config/config.yaml (amqp host).
 PUT-MONGO-PASSWORD-HERE==>REDACTED-MONGO-PASSWORD
 PUT-MONGO-USERNAME-HERE==>REDACTED-MONGO-USER
 PUT-INFLUX-TOKEN-HERE==>REDACTED-INFLUX-TOKEN
 PUT-AUTH-PROVIDER-SECRET-HERE==>REDACTED-AUTH-SECRET
 PUT-RABBITMQ-PASSWORD-HERE==>REDACTED-RABBITMQ-PASSWORD
-***REMOVED*** Optional infra disclosure — uncomment and fill to also scrub internal hosts/IPs (public repo):
-***REMOVED*** 10.0.0.1==>REDACTED-DB-HOST
+# Optional infra disclosure — uncomment and fill to also scrub internal hosts/IPs (public repo):
+# 10.0.0.1==>REDACTED-DB-HOST
 '@ | Set-Content -Encoding UTF8 $SecretsFile
   Ok   "Template written: $SecretsFile"
   Warn 'Fill it with the real leaked values, then re-run this script.'
@@ -107,13 +107,13 @@ if (Select-String -Path $SecretsFile -Pattern 'PUT-.*-HERE' -Quiet) {
   Die "Replacements file still has PUT-...-HERE placeholders. Fill real values: $SecretsFile"
 }
 
-***REMOVED*** parse the literal secrets (left of ==>) for verification
+# parse the literal secrets (left of ==>) for verification
 $secrets = Get-Content $SecretsFile |
-  Where-Object { $_ -and -not $_.TrimStart().StartsWith('***REMOVED***') -and $_ -match '==>' } |
+  Where-Object { $_ -and -not $_.TrimStart().StartsWith('#') -and $_ -match '==>' } |
   ForEach-Object { ($_ -split '==>', 2)[0] }
 if (-not $secrets) { Die 'No valid rules found in the replacements file.' }
 
-***REMOVED*** --- mirror clone (+ backup) -----------------------------------------------
+# --- mirror clone (+ backup) -----------------------------------------------
 $repoName  = (($RepoUrl -split '[/\\]')[-1]) -replace '\.git$',''
 $mirrorDir = Join-Path $WorkDir "$repoName.git"
 $backupDir = Join-Path $WorkDir "$repoName.backup.git"
@@ -125,7 +125,7 @@ if ($LASTEXITCODE -ne 0) { Die 'Mirror clone failed.' }
 Copy-Item -Recurse $mirrorDir $backupDir
 Ok "Backup kept   -> $backupDir"
 
-***REMOVED*** --- rewrite ----------------------------------------------------------------
+# --- rewrite ----------------------------------------------------------------
 Push-Location $mirrorDir
 try {
   Info 'Rewriting history (filter-repo --replace-text)...'
@@ -133,7 +133,7 @@ try {
   if ($LASTEXITCODE -ne 0) { Die 'git filter-repo failed.' }
   Ok 'History rewritten on the mirror.'
 
-  ***REMOVED*** --- verify: each secret must be absent from EVERY blob in EVERY commit ----
+  # --- verify: each secret must be absent from EVERY blob in EVERY commit ----
   Info 'Verifying (scanning all revisions)...'
   $revs = git rev-list --all
   $clean = $true
@@ -147,7 +147,7 @@ try {
 }
 finally { Pop-Location }
 
-***REMOVED*** --- push (guarded) ---------------------------------------------------------
+# --- push (guarded) ---------------------------------------------------------
 if (-not $Push) {
   Warn 'No -Push: nothing was pushed. Review, ROTATE the secrets, then re-run with -Push.'
   Info "Mirror ready at: $mirrorDir"
@@ -162,7 +162,7 @@ if ((Read-Host "Type 'FORCE' to proceed") -ne 'FORCE') { Die 'Aborted — nothin
 
 Push-Location $mirrorDir
 try {
-  ***REMOVED*** Push directly to the URL (filter-repo strips the origin remote as a safeguard).
+  # Push directly to the URL (filter-repo strips the origin remote as a safeguard).
   git push --force $RepoUrl 'refs/heads/*:refs/heads/*'
   if ($LASTEXITCODE -ne 0) { Die 'Force-push of branches failed.' }
   git push --force $RepoUrl 'refs/tags/*:refs/tags/*'

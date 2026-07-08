@@ -3,7 +3,7 @@ name: rlb-amqp-add-ws-event
 description: Add a secure WebSocket event (or HTTP webhook) to the @open-rlb/nestjs-amqp gateway by adding a gateway.events[] entry. Use when the user wants to push broker messages to connected WebSocket clients or to a webhook, with authentication (token in subprotocol), per-event actions/ACL, and per-user scoping to avoid leaking other users' data. Generates the YAML event fragment plus the exchange/queue and ws options, and flags the security wiring.
 ---
 
-***REMOVED*** Add a WebSocket / webhook event (gateway.events[])
+# Add a WebSocket / webhook event (gateway.events[])
 
 Read first:
 - `.claude/skills/rlb-amqp/references/config-schema.md` (the `gateway.events[]` + `gateway.ws`
@@ -13,7 +13,7 @@ Read first:
 A WS event binds a broker `exchange`/`routingKey` to a named client-facing stream and fans
 each message out to the connected clients of EVERY gateway instance. Secure it by default.
 
-***REMOVED******REMOVED*** Decide
+## Decide
 
 - **type**: `ws` (push to clients) or `http` (forward each message to a webhook `url`).
   (`mqtt` is also accepted by the type union but `ws`/`http` are the supported paths.)
@@ -39,33 +39,33 @@ each message out to the connected clients of EVERY gateway instance. Secure it b
 > heartbeat, origin allowlist and message-size cap (no auth fields). Different events may use
 > different providers.
 
-***REMOVED******REMOVED*** YAML fragments
+## YAML fragments
 
 ```yaml
 gateway:
-  ws:                                   ***REMOVED*** connection-level only (optional)
-    maxConnections: 5000                ***REMOVED*** max concurrent connections this instance accepts
-    maxSubscriptionsPerClient: 50       ***REMOVED*** max active subscriptions per client
-    heartbeatIntervalMs: 30000          ***REMOVED*** ping/pong; also drops dead sockets + expired tokens
-    allowedOrigins:                     ***REMOVED*** reject cross-site handshakes; omit → all origins (logged)
+  ws:                                   # connection-level only (optional)
+    maxConnections: 5000                # max concurrent connections this instance accepts
+    maxSubscriptionsPerClient: 50       # max active subscriptions per client
+    heartbeatIntervalMs: 30000          # ping/pong; also drops dead sockets + expired tokens
+    allowedOrigins:                     # reject cross-site handshakes; omit → all origins (logged)
       - https://app.example.com
-    maxMessageBytes: 16384              ***REMOVED*** inbound client frame cap; larger frames dropped (default)
+    maxMessageBytes: 16384              # inbound client frame cap; larger frames dropped (default)
 
   events:
     - name: orders
       type: ws
-      exchange: orders-ex               ***REMOVED*** must exist in broker.exchanges[]
-      routingKey: orders.***REMOVED***
-      auth: gateway-jwks                ***REMOVED*** verifies token + maps claims for this event
-      requireAuth: true                 ***REMOVED*** default true when auth is set; false → optional
-      actions: [orders.read]            ***REMOVED*** optional → needs IAclRoleService (checkAction); resource-agnostic for WS
-      scopeClaim: X-GTW-AUTH-USERID     ***REMOVED*** optional per-user scoping (MAPPED claim)
-      payloadKey: userId                ***REMOVED*** message field compared to scopeClaim
+      exchange: orders-ex               # must exist in broker.exchanges[]
+      routingKey: orders.#
+      auth: gateway-jwks                # verifies token + maps claims for this event
+      requireAuth: true                 # default true when auth is set; false → optional
+      actions: [orders.read]            # optional → needs IAclRoleService (checkAction); resource-agnostic for WS
+      scopeClaim: X-GTW-AUTH-USERID     # optional per-user scoping (MAPPED claim)
+      payloadKey: userId                # message field compared to scopeClaim
 
-    - name: invoices                    ***REMOVED*** webhook variant
+    - name: invoices                    # webhook variant
       type: http
       exchange: inv-ex
-      routingKey: inv.***REMOVED***
+      routingKey: inv.#
       url: https://hooks.example.com/invoices
       method: POST
       headers: { x-api-key: secret }
@@ -83,7 +83,7 @@ broker:
       options: { durable: true }
 ```
 
-***REMOVED******REMOVED*** Required wiring to flag
+## Required wiring to flag
 
 - The app bootstrap must register the WS adapter:
   `app.useWebSocketAdapter(new WsAdapter(app))` (see
@@ -98,7 +98,7 @@ broker:
 - WS sessions are bounded by the token `exp`: the socket is closed (`1008`) when the JWT
   expires; long-lived sockets need refresh + reconnect (gotcha 26).
 
-***REMOVED******REMOVED*** Client snippet (for docs/testing)
+## Client snippet (for docs/testing)
 
 ```js
 // token in subprotocol — browsers can't set custom handshake headers (gotcha 18).

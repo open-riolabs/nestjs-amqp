@@ -13,7 +13,7 @@ export interface RabbitMQQueueConfig {
    * Consumer tag must be unique to one channel. You shoudld properly manage
    * channels and tags in your local space in order to avoid conflicts.
    *
-   * @see {@link https://amqp-node.github.io/amqplib/channel_api.html***REMOVED***channel_consume|Channel API reference}
+   * @see {@link https://amqp-node.github.io/amqplib/channel_api.html#channel_consume|Channel API reference}
    */
   consumerTag?: string | undefined;
 }

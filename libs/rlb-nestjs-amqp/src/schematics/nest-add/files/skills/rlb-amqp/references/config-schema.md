@@ -1,4 +1,4 @@
-***REMOVED*** config.yaml — full schema
+# config.yaml — full schema
 
 Five top-level sections: `app`, `broker`, `topics`, `auth-providers`, `gateway`.
 Loaded by `config/config.loader.ts`. `app`/`broker`/`topics` → `BrokerModule.forRoot(broker, topics, app?)`;
@@ -17,13 +17,13 @@ Authoritative sources: `docs/broker.md`, `docs/gateway.md`, `docs/gateway-admin.
 
 ---
 
-***REMOVED******REMOVED*** app
+## app
 
 ```yaml
 app:
   port: 3000
   host: 0.0.0.0
-  environment: development   ***REMOVED*** development | production — controls error detail exposed by the gateway
+  environment: development   # development | production — controls error detail exposed by the gateway
 ```
 
 `AppConfig` = `{ environment, port?, host? }`. In `production` gateway errors are reduced
@@ -31,55 +31,67 @@ to `{ message, name }`; in `development` the full detail/stack is included.
 
 ---
 
-***REMOVED******REMOVED*** broker  (RabbitMQConfig)
+## broker  (RabbitMQConfig)
 
 ```yaml
 broker:
-  name: rabbitmq                                ***REMOVED*** cosmetic label (optional)
-  uri: "amqp://user:pass@host:5672/vhost"       ***REMOVED*** string | string[] (failover); vhost after last "/"
-  prefetchCount: 10                             ***REMOVED*** default channel prefetch
-  defaultRpcTimeout: 10000                      ***REMOVED*** ms (call arg → topic → this → 10000)
-  defaultSubscribeErrorBehavior: ack            ***REMOVED*** ack | nack | requeue (lib default REQUEUE)
+  name: rabbitmq                                # cosmetic label (optional)
+  uri: "amqp://user:pass@host:5672/vhost"       # string | string[] (failover); vhost after last "/"
+  prefetchCount: 10                             # default channel prefetch
+  defaultRpcTimeout: 10000                      # ms (call arg → topic → this → 10000)
+  retry:                                        # bounded retry on handler failure (replaces legacy infinite requeue)
+    maxAttempts: 5                              # total attempts incl. first delivery (default 5)
+    delayMs: 5000                               # wait between attempts via TTL wait-queue <queue>.retry.<delayMs> (default 0)
+    onExhausted: dead-letter                    # dead-letter | drop (default: dead-letter if deadLetter set, else drop)
+    deadLetter:
+      exchange: rlb-dlx                         # MUST be declared in broker.exchanges (not auto-asserted)
+      routingKey: my-key                        # optional; default = the message's original routing key
+  defaultSubscribeErrorBehavior: ack            # LEGACY ack | nack | requeue; only when `retry` unset. Built-in default (nothing set): 5 attempts → drop
   defaultPublishErrorBehavior: reject
 
-  routeDiscovery:                               ***REMOVED*** PUBLISHER-side route auto-discovery (microservice only)
-    serviceName: demo-ms                        ***REMOVED*** required to publish; fills connection_name if unset
-    publishOnBoot: true                         ***REMOVED*** default true — announce manifest on bootstrap
-    exchange: rlb-route-discovery               ***REMOVED*** default; MUST match the gateway consumer
-    queue: rlb-route-sync                        ***REMOVED*** default; MUST match the gateway consumer
+  routeDiscovery:                               # PUBLISHER-side route auto-discovery (microservice only)
+    serviceName: demo-ms                        # required to publish; fills connection_name if unset
+    publishOnBoot: true                         # default true — announce manifest on bootstrap
+    exchange: rlb-route-discovery               # default; MUST match the gateway consumer
+    queue: rlb-route-sync                        # default; MUST match the gateway consumer
 
-  connectionManagerOptions:                     ***REMOVED*** amqp-connection-manager options
+  connectionManagerOptions:                     # amqp-connection-manager options
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: my-service-1            ***REMOVED*** DISTINCT per instance for broadcast + WebSocket
+        connection_name: my-service              # LOGICAL name — the lib auto-appends -<hostname>-<pid> per instance
       credentials:
-        mechanism: PLAIN                         ***REMOVED*** PLAIN | EXTERNAL | AMQPLAIN (case-insensitive)
+        mechanism: PLAIN                         # PLAIN | EXTERNAL | AMQPLAIN (case-insensitive)
         username: guest
         password: guest
 
-  connectionInitOptions:                        ***REMOVED*** block on a healthy connection at boot?
-    wait: true                                   ***REMOVED*** default true
-    timeout: 5000                                ***REMOVED*** default 5000 ms
-    reject: true                                 ***REMOVED*** default true → throw on timeout
+  connectionInitOptions:                        # block on a healthy connection at boot?
+    wait: true                                   # default true
+    timeout: 5000                                # default 5000 ms
+    reject: true                                 # default true → throw on timeout
 
-  exchanges:                                    ***REMOVED*** RabbitMQExchangeConfig[]
+  exchanges:                                    # RabbitMQExchangeConfig[]
     - name: rlb
-      type: direct                               ***REMOVED*** direct | topic | fanout | headers
-      createExchangeIfNotExists: true            ***REMOVED*** false → checkExchange (must pre-exist)
+      type: direct                               # direct | topic | fanout | headers
+      createExchangeIfNotExists: true            # false → checkExchange (must pre-exist)
       options: { durable: true, autoDelete: false, internal: false }
 
-  queues:                                       ***REMOVED*** RabbitMQQueueConfig[]
+  queues:                                       # RabbitMQQueueConfig[]
     - name: rlb-acl
       exchange: rlb
-      routingKey: rlb-acl                         ***REMOVED*** string | string[]; REQUIRED if exchange type == topic
+      routingKey: rlb-acl                         # string | string[]; REQUIRED if exchange type == topic
       createQueueIfNotExists: true
       options: { durable: true, exclusive: false, autoDelete: false }
-      consumerTag: my-tag                         ***REMOVED*** optional, unique per channel
+      # Growth bounds (RECOMMENDED on work queues; unbounded queues trip RabbitMQ's
+      # mem/disk alarms which BLOCK all publishers): messageTtl (ms), maxLength (msgs),
+      # expires (queue TTL when unused, ms). ⚠️ changing options on an EXISTING queue
+      # → 406 PRECONDITION_FAILED loop; delete the queue first or use a broker policy.
+      # options: { durable: true, messageTtl: 3600000, maxLength: 100000 }
+      consumerTag: my-tag                         # optional, unique per channel
 
-  replyQueues:                                  ***REMOVED*** map exchange → reply queue (RPC responses)
-    rlb: rlb-reply                                ***REMOVED*** omit → RabbitMQ direct-reply-to is used
+  replyQueues:                                  # map exchange → reply queue (RPC responses)
+    rlb: rlb-reply                                # omit → RabbitMQ direct-reply-to is used
 ```
 
 Notes:
@@ -94,21 +106,25 @@ Notes:
 
 ---
 
-***REMOVED******REMOVED*** topics  (BrokerTopic[])
+## topics  (BrokerTopic[])
 
 A topic maps a logical name to an AMQP path. `mode` decides the semantics.
 
 ```yaml
 topics:
-  - name: rlb-acl            ***REMOVED*** logical name (must match @BrokerAction / requestData / gateway)
-    mode: rpc                 ***REMOVED*** rpc | handle | broadcast | event
-    queue: rlb-acl            ***REMOVED*** for rpc/handle: must exist in broker.queues[]
-    exchange: rlb             ***REMOVED*** exchange name
-    routingKey: rlb-acl       ***REMOVED*** broadcast / topic exchanges
-    errorBehavior: ack        ***REMOVED*** per-topic override of defaultSubscribeErrorBehavior (default REQUEUE)
-    mandatory: false          ***REMOVED*** publish with AMQP `mandatory` (unroutable → returned)
-    persistent: false         ***REMOVED*** publish delivery-mode 2 (survives restart if queue durable)
-    toObservable: false       ***REMOVED*** handle only: route to BrokerService.events$ instead of a handler
+  - name: rlb-acl            # logical name (must match @BrokerAction / requestData / gateway)
+    mode: rpc                 # rpc | handle | broadcast | event
+    queue: rlb-acl            # for rpc/handle: must exist in broker.queues[]
+    exchange: rlb             # exchange name
+    routingKey: rlb-acl       # broadcast / topic exchanges
+    errorBehavior: ack        # LEGACY per-topic override (ack|nack|requeue); prefer `retry`
+    retry:                    # per-topic retry policy; overrides broker.retry (see broker block)
+      maxAttempts: 3
+      delayMs: 1000
+      onExhausted: drop
+    mandatory: false          # publish with AMQP `mandatory` (unroutable → returned)
+    persistent: false         # publish delivery-mode 2 (survives restart if queue durable)
+    toObservable: false       # handle only: route to BrokerService.events$ instead of a handler
 ```
 
 | mode        | required fields                                  | notes                                                              |
@@ -124,7 +140,7 @@ topics:
 
 ---
 
-***REMOVED******REMOVED*** auth-providers  (HandlerAuthConfig[])
+## auth-providers  (HandlerAuthConfig[])
 
 Top-level (NOT under `gateway`). Each provider VALIDATES a token and MAPS its claims into
 forwarded `X-GTW-AUTH-*` headers. Referenced by `paths[].auth` / `events[].auth` by `name`.
@@ -132,22 +148,22 @@ forwarded `X-GTW-AUTH-*` headers. Referenced by `paths[].auth` / `events[].auth`
 ```yaml
 auth-providers:
   - name: gateway-jwks
-    type: jwks                       ***REMOVED*** jwt | jwks | basic | str-compare | none
-    headerPrefix: "X-GTW-AUTH-"      ***REMOVED*** prefix for mapped claim headers (and <prefix>USERID)
-    uidClaim: sub                    ***REMOVED*** claim → <prefix>USERID; REQUIRED for action checks
-    jwtMap:                          ***REMOVED*** 'source:dest' pairs → <prefix><DEST>; WITHOUT it NO claims forwarded
-      - sub:userId                   ***REMOVED***   → X-GTW-AUTH-USERID
-      - email:email                  ***REMOVED***   → X-GTW-AUTH-EMAIL
-      - preferred_username:username  ***REMOVED***   → X-GTW-AUTH-USERNAME
-      - roles:roles                  ***REMOVED***   → X-GTW-AUTH-ROLES
-    algorithms: [RS256]              ***REMOVED*** REQUIRED for jwt/jwks; jwks allows only RS*/ES*/PS*
-    issuer: https://issuer/realms/x  ***REMOVED*** expected `iss`
-    jwksUri: https://issuer/certs    ***REMOVED*** jwks only
-    secret: s3cr3t                   ***REMOVED*** jwt (HS secret) / str-compare (expected token string)
-    audience: my-aud                 ***REMOVED*** jwt only (optional)
-    clientId: u                      ***REMOVED*** basic only (username)
-    clientSecret: p                  ***REMOVED*** basic only (password)
-    httpsAllowUnauthorized: false    ***REMOVED*** true ONLY for self-signed dev issuers
+    type: jwks                       # jwt | jwks | basic | str-compare | none
+    headerPrefix: "X-GTW-AUTH-"      # prefix for mapped claim headers (and <prefix>USERID)
+    uidClaim: sub                    # claim → <prefix>USERID; REQUIRED for action checks
+    jwtMap:                          # 'source:dest' pairs → <prefix><DEST>; WITHOUT it NO claims forwarded
+      - sub:userId                   #   → X-GTW-AUTH-USERID
+      - email:email                  #   → X-GTW-AUTH-EMAIL
+      - preferred_username:username  #   → X-GTW-AUTH-USERNAME
+      - roles:roles                  #   → X-GTW-AUTH-ROLES
+    algorithms: [RS256]              # REQUIRED for jwt/jwks; jwks allows only RS*/ES*/PS*
+    issuer: https://issuer/realms/x  # expected `iss`
+    jwksUri: https://issuer/certs    # jwks only
+    secret: s3cr3t                   # jwt (HS secret) / str-compare (expected token string)
+    audience: my-aud                 # jwt only (optional)
+    clientId: u                      # basic only (username)
+    clientSecret: p                  # basic only (password)
+    httpsAllowUnauthorized: false    # true ONLY for self-signed dev issuers
 ```
 
 Type behaviour:
@@ -167,58 +183,59 @@ in-process via `IAclRoleService.checkAction(userId, ctx, action)`).
 
 ---
 
-***REMOVED******REMOVED*** gateway  (GatewayConfig)
+## gateway  (GatewayConfig)
 
 ```yaml
 gateway:
   mode: gateway
-  headerPrefix: "X-FWD-"             ***REMOVED*** prefix for FORWARDED request headers (forwardHeaders);
-                                     ***REMOVED***   separate from a provider's headerPrefix (auth claims)
+  headerPrefix: "X-FWD-"             # prefix for FORWARDED request headers (forwardHeaders);
+                                     #   separate from a provider's headerPrefix (auth claims)
 
-  reloadTopic: rlb-gateway-control   ***REMOVED*** broadcast control topic; action 'gw-reload' rebuilds routes
-  metrics:                           ***REMOVED*** per-call broker sink (omit to disable)
+  reloadTopic: rlb-gateway-control   # broadcast control topic; action 'gw-reload' rebuilds routes
+  metrics:                           # per-call broker sink (omit to disable)
     topic: rlb-gateway-admin
     action: gw-metrics-track
 
-  loadConfig:                        ***REMOVED*** pull DB-stored routes/events, merged with YAML, on (re)load
-    paths:  { topic: rlb-gateway-admin, action: gw-path-export }    ***REMOVED*** gateway-admin ships this handler
-    ***REMOVED*** events: { topic: <topic>, action: <your-export-action> }     ***REMOVED*** optional; NO built-in handler — provide your own
+  loadConfig:                        # pull DB-stored routes/events, merged with YAML, on (re)load
+    paths:  { topic: rlb-gateway-admin, action: gw-path-export }    # gateway-admin ships this handler
+    # events: { topic: <topic>, action: <your-export-action> }     # optional; NO built-in handler — provide your own
 
-  ws:                                ***REMOVED*** WebSocketGatewayOptions — connection-level only
+  ws:                                # WebSocketGatewayOptions — connection-level only
     maxConnections: 1000
     maxSubscriptionsPerClient: 50
-    heartbeatIntervalMs: 30000                     ***REMOVED*** default 30000; also drops dead/expired-token sockets
-    maxMessageBytes: 16384                          ***REMOVED*** default 16384; oversized client frames dropped
-    allowedOrigins: [https://app.example.com]       ***REMOVED*** omit → all Origins accepted (logged)
-    ***REMOVED*** auth/roles/scope are declared PER-EVENT on events[], not here
+    heartbeatIntervalMs: 30000                     # default 30000; also drops dead/expired-token sockets
+    maxMessageBytes: 16384                          # default 16384; oversized client frames dropped
+    maxBufferedBytes: 1048576                       # default 1 MiB; slow client above this → its messages dropped until it drains
+    allowedOrigins: [https://app.example.com]       # omit → all Origins accepted (logged)
+    # auth/roles/scope are declared PER-EVENT on events[], not here
 
-  paths:   [ ... ]                   ***REMOVED*** PathDefinition[] (HTTP routes) — see below
-  events:  [ ... ]                   ***REMOVED*** WebSocketEvent[] (WS / webhook) — see below
+  paths:   [ ... ]                   # PathDefinition[] (HTTP routes) — see below
+  events:  [ ... ]                   # WebSocketEvent[] (WS / webhook) — see below
 ```
 
 The reload control action is the literal string **`gw-reload`** (`GW_RELOAD_ACTION`); the
 control-topic subscriber ignores every other message. Concurrent `reload()`s are coalesced.
 
-***REMOVED******REMOVED******REMOVED*** gateway.paths[]  (PathDefinition — HTTP routes)
+### gateway.paths[]  (PathDefinition — HTTP routes)
 
 ```yaml
-- name: report-download   ***REMOVED*** logical name (logs + metrics)
-  method: GET             ***REMOVED*** GET | POST | PUT | DELETE | PATCH
-  path: /reports/:id      ***REMOVED*** Express route, :params merged into payload (params win)
-  dataSource: query-body  ***REMOVED*** body | query | params | body-query | query-body
+- name: report-download   # logical name (logs + metrics)
+  method: GET             # GET | POST | PUT | DELETE | PATCH
+  path: /reports/:id      # Express route, :params merged into payload (params win)
+  dataSource: query-body  # body | query | params | body-query | query-body
   topic: rlb-gateway-admin
   action: gw-metrics-get
-  mode: rpc               ***REMOVED*** rpc | event
-  timeout: 15000          ***REMOVED*** rpc only (ms)
-  auth: gateway-jwks      ***REMOVED*** auth-provider name
-  allowAnonymous: false   ***REMOVED*** true → skip the auth/action gate entirely
-  actions: [doc.read, doc.admin]   ***REMOVED*** caller must hold AT LEAST ONE on (companyId, resourceId); needs auth + IAclRoleService
-  successStatusCode: 200  ***REMOVED*** default 200 rpc / 202 event / 204 empty rpc reply
-  binary: true            ***REMOVED*** treat a raw (non-JSON) reply as base64 → binary body
-  redirect: 302           ***REMOVED*** rpc only → redirect with this status, using the reply as Location
-  parseRaw: false         ***REMOVED*** true → forward raw body as $raw (needs rawBody:true at bootstrap)
-  headers: { Cache-Control: no-store }    ***REMOVED*** static response headers
-  forwardHeaders: { X-Trace-Id: X-Request-Id }   ***REMOVED*** request header → forwarded (dest prefixed by headerPrefix)
+  mode: rpc               # rpc | event
+  timeout: 15000          # rpc only (ms)
+  auth: gateway-jwks      # auth-provider name
+  allowAnonymous: false   # true → skip the auth/action gate entirely
+  actions: [doc.read, doc.admin]   # caller must hold AT LEAST ONE on (companyId, resourceId); needs auth + IAclRoleService
+  successStatusCode: 200  # default 200 rpc / 202 event / 204 empty rpc reply
+  binary: true            # treat a raw (non-JSON) reply as base64 → binary body
+  redirect: 302           # rpc only → redirect with this status, using the reply as Location
+  parseRaw: false         # true → forward raw body as $raw (needs rawBody:true at bootstrap)
+  headers: { Cache-Control: no-store }    # static response headers
+  forwardHeaders: { X-Trace-Id: X-Request-Id }   # request header → forwarded (dest prefixed by headerPrefix)
 ```
 
 dataSource payload composition (`req.params` always merged in, re-applied last so they win):
@@ -246,19 +263,19 @@ Auth gate (per request): `allowAnonymous:true` → gate skipped; `auth` no `acti
 The gateway reads the canonical `companyId`/`resourceId` from the request (precedence
 params → query → body) and matches them exactly for the action check.
 
-***REMOVED******REMOVED******REMOVED*** gateway.events[]  (WebSocketEvent — WS / webhook)
+### gateway.events[]  (WebSocketEvent — WS / webhook)
 
 ```yaml
-- name: chat               ***REMOVED*** clients subscribe to "chat"; messages arrive as onChat
-  type: ws                 ***REMOVED*** ws | mqtt (reserved) | http (webhook)
-  exchange: rlb            ***REMOVED*** broker source bound to a per-instance exclusive ephemeral queue
+- name: chat               # clients subscribe to "chat"; messages arrive as onChat
+  type: ws                 # ws | mqtt (reserved) | http (webhook)
+  exchange: rlb            # broker source bound to a per-instance exclusive ephemeral queue
   routingKey: chat.messages
-  auth: gateway-jwks       ***REMOVED*** provider that verifies the token + maps claims FOR THIS event (at subscribe)
-  requireAuth: true        ***REMOVED*** default true when `auth` is set; false → auth optional (anon allowed)
-  actions: [chat.read]     ***REMOVED*** ACL check via IAclRoleService.checkAction (needs auth); WS gates resource-agnostically
-  scopeClaim: userId       ***REMOVED*** per-user isolation: the mapped claim value...
-  payloadKey: userId       ***REMOVED*** ...must equal payload[payloadKey]; without payloadKey → denies everything
-  ***REMOVED*** type: http only:
+  auth: gateway-jwks       # provider that verifies the token + maps claims FOR THIS event (at subscribe)
+  requireAuth: true        # default true when `auth` is set; false → auth optional (anon allowed)
+  actions: [chat.read]     # ACL check via IAclRoleService.checkAction (needs auth); WS gates resource-agnostically
+  scopeClaim: userId       # per-user isolation: the mapped claim value...
+  payloadKey: userId       # ...must equal payload[payloadKey]; without payloadKey → denies everything
+  # type: http only:
   url: https://hooks.example.com/orders
   method: POST
   timeout: 5000
@@ -277,7 +294,7 @@ auto-delete queue, so every instance needs a distinct `connection_name`.
 
 ---
 
-***REMOVED******REMOVED*** gateway-admin / ACL HTTP surface (decorator-bound topics + actions)
+## gateway-admin / ACL HTTP surface (decorator-bound topics + actions)
 
 These are exposed as ordinary `gateway.paths[]` entries forwarding to the fixed topics/actions
 below. **Name-keyed** resources have NO POST and no id — `PUT` upserts by `name`.

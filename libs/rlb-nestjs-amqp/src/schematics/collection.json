@@ -3,7 +3,7 @@
   "schematics": {
     "nest-add": {
       "description": "Add RabbitMQ support to a NestJS project",
-      "factory": "./nest-add/index***REMOVED***main",
+      "factory": "./nest-add/index#main",
       "schema": "./nest-add/schema.json"
     }
   }

@@ -1,4 +1,4 @@
-***REMOVED***!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * gateway-paths-to-http.js
  * -------------------------------------------------------------------------------------------------
@@ -101,10 +101,10 @@ function buildHttp() {
   const out = [];
   out.push(`@base = ${base}`);
   out.push(`@auth = ${authValue}`);
-  out.push(`***REMOVED*** ${bodies.length} routes → POST {{base}}${endpoint}  (gw-path-create)`);
+  out.push(`# ${bodies.length} routes → POST {{base}}${endpoint}  (gw-path-create)`);
   out.push('');
   for (const b of bodies) {
-    out.push(`***REMOVED******REMOVED******REMOVED*** ${b.name || routeKeyOf(b)}  —  ${routeKeyOf(b)}`);
+    out.push(`### ${b.name || routeKeyOf(b)}  —  ${routeKeyOf(b)}`);
     out.push(`POST {{base}}${endpoint}`);
     out.push('Content-Type: application/json');
     if (authValue) out.push(`${authHeader}: {{auth}}`);
@@ -116,11 +116,11 @@ function buildHttp() {
 }
 
 function buildCurl() {
-  const out = ['***REMOVED***!/usr/bin/env bash', 'set -euo pipefail', `BASE="${base}"`, `AUTH="${authValue}"`, ''];
+  const out = ['#!/usr/bin/env bash', 'set -euo pipefail', `BASE="${base}"`, `AUTH="${authValue}"`, ''];
   for (const b of bodies) {
     const body = JSON.stringify(b).replace(/'/g, `'\\''`);
     const authArg = authValue ? ` -H "${authHeader}: $AUTH"` : '';
-    out.push(`***REMOVED*** ${b.name || ''}  ${routeKeyOf(b)}`);
+    out.push(`# ${b.name || ''}  ${routeKeyOf(b)}`);
     out.push(`curl -sS -X POST "$BASE${endpoint}" -H "Content-Type: application/json"${authArg} -d '${body}'`);
     out.push('');
   }

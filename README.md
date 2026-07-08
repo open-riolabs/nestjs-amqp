@@ -1,4 +1,4 @@
-***REMOVED*** @open-rlb/nestjs-amqp
+# @open-rlb/nestjs-amqp
 
 > 📖 **Full English documentation:** [`docs/`](./docs/README.md) — paginated guides for the Broker, Gateway, ACL and Gateway-admin modules, plus Getting Started and Troubleshooting. (This README is the older Italian overview.)
 
@@ -10,15 +10,15 @@ Libreria **NestJS** che fornisce un'astrazione di alto livello su **RabbitMQ/AMQ
 npm i @open-rlb/nestjs-amqp
 ```
 
-***REMOVED******REMOVED******REMOVED*** Installazione automatica (`nest add`)
+### Installazione automatica (`nest add`)
 
 Uno **schematic** wira la libreria nel tuo progetto NestJS: aggiunge i moduli all'`AppModule`, crea il config loader e un `config.yaml`, copia le **skill Claude** in `.claude/skills/` e — in base alla modalità gateway — include o meno la parte HTTP/WebSocket (sia nello YAML sia nella factory dei moduli).
 
 ```bash
-***REMOVED*** con gateway HTTP/WebSocket (default)
+# con gateway HTTP/WebSocket (default)
 nest add @open-rlb/nestjs-amqp
 
-***REMOVED*** solo microservizio AMQP (niente gateway)
+# solo microservizio AMQP (niente gateway)
 nest g @open-rlb/nestjs-amqp:nest-add --gateway=false
 ```
 
@@ -27,20 +27,20 @@ Opzioni: `--gateway` (on/off, default on), `--module` (default `src/app.module.t
 Con `--gateway=false` la factory passa a `BrokerModule` solo `{ options, topics, appOptions }` e non importa `ProxyModule`/`HttpModule`; con il gateway attivo aggiunge `ProxyModule.forRootAsync(...)` (che riceve `authOptions` + `gatewayOptions`), `HttpModule` e il `WsAdapter` in `main.ts`. Lo schematic è idempotente (non tocca un `AppModule` che già importa `BrokerModule`).
 
 > Documentazione completa. Indice:
-> [Architettura](***REMOVED***architettura) ·
-> [Quick start](***REMOVED***quick-start) ·
-> [Configurazione](***REMOVED***configurazione-completa) ·
-> [Scrivere un microservizio (AMQP)](***REMOVED***scrivere-un-microservizio-amqp) ·
-> [Gateway HTTP](***REMOVED***gateway-http) ·
-> [Gateway WebSocket](***REMOVED***gateway-websocket) ·
-> [Remote config](***REMOVED***remote-config) ·
-> [API `BrokerService`](***REMOVED***api-brokerservice) ·
-> [⚠️ Gotcha e casi a rischio bug](***REMOVED***️-gotcha-e-casi-a-rischio-bug) ·
-> [Errori comuni](***REMOVED***errori-comuni)
+> [Architettura](#architettura) ·
+> [Quick start](#quick-start) ·
+> [Configurazione](#configurazione-completa) ·
+> [Scrivere un microservizio (AMQP)](#scrivere-un-microservizio-amqp) ·
+> [Gateway HTTP](#gateway-http) ·
+> [Gateway WebSocket](#gateway-websocket) ·
+> [Remote config](#remote-config) ·
+> [API `BrokerService`](#api-brokerservice) ·
+> [⚠️ Gotcha e casi a rischio bug](#️-gotcha-e-casi-a-rischio-bug) ·
+> [Errori comuni](#errori-comuni)
 
 ---
 
-***REMOVED******REMOVED*** Architettura
+## Architettura
 
 Monorepo NestJS (vedi `nest-cli.json`):
 
@@ -76,13 +76,13 @@ Monorepo NestJS (vedi `nest-cli.json`):
           └───────────┘
 ```
 
-***REMOVED******REMOVED******REMOVED*** I tre strati
+### I tre strati
 
 1. **`amqp-lib`** — driver a basso livello (`AmqpConnection`): connessione resiliente (`amqp-connection-manager`), canali gestiti, setup di exchange/queue/binding al boot, RPC con `correlationId` + *direct-reply-to*, consumer con gestione errori (`Nack` → ack/reject/requeue), graceful shutdown.
 2. **`modules/broker`** — astrazione di business: `BrokerService`, decoratori `@BrokerAction`/`@BrokerParam`, `MetadataScannerService` (auto-discovery dei metodi decorati e registrazione automatica dei consumer).
 3. **`modules/proxy`** — gateway HTTP/WebSocket: registrazione dinamica di route Express, auth pluggable, ACL/azioni, WebSocket sicuro e scalabile, forwarding webhook.
 
-***REMOVED******REMOVED******REMOVED*** Flusso di una richiesta
+### Flusso di una richiesta
 
 ```
 HTTP/WS request → Gateway → (RPC | event) su RabbitMQ → microservizio (@BrokerAction)
@@ -91,9 +91,9 @@ HTTP/WS request → Gateway → (RPC | event) su RabbitMQ → microservizio (@Br
 
 ---
 
-***REMOVED******REMOVED*** Quick start
+## Quick start
 
-***REMOVED******REMOVED******REMOVED*** 1. `AppModule`
+### 1. `AppModule`
 
 ```ts
 import { HttpModule } from '@nestjs/axios';
@@ -134,7 +134,7 @@ import yamlConfig from './config/config.loader';
 export class AppModule {}
 ```
 
-***REMOVED******REMOVED******REMOVED*** 2. Bootstrap (`main.ts`)
+### 2. Bootstrap (`main.ts`)
 
 ```ts
 import { NestFactory } from '@nestjs/core';
@@ -150,7 +150,7 @@ async function bootstrap() {
 bootstrap();
 ```
 
-***REMOVED******REMOVED******REMOVED*** 3. Config loader (`config/config.loader.ts`)
+### 3. Config loader (`config/config.loader.ts`)
 
 ```ts
 import { readFileSync } from 'fs';
@@ -165,60 +165,60 @@ export default () =>
 
 ---
 
-***REMOVED******REMOVED*** Configurazione completa
+## Configurazione completa
 
 Il file `config.yaml` ha cinque sezioni di primo livello: `app`, `broker`, `topics`, `auth-providers`, `gateway`.
 
-***REMOVED******REMOVED******REMOVED*** `app`
+### `app`
 
 ```yaml
 app:
   port: 3000
   host: 0.0.0.0
-  environment: development   ***REMOVED*** 'development' | 'production' (controlla il dettaglio degli errori esposti)
+  environment: development   # 'development' | 'production' (controlla il dettaglio degli errori esposti)
 ```
 
 > In `production` gli errori restituiti dal gateway sono ridotti a `{ message, name }`; in `development` viene incluso lo stack/dettaglio. Vedi `UtilsService.error2Object`.
 
-***REMOVED******REMOVED******REMOVED*** `broker`
+### `broker`
 
 ```yaml
 broker:
   name: rabbitmq
-  uri: "amqp://user:pass@localhost:5672/vhost"   ***REMOVED*** stringa o array di URI (failover)
+  uri: "amqp://user:pass@localhost:5672/vhost"   # stringa o array di URI (failover)
   prefetchCount: 10
-  defaultRpcTimeout: 10000                        ***REMOVED*** ms, default per requestData
-  defaultSubscribeErrorBehavior: ack              ***REMOVED*** ack | reject | requeue (comportamento di default sugli errori consumer)
+  defaultRpcTimeout: 10000                        # ms, default per requestData
+  defaultSubscribeErrorBehavior: ack              # ack | reject | requeue (comportamento di default sugli errori consumer)
 
-  connectionManagerOptions:                       ***REMOVED*** opzioni amqp-connection-manager
+  connectionManagerOptions:                       # opzioni amqp-connection-manager
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: my-service               ***REMOVED*** OBBLIGATORIO per broadcast e per il gateway WebSocket
+        connection_name: my-service               # OBBLIGATORIO per broadcast e per il gateway WebSocket
       credentials:
-        mechanism: PLAIN                          ***REMOVED*** PLAIN | EXTERNAL | AMQPLAIN
+        mechanism: PLAIN                          # PLAIN | EXTERNAL | AMQPLAIN
         username: guest
         password: guest
 
   exchanges:
     - name: users-ex
-      type: direct                                ***REMOVED*** direct | topic | fanout | headers
-      createExchangeIfNotExists: true             ***REMOVED*** false → checkExchange (deve già esistere)
+      type: direct                                # direct | topic | fanout | headers
+      createExchangeIfNotExists: true             # false → checkExchange (deve già esistere)
       options: { durable: true }
 
   queues:
     - name: users-rpc-q
       exchange: users-ex
-      routingKey: users.rpc                        ***REMOVED*** string | string[]; OBBLIGATORIO se exchange è di tipo `topic`
+      routingKey: users.rpc                        # string | string[]; OBBLIGATORIO se exchange è di tipo `topic`
       createQueueIfNotExists: true
       options: { durable: true }
 
-  replyQueues:                                    ***REMOVED*** mappa exchange → reply queue per le risposte RPC
-    users-ex: users-reply-q                       ***REMOVED*** se omesso si usa la direct-reply-to di RabbitMQ
+  replyQueues:                                    # mappa exchange → reply queue per le risposte RPC
+    users-ex: users-reply-q                       # se omesso si usa la direct-reply-to di RabbitMQ
 ```
 
-***REMOVED******REMOVED******REMOVED*** `topics`
+### `topics`
 
 Un topic mappa un nome logico (azione/microservizio) su un percorso AMQP. Il `mode` decide la semantica.
 
@@ -233,7 +233,7 @@ Un topic mappa un nome logico (azione/microservizio) su un percorso AMQP. Il `mo
 topics:
   - name: users-rpc
     mode: rpc
-    queue: users-rpc-q          ***REMOVED*** deve esistere in broker.queues[]
+    queue: users-rpc-q          # deve esistere in broker.queues[]
 
   - name: invoice-handle
     mode: handle
@@ -242,7 +242,7 @@ topics:
   - name: notify-broadcast
     mode: broadcast
     exchange: notify-ex
-    routingKey: notify.***REMOVED***
+    routingKey: notify.#
 
   - name: audit-event
     mode: event
@@ -252,23 +252,23 @@ topics:
 
 > `toObservable: true` su un topic `handle` instrada i messaggi su `BrokerService.events$` (Observable RxJS) invece che a un handler registrato.
 
-***REMOVED******REMOVED******REMOVED*** `auth-providers`
+### `auth-providers`
 
 Provider di autenticazione usati dalle route del gateway (`gateway.paths[].auth`) e dagli eventi WebSocket (`gateway.events[].auth`).
 
 ```yaml
 auth-providers:
   - name: gateway-jwks
-    type: jwks                                    ***REMOVED*** jwt | jwks | basic | str-compare | none
+    type: jwks                                    # jwt | jwks | basic | str-compare | none
     issuer: https://issuer.example.com/realms/main
     jwksUri: https://issuer.example.com/certs
     algorithms: [RS256]
-    httpsAllowUnauthorized: false                 ***REMOVED*** true SOLO per issuer self-signed in dev
-    jwtMap:                                        ***REMOVED*** claim del token → claim mappato (header-prefixed)
+    httpsAllowUnauthorized: false                 # true SOLO per issuer self-signed in dev
+    jwtMap:                                        # claim del token → claim mappato (header-prefixed)
       - sub:userId
       - roles:roles
-    headerPrefix: X-GTW-AUTH-                      ***REMOVED*** prefisso degli header propagati ai microservizi
-    uidClaim: USERID                              ***REMOVED*** dest (uppercase) usato come user id per l'ACL
+    headerPrefix: X-GTW-AUTH-                      # prefisso degli header propagati ai microservizi
+    uidClaim: USERID                              # dest (uppercase) usato come user id per l'ACL
     usernameClaim: USERNAME
 
   - name: gateway-jwt
@@ -291,39 +291,39 @@ auth-providers:
   - name: gateway-str
     type: str-compare
     secret: your-static-token
-    headerPrefix: Bearer                          ***REMOVED*** prefisso atteso nell'header Authorization
+    headerPrefix: Bearer                          # prefisso atteso nell'header Authorization
 ```
 
 Mapping dei claim: un token con `{ sub: "u_1", roles: [...] }` e `jwtMap: [sub:userId]`, `headerPrefix: X-GTW-AUTH-` produce l'header `X-GTW-AUTH-USERID = u_1` propagato al microservizio. Leggilo con `@BrokerParam('header', 'X-GTW-AUTH-USERID')`.
 
 > **Sicurezza dei provider**: `algorithms` è **obbligatorio** per `jwt`/`jwks` (se omesso la verifica è negata → previene l'algorithm-confusion); per `jwks` solo algoritmi asimmetrici (RS\*/ES\*/PS\*), `HS*`/`none` rifiutati. `str-compare` senza `secret` e `basic` senza `clientSecret` fanno **pass-through** (richiesta considerata autenticata — provider di fatto aperto/disabilitato; usalo consapevolmente). Senza `jwtMap` **nessun claim viene inoltrato** (il token resta accettato, `success:true`): il gateway fa fail-safe invece di propagare l'intero payload. Definiscilo sempre per inoltrare gli header identità (es. `X-GTW-AUTH-USERID`).
 
-***REMOVED******REMOVED******REMOVED*** `gateway`
+### `gateway`
 
 ```yaml
 gateway:
   mode: gateway
-  headerPrefix: X-GTW-                            ***REMOVED*** prefisso per gli header inoltrati (forwardHeaders)
+  headerPrefix: X-GTW-                            # prefisso per gli header inoltrati (forwardHeaders)
 
-  ws:                                             ***REMOVED*** opzioni WebSocket — solo livello connessione
+  ws:                                             # opzioni WebSocket — solo livello connessione
     maxConnections: 5000
     maxSubscriptionsPerClient: 50
     heartbeatIntervalMs: 30000
-    ***REMOVED*** auth/roles/scope sono dichiarati PER-EVENTO (events[].auth/requireAuth/roles/...)
+    # auth/roles/scope sono dichiarati PER-EVENTO (events[].auth/requireAuth/roles/...)
 
-  loadConfig:                                     ***REMOVED*** caricamento remoto di paths/events via RPC (opzionale)
+  loadConfig:                                     # caricamento remoto di paths/events via RPC (opzionale)
     paths: { topic: gtw.config, action: get-paths }
     events: { topic: gtw.config, action: get-events }
 
-  paths:    [ ... ]                               ***REMOVED*** vedi "Gateway HTTP"
-  events:   [ ... ]                               ***REMOVED*** vedi "Gateway WebSocket"
+  paths:    [ ... ]                               # vedi "Gateway HTTP"
+  events:   [ ... ]                               # vedi "Gateway WebSocket"
 ```
 
 ---
 
-***REMOVED******REMOVED*** Scrivere un microservizio (AMQP)
+## Scrivere un microservizio (AMQP)
 
-***REMOVED******REMOVED******REMOVED*** Handler con i decoratori
+### Handler con i decoratori
 
 ```ts
 import { Injectable } from '@nestjs/common';
@@ -346,7 +346,7 @@ export class UsersActionService {
 
 Registra il servizio come provider in un modulo NestJS qualunque: il `MetadataScannerService` lo scopre all'avvio e registra automaticamente il consumer per il topic.
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Sorgenti `@BrokerParam(source, name?)`
+#### Sorgenti `@BrokerParam(source, name?)`
 
 | Source      | Valore iniettato                 |
 | ----------- | -------------------------------- |
@@ -359,7 +359,7 @@ Registra il servizio come provider in un modulo NestJS qualunque: il `MetadataSc
 
 > Se ometti `@BrokerParam` su un parametro, il default è `{ source: 'body' }` con chiave = nome del parametro.
 
-***REMOVED******REMOVED******REMOVED*** Doppio comportamento RPC / event
+### Doppio comportamento RPC / event
 
 Ogni `@BrokerAction` è eseguibile **sia in RPC sia in event**, senza modifiche al servizio. Cambia solo cosa attende il chiamante.
 
@@ -371,14 +371,14 @@ Ogni `@BrokerAction` è eseguibile **sia in RPC sia in event**, senza modifiche 
 `publishMessage` è `async` e si risolve solo al publisher confirm (rigetta su nack/errore). Sul gateway, una path `mode: event` risponde `202` **dopo** il confirm e `503` se il broker non accetta.
 
 ```yaml
-***REMOVED*** Lo stesso topic/action esposto nei due modi
+# Lo stesso topic/action esposto nei due modi
 gateway:
   paths:
     - { name: users-create-sync,  method: POST, path: /users,       topic: users-rpc, action: user.create, mode: rpc }
     - { name: users-create-async, method: POST, path: /users/async, topic: users-rpc, action: user.create, mode: event }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Consumer manuali (senza decoratori)
+### Consumer manuali (senza decoratori)
 
 ```ts
 // RPC
@@ -392,7 +392,7 @@ await broker.registerHandler<{ invoiceId: string }>('invoice-handle', async (eve
 });
 ```
 
-***REMOVED******REMOVED******REMOVED*** Pubblicare / chiamare da codice
+### Pubblicare / chiamare da codice
 
 ```ts
 @Injectable()
@@ -414,7 +414,7 @@ export class UsersClient {
 
 ---
 
-***REMOVED******REMOVED*** Gateway HTTP
+## Gateway HTTP
 
 Le route sono dichiarate in `gateway.paths[]` e registrate dinamicamente su Express al boot.
 
@@ -422,25 +422,25 @@ Le route sono dichiarate in `gateway.paths[]` e registrate dinamicamente su Expr
 gateway:
   paths:
     - name: users-create
-      method: POST                 ***REMOVED*** GET | POST | PUT | DELETE | PATCH
-      path: /users/:tenant?        ***REMOVED*** supporta route param Express
-      dataSource: body             ***REMOVED*** body | query | params | body-query | query-body
+      method: POST                 # GET | POST | PUT | DELETE | PATCH
+      path: /users/:tenant?        # supporta route param Express
+      dataSource: body             # body | query | params | body-query | query-body
       topic: users-rpc
       action: user.create
-      mode: rpc                    ***REMOVED*** rpc | event
-      timeout: 7000                ***REMOVED*** solo rpc
-      auth: gateway-jwks           ***REMOVED*** nome di un auth-provider
-      allowAnonymous: false        ***REMOVED*** true → consente l'accesso anche senza auth valida
-      roles: [users.create]        ***REMOVED*** richiede un IAclRoleService registrato
+      mode: rpc                    # rpc | event
+      timeout: 7000                # solo rpc
+      auth: gateway-jwks           # nome di un auth-provider
+      allowAnonymous: false        # true → consente l'accesso anche senza auth valida
+      roles: [users.create]        # richiede un IAclRoleService registrato
       successStatusCode: 201
-      binary: false                ***REMOVED*** true → risposta come Buffer base64-decoded
-      redirect: 302                ***REMOVED*** se valorizzato, redirect alla URL contenuta nella risposta
-      headers: { Cache-Control: no-store }   ***REMOVED*** header statici sulla risposta
-      forwardHeaders: { Tenant: x-tenant }   ***REMOVED*** header della richiesta da inoltrare al microservizio
-      parseRaw: false              ***REMOVED*** true → inoltra il body raw come $raw (richiede rawBody:true nel bootstrap)
+      binary: false                # true → risposta come Buffer base64-decoded
+      redirect: 302                # se valorizzato, redirect alla URL contenuta nella risposta
+      headers: { Cache-Control: no-store }   # header statici sulla risposta
+      forwardHeaders: { Tenant: x-tenant }   # header della richiesta da inoltrare al microservizio
+      parseRaw: false              # true → inoltra il body raw come $raw (richiede rawBody:true nel bootstrap)
 ```
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Composizione del payload (`dataSource`)
+#### Composizione del payload (`dataSource`)
 
 | Valore       | Payload inviato al broker        |
 | ------------ | -------------------------------- |
@@ -452,49 +452,49 @@ gateway:
 
 > I route param (`req.params`) vengono **ri-applicati per ultimi** su `data`: a parità di chiave vincono sempre sul body/query. Gli upload multipart finiscono in `$files`; il body raw (se `parseRaw`) in `$raw`.
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Mappatura errori → status HTTP
+#### Mappatura errori → status HTTP
 
 Il `name` dell'errore lanciato dal microservizio determina lo status: `BadRequestError`/`InvalidParamsErrror` → 400, `UnauthorizedError` → 401, `ForbiddenError` → 403, `NotFoundError` → 404, altrimenti → 500. In `mode: event` un confirm fallito → 503.
 
 ---
 
-***REMOVED******REMOVED*** Gateway WebSocket
+## Gateway WebSocket
 
 Il gateway WebSocket inoltra eventi del broker ai client connessi (o a webhook HTTP), con autenticazione, autorizzazione per evento e funzionamento corretto in **multi-istanza** (fan-out).
 
-***REMOVED******REMOVED******REMOVED*** Configurazione
+### Configurazione
 
 ```yaml
 gateway:
-  ws:                                ***REMOVED*** solo livello connessione
-    maxConnections: 5000             ***REMOVED*** limite connessioni per istanza
-    maxSubscriptionsPerClient: 50    ***REMOVED*** limite sottoscrizioni per client
-    heartbeatIntervalMs: 30000       ***REMOVED*** ping/pong per chiudere le connessioni morte
-    allowedOrigins:                  ***REMOVED*** allowlist Origin dell'handshake (omessa → tutte)
+  ws:                                # solo livello connessione
+    maxConnections: 5000             # limite connessioni per istanza
+    maxSubscriptionsPerClient: 50    # limite sottoscrizioni per client
+    heartbeatIntervalMs: 30000       # ping/pong per chiudere le connessioni morte
+    allowedOrigins:                  # allowlist Origin dell'handshake (omessa → tutte)
       - https://app.example.com
-    maxMessageBytes: 16384           ***REMOVED*** scarta i frame client più grandi (default 16KB)
+    maxMessageBytes: 16384           # scarta i frame client più grandi (default 16KB)
 
   events:
     - name: orders
-      type: ws                       ***REMOVED*** ws | http (webhook)
+      type: ws                       # ws | http (webhook)
       exchange: orders-ex
-      routingKey: orders.***REMOVED***
-      auth: gateway-jwks             ***REMOVED*** provider che verifica il token e mappa i claim PER QUESTO evento
-      requireAuth: true              ***REMOVED*** default true quando `auth` è impostato; false → auth opzionale
-      roles: [orders.read]           ***REMOVED*** verifica ACL via IAclRoleService
-      scopeClaim: X-GTW-AUTH-USERID  ***REMOVED*** inoltra solo i messaggi dell'utente...
-      payloadKey: userId             ***REMOVED*** ...dove payload.userId === claim dell'utente
+      routingKey: orders.#
+      auth: gateway-jwks             # provider che verifica il token e mappa i claim PER QUESTO evento
+      requireAuth: true              # default true quando `auth` è impostato; false → auth opzionale
+      roles: [orders.read]           # verifica ACL via IAclRoleService
+      scopeClaim: X-GTW-AUTH-USERID  # inoltra solo i messaggi dell'utente...
+      payloadKey: userId             # ...dove payload.userId === claim dell'utente
 
-    - name: invoices                 ***REMOVED*** forwarding webhook
+    - name: invoices                 # forwarding webhook
       type: http
       exchange: inv-ex
-      routingKey: inv.***REMOVED***
+      routingKey: inv.#
       url: https://hooks.example.com/invoices
       method: POST
       timeout: 8000
 ```
 
-***REMOVED******REMOVED******REMOVED*** Autenticazione (token nel subprotocol)
+### Autenticazione (token nel subprotocol)
 
 I browser non possono impostare header custom sull'handshake, quindi il token JWT viaggia nel **subprotocol** (`Sec-WebSocket-Protocol`):
 
@@ -504,7 +504,7 @@ const ws = new WebSocket('ws://localhost:3000', [token]); // oppure ['bearer', t
 
 Il token viene conservato sulla connessione e **verificato al momento del `subscribe` con il provider dichiarato dall'evento** (`events[].auth`), che ne mappa anche i claim. La verifica è memoizzata per provider: lo stesso token è verificato al più una volta per provider. Eventi diversi possono usare provider diversi.
 
-***REMOVED******REMOVED******REMOVED*** Protocollo client
+### Protocollo client
 
 ```js
 ws.send(JSON.stringify({ action: 'subscribe',   topic: 'orders', select: { status: 'open' } }));
@@ -513,7 +513,7 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 // errori:            { topic: 'onError',  data: { event, error } }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Sicurezza e scalabilità
+### Sicurezza e scalabilità
 
 - **Auth per evento**: `events[].auth` indica il provider che verifica il token e mappa i claim per quell'evento; `requireAuth: false` rende l'auth opzionale (anonimi ammessi, claim mappati se il token c'è). Subscribe negato (`onError: unauthorized`) se l'auth è richiesta e il token non è valido.
 - **auth per evento**: `roles` (ACL via `IAclRoleService`) sull'identità ricavata da `auth`.
@@ -525,17 +525,17 @@ ws.send(JSON.stringify({ action: 'unsubscribe', topic: 'orders' }));
 
 ---
 
-***REMOVED******REMOVED*** Remote config
+## Remote config
 
 `RemoteConfigService` permette ai microservizi di **registrare le proprie route nel gateway a runtime**, pubblicando le loro `PathDefinition` su un exchange fanout `config.ms`. Il gateway le riceve e chiama `HttpHandlerService.registerPath()` dinamicamente. In alternativa, `gateway.loadConfig` carica paths/events tramite una singola chiamata RPC all'avvio.
 
 ---
 
-***REMOVED******REMOVED*** Moduli opzionali `AclModule` e `GatewayAdminModule` (persistenza fornita dal consumer)
+## Moduli opzionali `AclModule` e `GatewayAdminModule` (persistenza fornita dal consumer)
 
 Due moduli **opzionali** per gestire ACL e configurazione gateway a database. **La lib non dipende da Mongo/Redis**: definisce i servizi/cache + i **contratti repository (classi astratte)** e l'interfaccia `AclCacheStore`; **il consumer fornisce le implementazioni** (es. Mongo + Redis). Esempio completo e funzionante: **[`sample/config-sample/gateway-in-memory`](sample/config-sample/gateway-in-memory)** — per restare autonomo usa **repository in-RAM** (`InMemory*Repository`) e una **cache L2 in-RAM** (`InMemoryAclStore`), così gira solo con RabbitMQ; in produzione si rimpiazzano con implementazioni Mongo/Redis senza toccare la lib.
 
-***REMOVED******REMOVED******REMOVED*** `AclModule` — ACL DB-backed con cache 2-livelli
+### `AclModule` — ACL DB-backed con cache 2-livelli
 
 ACL (azioni → ruoli → grant per-utente) con un'unica primitiva `checkAction` (action-based, match **esatto** su `(companyId, resourceId)`, niente wildcard) e **cache RAM + L2 pluggable** (TTL diversi) e invalidazione che forza il DB.
 
@@ -578,7 +578,7 @@ export class AppModule {}
 - **Invalidazione**: ogni mutazione (grant/role/action) svuota L1 e L2 → la prossima verifica pesca dal DB. Senza L2, la coerenza multi-istanza è limitata dal `ramTtlMs`.
 - **Cache L2 pluggable**: il consumer fornisce `{ provide: RLB_ACL_CACHE_STORE, useClass/useExisting }` che implementa `AclCacheStore` (`get/set/del/keys`). In `gateway-in-memory` è `InMemoryAclStore` (mock in RAM, nessuna dipendenza esterna); in produzione plugga uno store condiviso (es. Redis).
 
-***REMOVED******REMOVED******REMOVED*** `GatewayAdminModule` — CRUD rotte/auth + liste + metriche
+### `GatewayAdminModule` — CRUD rotte/auth + liste + metriche
 
 CRUD di rotte HTTP e auth-providers (repo forniti dal consumer), con **liste esportabili** per il gateway (in aggiunta allo YAML), **metriche a contatori** e **ordinamento path static-before-param**.
 
@@ -602,7 +602,7 @@ Handler su topic **`rlb-gateway-admin`** (`GATEWAY_ADMIN_TOPIC`):
 
 ---
 
-***REMOVED******REMOVED*** API `BrokerService`
+## API `BrokerService`
 
 | Metodo                                                                  | Uso                                              |
 | ----------------------------------------------------------------------- | ------------------------------------------------ |
@@ -613,7 +613,7 @@ Handler su topic **`rlb-gateway-admin`** (`GATEWAY_ADMIN_TOPIC`):
 | `getRpc(topic)` / `getHandler(topic)`                                   | recupera l'handler registrato                    |
 | `events$` / `getEvents$<T>()`                                           | Observable degli eventi dei topic `toObservable` |
 
-***REMOVED******REMOVED******REMOVED*** Decoratori
+### Decoratori
 
 | Decoratore                                                    | Uso                                    |
 | ------------------------------------------------------------- | -------------------------------------- |
@@ -622,64 +622,64 @@ Handler su topic **`rlb-gateway-admin`** (`GATEWAY_ADMIN_TOPIC`):
 | `@BrokerAuth(authName, allowAnonymous?, roles?)`              | metadati di auth (usati dallo scanner) |
 | `@BrokerHTTP(method, path, dataSource?, timeout?, parseRaw?)` | metadati HTTP (usati dallo scanner)    |
 
-***REMOVED******REMOVED******REMOVED*** Pipe utility
+### Pipe utility
 
 `BooleanPipe` e `NumberPipe` convertono valori stringa/numerici (es. da query string). Esportate da `@open-rlb/nestjs-amqp`.
 
 ---
 
-***REMOVED******REMOVED*** ⚠️ Gotcha e casi a rischio bug
+## ⚠️ Gotcha e casi a rischio bug
 
 Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili prima di estendere la lib.**
 
-***REMOVED******REMOVED******REMOVED*** Decoratori e handler
+### Decoratori e handler
 
 1. **Niente destructuring nei parametri dell'handler.** `@BrokerParam` associa i parametri leggendo il *source* della funzione con una regex (`getParamNames`). Una firma come `fn({ a, b })` rompe l'allineamento degli indici. Usa parametri semplici.
 2. **Evita i valori di default nei parametri.** C'è uno strip basilare (`removeDefaultsFromParams`), ma default complessi (oggetti, chiamate) disallineano la mappatura. Passa sempre un `name` esplicito a `@BrokerParam`.
 3. **`(topic, action)` deve essere unico.** Tutti gli `@BrokerAction` dello stesso topic condividono **una sola coda/consumer** e vengono smistati per `action`. Due metodi con lo stesso `(topic, action)` → il secondo sovrascrive il primo in silenzio.
 
-***REMOVED******REMOVED******REMOVED*** Wiring topic ↔ queue ↔ exchange
+### Wiring topic ↔ queue ↔ exchange
 
 4. **Il `name` del topic deve coincidere ovunque**: `@BrokerAction(topic)`, `topics[].name`, `requestData/publishMessage(topic)`, `gateway.paths[].topic`/`events[]`. Un typo → `Topic X not found in configuration`.
 5. **`mode: rpc`/`handle` richiedono che `topics[].queue` esista in `broker.queues[]`**, e che il `queue.exchange` esista in `broker.exchanges[]`. In `handle` un queue mancante causa un NPE all'avvio (`queue.exchange`).
 6. **Exchange `type: topic` → il queue DEVE avere `routingKey`**, altrimenti l'avvio lancia `Queue ... has no routing key`.
 7. **`mode: broadcast` e gateway WebSocket richiedono `connection_name`** (`clientProperties.connection_name`), altrimenti throw.
 
-***REMOVED******REMOVED******REMOVED*** RPC / timeout / errori
+### RPC / timeout / errori
 
 8. **Reply RPC**: `requestData` risolve `replyTo` da `broker.replyQueues[exchange]`; se assente usa la direct-reply-to di RabbitMQ. Un `replyQueues` con la chiave exchange sbagliata → nessuna risposta → timeout.
 9. **Le eccezioni dell'handler RPC NON propagano come throw lato consumer**: vengono restituite come `{ success: false, error }` e `requestData` rilancia l'errore al chiamante. Sul gateway lo status dipende dal `error.name` (vedi tabella). Dai agli errori un `name` coerente.
 10. **Timeout di default 10s** (o `broker.defaultRpcTimeout`). Per RPC lente imposta `timeout` sulla path o sull'argomento di `requestData`.
 
-***REMOVED******REMOVED******REMOVED*** Gateway HTTP
+### Gateway HTTP
 
 11. **`parseRaw: true` richiede `NestFactory.create(AppModule, { rawBody: true })`**, altrimenti `$raw` è `undefined`.
 12. **I route param vincono sul body/query** (ri-applicati per ultimi). Attento alle collisioni di chiave (`:id` vs `body.id`).
 13. **Gli upload sono in `$files`** (multer `.any()`); i buffer vengono convertiti in stringa binaria — rigestiscili con cura lato consumer.
 
-***REMOVED******REMOVED******REMOVED*** Auth / ACL
+### Auth / ACL
 
 14. **`actions` su una path richiede un `IAclRoleService`** registrato via `RLB_GTW_ACL_ROLE_SERVICE` in `ProxyModule.forRootAsync({ providers: [...] })`. Il check del gateway è **action-based**: `path.actions` elenca **nomi di azione** e l'utente passa se ne possiede **almeno una** sulla **esatta** coppia `(companyId, resourceId)` della richiesta (`checkAction(userId, ctx, path.actions)`). Il gateway estrae i campi canonici `companyId`/`resourceId` dalla richiesta (precedenza params→query→body) e li confronta in modo esatto. L'auth-provider deve definire `uidClaim` (per estrarre lo userId) + `headerPrefix`. Nota: `authOptions`/`gatewayOptions` si passano a `ProxyModule`, non a `BrokerModule`.
 15. **Gli header propagati sono uppercase e prefissati** (`${headerPrefix}${DEST}`): leggi `X-GTW-AUTH-USERID`, non `userId`.
 
-***REMOVED******REMOVED******REMOVED*** WebSocket
+### WebSocket
 
 16. **`scopeClaim` referenzia il claim MAPPATO** (con `headerPrefix`, es. `X-GTW-AUTH-USERID`), non il claim grezzo del token. `payloadKey` è la chiave nel payload dell'evento. Senza `payloadKey`, lo scope nega tutto.
 17. **Non usare code durevoli condivise per gli eventi WS**: la lib crea una coda esclusiva per istanza apposta per il fan-out. Una coda fissa farebbe competere le istanze (i client di un'istanza perderebbero messaggi).
 
-***REMOVED******REMOVED******REMOVED*** Publish / event
+### Publish / event
 
 18. **`publishMessage` è `async`: devi fare `await`** per ottenere la garanzia di publisher confirm e per intercettare i fallimenti. Senza `await` è fire-and-forget senza garanzia.
 19. **Gli handler `handle`/`broadcast` devono restituire `void`**: un valore di ritorno genera un warning (`Subscribe handlers should only return void`).
 
-***REMOVED******REMOVED******REMOVED*** TLS / credenziali
+### TLS / credenziali
 
 20. **JWKS verifica il TLS di default.** Usa `httpsAllowUnauthorized: true` su un provider solo per issuer self-signed in sviluppo.
 21. **`mechanism` credenziali**: `PLAIN` | `EXTERNAL` | `AMQPLAIN` (case-insensitive). Un valore sconosciuto non imposta la `response` → autenticazione fallita.
 
 ---
 
-***REMOVED******REMOVED*** Errori comuni
+## Errori comuni
 
 - `Topic <name> not found in configuration`: controlla `topics[].name`, `@BrokerAction`, `requestData`/`publishMessage`, `gateway.paths[].topic`.
 - `Queue <name> not found in configuration`: verifica che `topics[].queue` esista in `broker.queues[]`.
@@ -691,12 +691,12 @@ Questi sono i punti che causano più frequentemente bug silenziosi. **Leggili pr
 
 ---
 
-***REMOVED******REMOVED*** Sviluppo
+## Sviluppo
 
 ```bash
-npm run build        ***REMOVED*** compila (tsc)
-npm test             ***REMOVED*** jest
-npm run start:dev    ***REMOVED*** nest start --watch (app gateway di esempio)
+npm run build        # compila (tsc)
+npm test             # jest
+npm run start:dev    # nest start --watch (app gateway di esempio)
 ```
 
 Licenza: MIT.

@@ -3,15 +3,15 @@ description: Configure @open-rlb/nestjs-amqp in a NestJS project — BrokerModul
 argument-hint: "[what to configure: module|topics|queues|exchanges|retention]"
 ---
 
-***REMOVED*** @open-rlb/nestjs-amqp — Configuration
+# @open-rlb/nestjs-amqp — Configuration
 
 Configura `@open-rlb/nestjs-amqp` per: `$ARGUMENTS`
 
 ---
 
-***REMOVED******REMOVED*** SETUP DEL MODULO
+## SETUP DEL MODULO
 
-***REMOVED******REMOVED******REMOVED*** `BrokerModule.forRoot` — configurazione statica
+### `BrokerModule.forRoot` — configurazione statica
 
 ```typescript
 import { BrokerModule } from '@open-rlb/nestjs-amqp';
@@ -30,7 +30,7 @@ import { BrokerModule } from '@open-rlb/nestjs-amqp';
 export class AppModule {}
 ```
 
-***REMOVED******REMOVED******REMOVED*** `BrokerModule.forRootAsync` — configurazione asincrona (raccomandato con ConfigService)
+### `BrokerModule.forRootAsync` — configurazione asincrona (raccomandato con ConfigService)
 
 ```typescript
 BrokerModule.forRootAsync({
@@ -49,7 +49,7 @@ BrokerModule.forRootAsync({
 
 ---
 
-***REMOVED******REMOVED*** `RabbitMQConfig` — configurazione connessione e infrastruttura
+## `RabbitMQConfig` — configurazione connessione e infrastruttura
 
 ```typescript
 interface RabbitMQConfig {
@@ -75,7 +75,7 @@ interface RabbitMQConfig {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Esempio completo `RabbitMQConfig`
+### Esempio completo `RabbitMQConfig`
 
 ```typescript
 const brokerConfig: RabbitMQConfig = {
@@ -105,7 +105,7 @@ const brokerConfig: RabbitMQConfig = {
     {
       name: 'events-q',
       exchange: 'app-ex',
-      routingKey: 'events.***REMOVED***',
+      routingKey: 'events.#',
       options: { durable: true, maxLength: 50000 },
     },
   ],
@@ -128,7 +128,7 @@ const brokerConfig: RabbitMQConfig = {
 
 ---
 
-***REMOVED******REMOVED*** Exchange — `RabbitMQExchangeConfig`
+## Exchange — `RabbitMQExchangeConfig`
 
 ```typescript
 interface RabbitMQExchangeConfig {
@@ -145,14 +145,14 @@ interface RabbitMQExchangeConfig {
 
 | Tipo | Uso |
 |---|---|
-| `topic` | Routing per pattern (`users.rpc`, `events.***REMOVED***`, `orders.*`) |
+| `topic` | Routing per pattern (`users.rpc`, `events.#`, `orders.*`) |
 | `direct` | Routing per chiave esatta — ideale per RPC reply |
 | `fanout` | Broadcast a tutti i binding — ignora routing key |
 | `headers` | Routing per header AMQP (raro) |
 
 ---
 
-***REMOVED******REMOVED*** Queue — `RabbitMQQueueConfig`
+## Queue — `RabbitMQQueueConfig`
 
 ```typescript
 interface RabbitMQQueueConfig {
@@ -183,7 +183,7 @@ interface RabbitMQQueueConfig {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Retention policy — combinazioni comuni
+### Retention policy — combinazioni comuni
 
 ```typescript
 // Messaggio scade e va in dead-letter dopo 60s
@@ -211,7 +211,7 @@ options: {
 
 ---
 
-***REMOVED******REMOVED*** `BrokerTopic` — topic logici dell'applicazione
+## `BrokerTopic` — topic logici dell'applicazione
 
 I topic sono l'astrazione di alto livello sopra exchange e queue. Ogni topic ha un **mode** che definisce il pattern di comunicazione.
 
@@ -227,7 +227,7 @@ interface BrokerTopic {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Mode — quando usare quale
+### Mode — quando usare quale
 
 | Mode | Pattern | Risposta | Consumer |
 |---|---|---|---|
@@ -236,7 +236,7 @@ interface BrokerTopic {
 | `broadcast` | Pubsub — tutti i consumer attivi ricevono | No | Tutti |
 | `event` | Fire-and-forget — solo publish, nessun consumer | No | Nessuno |
 
-***REMOVED******REMOVED******REMOVED*** Esempio topic completi
+### Esempio topic completi
 
 ```typescript
 const topics: BrokerTopic[] = [
@@ -293,7 +293,7 @@ const topics: BrokerTopic[] = [
 
 ---
 
-***REMOVED******REMOVED*** `ConnectionInitOptions`
+## `ConnectionInitOptions`
 
 ```typescript
 interface ConnectionInitOptions {
@@ -307,7 +307,7 @@ interface ConnectionInitOptions {
 
 ---
 
-***REMOVED******REMOVED*** `MessageHandlerErrorBehavior`
+## `MessageHandlerErrorBehavior`
 
 ```typescript
 enum MessageHandlerErrorBehavior {
@@ -324,7 +324,7 @@ Configurabile a tre livelli (in ordine di priorità):
 
 ---
 
-***REMOVED******REMOVED*** Canali named — `RabbitMQChannelConfig`
+## Canali named — `RabbitMQChannelConfig`
 
 Usa i canali named per dare prefetch diverso a consumer con velocità differenti:
 
@@ -345,7 +345,7 @@ Poi nella definizione della queue:
 
 ---
 
-***REMOVED******REMOVED*** REGOLE DI CONFIGURAZIONE
+## REGOLE DI CONFIGURAZIONE
 
 Quando generi o modifichi la configurazione basandoti su `$ARGUMENTS`:
 

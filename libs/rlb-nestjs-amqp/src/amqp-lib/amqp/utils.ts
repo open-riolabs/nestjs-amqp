@@ -14,7 +14,7 @@ export function matchesRoutingKey(routingKey: string, pattern: string[] | string
     const splitPattern = p.split('.');
     let starFailed = false;
     for (let i = 0; i < splitPattern.length; i++) {
-      if (splitPattern[i] === '***REMOVED***') return true;
+      if (splitPattern[i] === '#') return true;
 
       if (splitPattern[i] !== '*' && splitPattern[i] !== splitKey[i]) {
         starFailed = true;

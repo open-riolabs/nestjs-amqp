@@ -3,18 +3,18 @@ app:
   host: 0.0.0.0
   environment: development
 
-***REMOVED*** This example keeps ACL/gateway-admin data fully in RAM (in-memory repositories) and the
-***REMOVED*** ACL L2 cache in RAM too — no Mongo/Redis needed. Only RabbitMQ is required.
+# This example keeps ACL/gateway-admin data fully in RAM (in-memory repositories) and the
+# ACL L2 cache in RAM too — no Mongo/Redis needed. Only RabbitMQ is required.
 
 broker:
   name: "rabbitmq"
   uri: "amqp://localhost:5672/"
   defaultSubscribeErrorBehavior: "ack"
   defaultPublishErrorBehavior: "reject"
-  ***REMOVED*** Route auto-discovery (publisher side) lives INSIDE the broker block. This app also plays the
-  ***REMOVED*** demo microservice and announces its decorator-discovered routes on boot. serviceName would also
-  ***REMOVED*** fill connection_name if it weren't already set above (here connection_name wins).
-  ***REMOVED*** exchange/queue default to rlb-route-discovery / rlb-route-sync (override to namespace per env).
+  # Route auto-discovery (publisher side) lives INSIDE the broker block. This app also plays the
+  # demo microservice and announces its decorator-discovered routes on boot. serviceName would also
+  # fill connection_name if it weren't already set above (here connection_name wins).
+  # exchange/queue default to rlb-route-discovery / rlb-route-sync (override to namespace per env).
   routeDiscovery:
     serviceName: demo-ms
     publishOnBoot: true
@@ -37,21 +37,21 @@ broker:
         durable: true
 
   queues:
-    ***REMOVED*** Queue consumed by the ACL backend handlers (AclService / AclManagementService).
+    # Queue consumed by the ACL backend handlers (AclService / AclManagementService).
     - name: rlb-acl
       exchange: rlb
       routingKey: rlb-acl
       createQueueIfNotExists: true
       options:
         durable: true
-    ***REMOVED*** Queue consumed by the gateway-admin backend handlers.
+    # Queue consumed by the gateway-admin backend handlers.
     - name: rlb-gateway-admin
       exchange: rlb
       routingKey: rlb-gateway-admin
       createQueueIfNotExists: true
       options:
         durable: true
-    ***REMOVED*** Queue for the route-discovery demo microservice (RouteDiscoveryDemoService).
+    # Queue for the route-discovery demo microservice (RouteDiscoveryDemoService).
     - name: demo-ms
       exchange: rlb
       routingKey: demo-ms
@@ -59,30 +59,30 @@ broker:
       options:
         durable: true
 
-  ***REMOVED*** replyQueues:
-  ***REMOVED***   rlb: rlb-reply
+  # replyQueues:
+  #   rlb: rlb-reply
 
 topics:
-  ***REMOVED*** Topic the @BrokerAction handlers of the ACL module bind to (ACL_TOPIC = 'rlb-acl').
+  # Topic the @BrokerAction handlers of the ACL module bind to (ACL_TOPIC = 'rlb-acl').
   - name: rlb-acl
     mode: rpc
     queue: rlb-acl
     exchange: rlb
     routingKey: rlb-acl
-  ***REMOVED*** Topic the gateway-admin handlers bind to (GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin').
+  # Topic the gateway-admin handlers bind to (GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin').
   - name: rlb-gateway-admin
     mode: rpc
     queue: rlb-gateway-admin
     exchange: rlb
     routingKey: rlb-gateway-admin
-  ***REMOVED*** Broadcast control topic: the gateway subscribes (per-instance queue) and rebuilds its
-  ***REMOVED*** Express routes at runtime when a message arrives. A direct exchange + same routingKey
-  ***REMOVED*** fans out to every instance's queue (each instance needs a distinct connection_name).
+  # Broadcast control topic: the gateway subscribes (per-instance queue) and rebuilds its
+  # Express routes at runtime when a message arrives. A direct exchange + same routingKey
+  # fans out to every instance's queue (each instance needs a distinct connection_name).
   - name: rlb-gateway-control
     mode: broadcast
     exchange: rlb
     routingKey: rlb-gateway-control
-  ***REMOVED*** Topic the route-discovery demo microservice binds its @BrokerAction handlers to.
+  # Topic the route-discovery demo microservice binds its @BrokerAction handlers to.
   - name: demo-ms
     mode: rpc
     queue: demo-ms
@@ -108,8 +108,8 @@ auth-providers:
     algorithms:
       - RS256
     clientId: demo-client
-    ***REMOVED***clientSecret:
-    ***REMOVED***audience:
+    #clientSecret:
+    #audience:
     scopes:
       - openid
       - profile
@@ -117,7 +117,7 @@ auth-providers:
 gateway:
   mode: gateway
   paths:
-    ***REMOVED*** --- health ---
+    # --- health ---
     - name: health
       method: GET
       path: /health
@@ -126,7 +126,7 @@ gateway:
       action: gw-health
       mode: rpc
 
-    ***REMOVED*** --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
+    # --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
     - name: acl-action-list
       method: GET
       path: /acl/actions
@@ -134,28 +134,28 @@ gateway:
       topic: rlb-acl
       action: acl-action-list
       mode: rpc
-    - name: acl-action-get        ***REMOVED*** query: ?name=
+    - name: acl-action-get        # query: ?name=
       method: GET
       path: /acl/actions/get
       dataSource: query
       topic: rlb-acl
       action: acl-action-get
       mode: rpc
-    - name: acl-action-upsert     ***REMOVED*** PUT creates-or-updates by name. body: { name, description? }
+    - name: acl-action-upsert     # PUT creates-or-updates by name. body: { name, description? }
       method: PUT
       path: /acl/actions
       dataSource: body
       topic: rlb-acl
       action: acl-action-update
       mode: rpc
-    - name: acl-action-delete     ***REMOVED*** body: { name }
+    - name: acl-action-delete     # body: { name }
       method: DELETE
       path: /acl/actions
       dataSource: body
       topic: rlb-acl
       action: acl-action-delete
       mode: rpc
-    - name: acl-action-search     ***REMOVED*** query: ?q=&limit=
+    - name: acl-action-search     # query: ?q=&limit=
       method: GET
       path: /acl/actions/search
       dataSource: query
@@ -163,7 +163,7 @@ gateway:
       action: acl-action-search
       mode: rpc
 
-    ***REMOVED*** --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
+    # --- ACL management: roles (name is the key — PUT upserts, GET lists/gets, DELETE by name) ---
     - name: acl-role-list
       method: GET
       path: /acl/roles
@@ -171,28 +171,28 @@ gateway:
       topic: rlb-acl
       action: acl-role-list
       mode: rpc
-    - name: acl-role-get          ***REMOVED*** query: ?name=
+    - name: acl-role-get          # query: ?name=
       method: GET
       path: /acl/roles/get
       dataSource: query
       topic: rlb-acl
       action: acl-role-get
       mode: rpc
-    - name: acl-role-upsert       ***REMOVED*** PUT creates-or-updates by name. body: { name, actions, description? }
+    - name: acl-role-upsert       # PUT creates-or-updates by name. body: { name, actions, description? }
       method: PUT
       path: /acl/roles
       dataSource: body
       topic: rlb-acl
       action: acl-role-update
       mode: rpc
-    - name: acl-role-delete       ***REMOVED*** body: { name }
+    - name: acl-role-delete       # body: { name }
       method: DELETE
       path: /acl/roles
       dataSource: body
       topic: rlb-acl
       action: acl-role-delete
       mode: rpc
-    - name: acl-role-search       ***REMOVED*** query: ?q=&limit=
+    - name: acl-role-search       # query: ?q=&limit=
       method: GET
       path: /acl/roles/search
       dataSource: query
@@ -200,7 +200,7 @@ gateway:
       action: acl-role-search
       mode: rpc
 
-    ***REMOVED*** --- ACL grants (per-user; resourceId optional) ---
+    # --- ACL grants (per-user; resourceId optional) ---
     - name: acl-grant
       method: POST
       path: /acl/grants
@@ -215,7 +215,7 @@ gateway:
       topic: rlb-acl
       action: acl-revoke
       mode: rpc
-    - name: acl-grant-search      ***REMOVED*** query: ?q=&limit=
+    - name: acl-grant-search      # query: ?q=&limit=
       method: GET
       path: /acl/grants/search
       dataSource: query
@@ -223,10 +223,10 @@ gateway:
       action: acl-grant-search
       mode: rpc
 
-    ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
-    ***REMOVED*** checkAction(userId, {companyId?, resourceId?}, action): true if the user holds `action`
-    ***REMOVED*** via any role on the EXACT (companyId, resourceId). Both ids absent ⇒ resource-less grants
-    ***REMOVED*** only (no wildcard). query: ?userId=&action=role-management&companyId=&resourceId=
+    # --- ACL check (GET → 200 with true/false) ---
+    # checkAction(userId, {companyId?, resourceId?}, action): true if the user holds `action`
+    # via any role on the EXACT (companyId, resourceId). Both ids absent ⇒ resource-less grants
+    # only (no wildcard). query: ?userId=&action=role-management&companyId=&resourceId=
     - name: acl-check-action
       method: GET
       path: /acl/check
@@ -234,8 +234,8 @@ gateway:
       topic: rlb-acl
       action: acl-check-action
       mode: rpc
-    ***REMOVED*** Authenticated: lists the caller's accessible resources (grouped by business resource).
-    ***REMOVED*** Reads userId from the forwarded X-GTW-AUTH-USERID header → needs `auth` (no actions).
+    # Authenticated: lists the caller's accessible resources (grouped by business resource).
+    # Reads userId from the forwarded X-GTW-AUTH-USERID header → needs `auth` (no actions).
     - name: acl-list-resources-by-user
       method: GET
       path: /acl/resources
@@ -245,7 +245,7 @@ gateway:
       mode: rpc
       auth: gateway-jwks
 
-    ***REMOVED*** --- gateway-admin: manage DB routes / auth-providers / metrics ---
+    # --- gateway-admin: manage DB routes / auth-providers / metrics ---
     - name: gw-path-create
       method: POST
       path: /admin/paths
@@ -260,7 +260,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
-    - name: gw-path-search        ***REMOVED*** query: ?q=&limit=
+    - name: gw-path-search        # query: ?q=&limit=
       method: GET
       path: /admin/paths/search
       dataSource: query
@@ -274,14 +274,14 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-export
       mode: rpc
-    - name: gw-path-update        ***REMOVED*** body: { id, name, method, path, topic, action, mode, ... }
+    - name: gw-path-update        # body: { id, name, method, path, topic, action, mode, ... }
       method: PUT
       path: /admin/paths
       dataSource: body
       topic: rlb-gateway-admin
       action: gw-path-update
       mode: rpc
-    - name: gw-path-get           ***REMOVED*** query: ?id=
+    - name: gw-path-get           # query: ?id=
       method: GET
       path: /admin/paths/get
       dataSource: query
@@ -295,7 +295,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
-    ***REMOVED*** Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
+    # Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
     - name: gw-route-log-list
       method: GET
       path: /admin/route-log
@@ -303,7 +303,7 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-route-log-list
       mode: rpc
-    - name: gw-route-log-search ***REMOVED*** ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+    - name: gw-route-log-search # ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
       method: GET
       path: /admin/route-log/search
       dataSource: query
@@ -317,21 +317,21 @@ gateway:
       topic: rlb-gateway-admin
       action: gw-auth-list
       mode: rpc
-    - name: gw-auth-search        ***REMOVED*** query: ?q=&limit=
+    - name: gw-auth-search        # query: ?q=&limit=
       method: GET
       path: /admin/auth/search
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-auth-search
       mode: rpc
-    - name: gw-auth-upsert        ***REMOVED*** PUT creates-or-updates by name. body: { name, type, ... }
+    - name: gw-auth-upsert        # PUT creates-or-updates by name. body: { name, type, ... }
       method: PUT
       path: /admin/auth
       dataSource: body
       topic: rlb-gateway-admin
       action: gw-auth-update
       mode: rpc
-    - name: gw-auth-get           ***REMOVED*** query: ?name=
+    - name: gw-auth-get           # query: ?name=
       method: GET
       path: /admin/auth/get
       dataSource: query
@@ -403,7 +403,7 @@ gateway:
       topic: rlb-gateway-control
       action: gw-reload
       mode: event
-    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+    - name: gw-auth-reload # deliberate: reload DB auth-providers into RAM (separate from gw-reload)
       method: POST
       path: /admin/auth/reload
       dataSource: body
@@ -411,11 +411,11 @@ gateway:
       action: gw-auth-reload
       mode: event
 
-    ***REMOVED*** --- PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction) ---
-    ***REMOVED*** `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId
-    ***REMOVED*** from the token, extracts the request's (companyId, resourceId), and passes if the user
-    ***REMOVED*** holds AT LEAST ONE of these actions on that (companyId, resourceId). With no companyId/
-    ***REMOVED*** resourceId on the request, a resource-less grant of one of these actions is required.
+    # --- PROTECTED demo: Keycloak JWT + actions → gateway action check (checkAction) ---
+    # `actions` lists ACTION names now (NOT roles): the gateway resolves the caller's userId
+    # from the token, extracts the request's (companyId, resourceId), and passes if the user
+    # holds AT LEAST ONE of these actions on that (companyId, resourceId). With no companyId/
+    # resourceId on the request, a resource-less grant of one of these actions is required.
     - name: protected-resource
       method: GET
       path: /protected
@@ -426,17 +426,17 @@ gateway:
       auth: gateway-jwks
       actions: [gateway-access]
 
-  ***REMOVED*** Routes managed in the DB are loaded (ordered static-before-param) at boot AND on every
-  ***REMOVED*** runtime reload, in addition to the YAML ones above. Seed via POST /admin/paths then
-  ***REMOVED*** POST /admin/reload (no restart needed).
+  # Routes managed in the DB are loaded (ordered static-before-param) at boot AND on every
+  # runtime reload, in addition to the YAML ones above. Seed via POST /admin/paths then
+  # POST /admin/reload (no restart needed).
   loadConfig:
     paths:
       topic: rlb-gateway-admin
       action: gw-path-export
-  ***REMOVED*** Broadcast topic that triggers a runtime route rebuild (see topics: rlb-gateway-control).
+  # Broadcast topic that triggers a runtime route rebuild (see topics: rlb-gateway-control).
   reloadTopic: rlb-gateway-control
-  ***REMOVED*** Per-call metrics: the gateway auto-emits a track event after every request to the
-  ***REMOVED*** gateway-admin metrics handler (GatewayMetricsService.track). No manual call needed.
+  # Per-call metrics: the gateway auto-emits a track event after every request to the
+  # gateway-admin metrics handler (GatewayMetricsService.track). No manual call needed.
   metrics:
     topic: rlb-gateway-admin
     action: gw-metrics-track

@@ -1,31 +1,31 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema***REMOVED***",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "./schema.json",
   "title": "RLB NestJS AMQP Configuration",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "app": {
-      "$ref": "***REMOVED***/definitions/appConfig"
+      "$ref": "#/definitions/appConfig"
     },
     "auth-providers": {
       "type": "array",
       "items": {
-        "$ref": "***REMOVED***/definitions/handlerAuthConfig"
+        "$ref": "#/definitions/handlerAuthConfig"
       }
     },
     "broker": {
-      "$ref": "***REMOVED***/definitions/rabbitMqConfig"
+      "$ref": "#/definitions/rabbitMqConfig"
     },
     "topics": {
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "***REMOVED***/definitions/brokerTopic"
+        "$ref": "#/definitions/brokerTopic"
       }
     },
     "gateway": {
-      "$ref": "***REMOVED***/definitions/gatewayConfig"
+      "$ref": "#/definitions/gatewayConfig"
     }
   },
   "required": [
@@ -279,7 +279,7 @@
           "description": "Legacy field from previous interfaces and README examples."
         },
         "uri": {
-          "$ref": "***REMOVED***/definitions/rabbitMqUriConfig"
+          "$ref": "#/definitions/rabbitMqUriConfig"
         },
         "prefetchCount": {
           "type": "integer",
@@ -288,19 +288,19 @@
         "exchanges": {
           "type": "array",
           "items": {
-            "$ref": "***REMOVED***/definitions/rabbitMqExchangeConfig"
+            "$ref": "#/definitions/rabbitMqExchangeConfig"
           }
         },
         "exchangeBindings": {
           "type": "array",
           "items": {
-            "$ref": "***REMOVED***/definitions/rabbitMqExchangeBindingConfig"
+            "$ref": "#/definitions/rabbitMqExchangeBindingConfig"
           }
         },
         "queues": {
           "type": "array",
           "items": {
-            "$ref": "***REMOVED***/definitions/rabbitMqQueueConfig"
+            "$ref": "#/definitions/rabbitMqQueueConfig"
           }
         },
         "defaultRpcTimeout": {
@@ -317,7 +317,7 @@
           ]
         },
         "defaultSubscribeErrorBehavior": {
-          "$ref": "***REMOVED***/definitions/messageHandlerErrorBehavior"
+          "$ref": "#/definitions/messageHandlerErrorBehavior"
         },
         "defaultPublishErrorBehavior": {
           "description": "Legacy/documentation field.",
@@ -334,10 +334,10 @@
           ]
         },
         "connectionInitOptions": {
-          "$ref": "***REMOVED***/definitions/connectionInitOptions"
+          "$ref": "#/definitions/connectionInitOptions"
         },
         "connectionManagerOptions": {
-          "$ref": "***REMOVED***/definitions/connectionManagerOptions"
+          "$ref": "#/definitions/connectionManagerOptions"
         },
         "registerHandlers": {
           "type": "boolean"
@@ -349,10 +349,10 @@
           "type": "boolean"
         },
         "channels": {
-          "$ref": "***REMOVED***/definitions/rabbitMqChannels"
+          "$ref": "#/definitions/rabbitMqChannels"
         },
         "handlers": {
-          "$ref": "***REMOVED***/definitions/rabbitMqHandlers"
+          "$ref": "#/definitions/rabbitMqHandlers"
         },
         "defaultHandler": {
           "type": "string"
@@ -383,13 +383,13 @@
           }
         },
         {
-          "$ref": "***REMOVED***/definitions/rabbitMqUriObject"
+          "$ref": "#/definitions/rabbitMqUriObject"
         },
         {
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "***REMOVED***/definitions/rabbitMqUriObject"
+            "$ref": "#/definitions/rabbitMqUriObject"
           }
         }
       ]
@@ -469,7 +469,7 @@
           "type": "boolean"
         },
         "options": {
-          "$ref": "***REMOVED***/definitions/assertExchangeOptions"
+          "$ref": "#/definitions/assertExchangeOptions"
         }
       },
       "required": [
@@ -537,7 +537,7 @@
           "type": "boolean"
         },
         "options": {
-          "$ref": "***REMOVED***/definitions/assertQueueOptions"
+          "$ref": "#/definitions/assertQueueOptions"
         },
         "exchange": {
           "type": "string"
@@ -615,7 +615,7 @@
           "type": "string"
         },
         "consumerOptions": {
-          "$ref": "***REMOVED***/definitions/consumeOptions"
+          "$ref": "#/definitions/consumeOptions"
         }
       }
     },
@@ -676,7 +676,7 @@
           "minimum": 0
         },
         "connectionOptions": {
-          "$ref": "***REMOVED***/definitions/amqpConnectionOptions"
+          "$ref": "#/definitions/amqpConnectionOptions"
         }
       }
     },
@@ -721,7 +721,7 @@
           "additionalProperties": true
         },
         "credentials": {
-          "$ref": "***REMOVED***/definitions/amqpCredentials"
+          "$ref": "#/definitions/amqpCredentials"
         }
       }
     },
@@ -764,7 +764,7 @@
     "rabbitMqChannels": {
       "type": "object",
       "additionalProperties": {
-        "$ref": "***REMOVED***/definitions/rabbitMqChannelConfig"
+        "$ref": "#/definitions/rabbitMqChannelConfig"
       }
     },
     "rabbitMqHandlers": {
@@ -772,13 +772,13 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "$ref": "***REMOVED***/definitions/messageHandlerOptions"
+            "$ref": "#/definitions/messageHandlerOptions"
           },
           {
             "type": "array",
             "minItems": 1,
             "items": {
-              "$ref": "***REMOVED***/definitions/messageHandlerOptions"
+              "$ref": "#/definitions/messageHandlerOptions"
             }
           }
         ]
@@ -815,10 +815,10 @@
           "type": "string"
         },
         "queueOptions": {
-          "$ref": "***REMOVED***/definitions/assertQueueOptions"
+          "$ref": "#/definitions/assertQueueOptions"
         },
         "errorBehavior": {
-          "$ref": "***REMOVED***/definitions/messageHandlerErrorBehavior"
+          "$ref": "#/definitions/messageHandlerErrorBehavior"
         },
         "allowNonJsonMessages": {
           "type": "boolean"
@@ -830,7 +830,7 @@
           "type": "boolean"
         },
         "batchOptions": {
-          "$ref": "***REMOVED***/definitions/batchOptions"
+          "$ref": "#/definitions/batchOptions"
         }
       }
     },
@@ -1005,18 +1005,18 @@
           "type": "string"
         },
         "loadConfig": {
-          "$ref": "***REMOVED***/definitions/gatewayConfigLoader"
+          "$ref": "#/definitions/gatewayConfigLoader"
         },
         "paths": {
           "type": "array",
           "items": {
-            "$ref": "***REMOVED***/definitions/pathDefinition"
+            "$ref": "#/definitions/pathDefinition"
           }
         },
         "events": {
           "type": "array",
           "items": {
-            "$ref": "***REMOVED***/definitions/webSocketEvent"
+            "$ref": "#/definitions/webSocketEvent"
           }
         }
       },
@@ -1030,10 +1030,10 @@
       "additionalProperties": false,
       "properties": {
         "paths": {
-          "$ref": "***REMOVED***/definitions/gatewayConfigSource"
+          "$ref": "#/definitions/gatewayConfigSource"
         },
         "events": {
-          "$ref": "***REMOVED***/definitions/gatewayConfigSource"
+          "$ref": "#/definitions/gatewayConfigSource"
         }
       }
     },
@@ -1156,7 +1156,7 @@
         "headers": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "***REMOVED***/definitions/headerValue"
+            "$ref": "#/definitions/headerValue"
           }
         },
         "forwardHeaders": {
@@ -1263,7 +1263,7 @@
         "headers": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "***REMOVED***/definitions/headerValue"
+            "$ref": "#/definitions/headerValue"
           }
         },
         "timeout": {

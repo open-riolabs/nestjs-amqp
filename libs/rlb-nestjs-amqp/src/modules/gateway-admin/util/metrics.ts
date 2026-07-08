@@ -137,14 +137,14 @@ function escapeLabel(value: unknown): string {
 export function toPrometheus(counters: (HttpMetric & { avgDurationMs: number; errorRate?: number })[]): string {
   const labels = (m: HttpMetric) => `method="${escapeLabel(m.method)}",route="${escapeLabel(m.route)}"${m.name ? `,name="${escapeLabel(m.name)}"` : ''}`;
   const lines: string[] = [];
-  lines.push('***REMOVED*** HELP gateway_requests_total Total HTTP requests handled by the gateway.');
-  lines.push('***REMOVED*** TYPE gateway_requests_total counter');
+  lines.push('# HELP gateway_requests_total Total HTTP requests handled by the gateway.');
+  lines.push('# TYPE gateway_requests_total counter');
   for (const m of counters || []) lines.push(`gateway_requests_total{${labels(m)}} ${m.count}`);
-  lines.push('***REMOVED*** HELP gateway_request_errors_total Error responses (status >= 400).');
-  lines.push('***REMOVED*** TYPE gateway_request_errors_total counter');
+  lines.push('# HELP gateway_request_errors_total Error responses (status >= 400).');
+  lines.push('# TYPE gateway_request_errors_total counter');
   for (const m of counters || []) lines.push(`gateway_request_errors_total{${labels(m)}} ${m.errorCount}`);
-  lines.push('***REMOVED*** HELP gateway_request_duration_ms_sum Total request duration in milliseconds.');
-  lines.push('***REMOVED*** TYPE gateway_request_duration_ms_sum counter');
+  lines.push('# HELP gateway_request_duration_ms_sum Total request duration in milliseconds.');
+  lines.push('# TYPE gateway_request_duration_ms_sum counter');
   for (const m of counters || []) lines.push(`gateway_request_duration_ms_sum{${labels(m)}} ${m.totalDurationMs}`);
   return lines.join('\n') + '\n';
 }

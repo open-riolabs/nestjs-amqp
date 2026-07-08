@@ -1,4 +1,4 @@
-***REMOVED*** Plan — Microservice route auto-discovery → gateway DB sync → reload
+# Plan — Microservice route auto-discovery → gateway DB sync → reload
 
 > Status: **IMPLEMENTED, simplified & refactored, live-verified (2026-06-16).** The standalone
 > `route-discovery` module was DISSOLVED:
@@ -23,7 +23,7 @@
 
 ---
 
-***REMOVED******REMOVED*** 1. Target flow
+## 1. Target flow
 
 ```
 MS boot
@@ -43,7 +43,7 @@ Two distinct channels, on purpose:
 
 ---
 
-***REMOVED******REMOVED*** 2. Building blocks that already exist (reuse, don't reinvent)
+## 2. Building blocks that already exist (reuse, don't reinvent)
 
 | Piece | Where | Reuse for |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ Two distinct channels, on purpose:
 
 ---
 
-***REMOVED******REMOVED*** 3. Key design decisions (recommendation in **bold**)
+## 3. Key design decisions (recommendation in **bold**)
 
 1. **Who maps metaInfo → PathDefinition?**
    - (a) **MS maps and sends `PathDefinition[]`** → gateway stays decorator-agnostic. *(recommended)*
@@ -83,7 +83,7 @@ Two distinct channels, on purpose:
 
 ---
 
-***REMOVED******REMOVED*** 4. Message protocol (manifest envelope)
+## 4. Message protocol (manifest envelope)
 
 ```jsonc
 {
@@ -100,30 +100,30 @@ Two distinct channels, on purpose:
 
 ---
 
-***REMOVED******REMOVED*** 5. Diff & upsert algorithm (gateway side, single writer)
+## 5. Diff & upsert algorithm (gateway side, single writer)
 
 ```
 on manifest(service, hash, routes):
-  if hash == storedHash(service): return            ***REMOVED*** nothing changed → no reload
-  routeKey(r) = `${r.method} ${r.path}`             ***REMOVED*** stable identity
+  if hash == storedHash(service): return            # nothing changed → no reload
+  routeKey(r) = `${r.method} ${r.path}`             # stable identity
   incoming = index routes by routeKey
-  existing = repo.findByOwner(service)              ***REMOVED*** only this service's rows
+  existing = repo.findByOwner(service)              # only this service's rows
   for r in incoming:
      if some OTHER owner already has an ENABLED route with this routeKey:
         RouteSyncLog.write(level=warn, event='collision', service, routeKey, conflictWith=otherOwner)
-        continue                                    ***REMOVED*** decision 5: skip + persistent log
-     upsert by (owner=service, routeKey)            ***REMOVED*** insert new / update changed (per-route hash)
+        continue                                    # decision 5: skip + persistent log
+     upsert by (owner=service, routeKey)            # insert new / update changed (per-route hash)
   for e in existing where e.routeKey not in incoming:
-     repo.disable(e._id)                            ***REMOVED*** decision 1: soft-disable stale
+     repo.disable(e._id)                            # decision 1: soft-disable stale
   store storedHash(service) = hash
-  if anyChange: publish(reloadTopic, {})            ***REMOVED*** broadcast → all instances reload from DB
+  if anyChange: publish(reloadTopic, {})            # broadcast → all instances reload from DB
 ```
 
 Pure, deterministic, unit-testable in isolation (no broker/DB needed for the diff function itself).
 
 ---
 
-***REMOVED******REMOVED*** 6. Components & file-level changes
+## 6. Components & file-level changes
 
 **Broker / MS side**
 - Re-introduce `buildPathDefinitionsFromMeta` as a shared util (e.g. `modules/broker/.../route-manifest.ts`), unit-tested.
@@ -145,7 +145,7 @@ Pure, deterministic, unit-testable in isolation (no broker/DB needed for the dif
 
 ---
 
-***REMOVED******REMOVED*** 7. Multi-instance, idempotency, ordering
+## 7. Multi-instance, idempotency, ordering
 
 - **Single writer via competing consumers (answers "how, if instances are already running?")**: every gateway instance subscribes to the SAME named, **durable, non-exclusive** queue (e.g. `rlb-route-sync`). RabbitMQ delivers each manifest to **exactly one** connected consumer (round-robin / fair dispatch, `prefetch=1`) — you do NOT elect a special instance; N instances can be up and each message is still processed once. This is the OPPOSITE of the WebSocket queues (per-instance & exclusive for fan-out). Durable queue+exchange+messages ⇒ a manifest published while NO gateway is up waits in the queue until one connects ("RabbitMQ won't lose data", decision 2).
 - **Per-service write race**: two manifests for the same `service` processed concurrently converge via a **unique index / upsert key on `(owner, routeKey)`** + the hash short-circuit. Optional strong guarantee: route a service's manifests to a single consumer with a consistent routing key. Low risk (publishes are infrequent).
@@ -156,7 +156,7 @@ Pure, deterministic, unit-testable in isolation (no broker/DB needed for the dif
 
 ---
 
-***REMOVED******REMOVED*** 8. Edge cases / gotchas
+## 8. Edge cases / gotchas
 
 - A service that crashes/leaves: its DB routes linger. Optional TTL/heartbeat or an explicit "service offline" cleanup (out of scope v1; soft-disabled rows are harmless).
 - Manifest larger than frame limits: chunk or rely on AMQP body size (manifests are small; fine).
@@ -170,7 +170,7 @@ Pure, deterministic, unit-testable in isolation (no broker/DB needed for the dif
 
 ---
 
-***REMOVED******REMOVED*** 9. Phased task breakdown (execution order)
+## 9. Phased task breakdown (execution order)
 
 - **Phase 0 — decisions.** Resolve §10 open questions.
 - **Phase 1 — manifest core.** Shared mapper + manifest type + hashing. Pure unit tests.
@@ -182,7 +182,7 @@ Pure, deterministic, unit-testable in isolation (no broker/DB needed for the dif
 
 ---
 
-***REMOVED******REMOVED*** 10. Decisions
+## 10. Decisions
 
 **Resolved (2026-06-16):**
 1. Stale routes → **soft-disable** (`enabled:false`).

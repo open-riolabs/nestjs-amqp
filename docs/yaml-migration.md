@@ -1,4 +1,4 @@
-***REMOVED*** YAML migration scripts
+# YAML migration scripts
 
 Two helper scripts under `scripts/` migrate an existing gateway `config.yaml` into the newer,
 DB-managed + auto-discovery world. They solve **different** problems and are usually run together,
@@ -13,7 +13,7 @@ Both depend on `js-yaml` (`npm i -D js-yaml`).
 
 ---
 
-***REMOVED******REMOVED*** When to use which
+## When to use which
 
 - **Script 1 — bulk DB insert.** You have a gateway YAML with a populated `gateway.paths[]` and you
   want those routes (and the auth/roles already declared on each path) loaded into the gateway-admin
@@ -30,7 +30,7 @@ services own their route definitions going forward).
 
 ---
 
-***REMOVED******REMOVED*** Script 1 — `gateway-paths-to-http.js`
+## Script 1 — `gateway-paths-to-http.js`
 
 Turns each `gateway.paths[]` entry into an insert against the gateway-admin create endpoint
 (`POST /admin/paths`, the `gw-path-create` handler). Each YAML path entry already **is** a
@@ -42,13 +42,13 @@ Routes are **de-duplicated by identity (METHOD + path)**, because the create han
 route with the same method+path (409). Skipped duplicates are reported on stderr. Disabled routes
 (`enabled: false`) are skipped unless `--include-disabled` is set.
 
-***REMOVED******REMOVED******REMOVED*** Usage
+### Usage
 
 ```bash
 node scripts/gateway-paths-to-http.js <config.yaml> [options]
 ```
 
-***REMOVED******REMOVED******REMOVED*** Options
+### Options
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -61,16 +61,16 @@ node scripts/gateway-paths-to-http.js <config.yaml> [options]
 | `--execute` | off | Actually POST every route (needs Node ≥ 18 global `fetch`). Prints a created/conflict/failed summary; 409s count as "already existed". |
 | `--include-disabled` | off | Also emit routes with `enabled: false`. |
 
-***REMOVED******REMOVED******REMOVED*** Examples
+### Examples
 
 ```bash
-***REMOVED*** Generate a VS Code REST Client / IntelliJ .http file
+# Generate a VS Code REST Client / IntelliJ .http file
 node scripts/gateway-paths-to-http.js tfr.yaml --out insert-routes.http
 
-***REMOVED*** Generate a curl script for a remote gateway
+# Generate a curl script for a remote gateway
 node scripts/gateway-paths-to-http.js tfr.yaml --format curl --base https://gw.example.com > insert.sh
 
-***REMOVED*** Insert directly against a live gateway
+# Insert directly against a live gateway
 node scripts/gateway-paths-to-http.js tfr.yaml --execute --base https://gw.example.com --auth "Bearer $TOKEN"
 ```
 
@@ -78,7 +78,7 @@ The `json` format emits **NDJSON** (one `StoredHttpPath` body per line) for pipi
 
 ---
 
-***REMOVED******REMOVED*** Script 2 — `broker-http-decorators.js`
+## Script 2 — `broker-http-decorators.js`
 
 A codemod run **inside a microservice repo**. For every method already decorated with
 `@BrokerAction(topic, action)`, it looks up the matching route(s) in the gateway YAML by
@@ -106,7 +106,7 @@ per-route auth model:
 
 It also adds `BrokerHTTP` / `BrokerAuth` to the existing `@open-rlb/nestjs-amqp` import.
 
-***REMOVED******REMOVED******REMOVED*** Behaviour notes
+### Behaviour notes
 
 - **dataSource down-map.** `@BrokerHTTP` only accepts `query | body | params`. A YAML `body-query`
   is down-mapped to `body` and `query-body` to `query`, each with an inline
@@ -123,7 +123,7 @@ It also adds `BrokerHTTP` / `BrokerAuth` to the existing `@open-rlb/nestjs-amqp`
   `'event'` type (it never edits the 3rd `@BrokerAction` arg), and when a method ends up with multiple
   named routes (so you can review the per-route auth pairing).
 
-***REMOVED******REMOVED******REMOVED*** Usage
+### Usage
 
 ```bash
 node broker-http-decorators.js <gateway.yaml> [--src ./src] [--write] [--quote single|double]
@@ -137,12 +137,12 @@ By default it is a **dry run** — it prints what it would change. Pass `--write
 | `--write` | off (dry run) | Apply the edits in place instead of just printing them. |
 | `--quote single\|double` | `single` | Quote style for the generated decorator string literals. |
 
-***REMOVED******REMOVED******REMOVED*** Examples
+### Examples
 
 ```bash
-***REMOVED*** Dry run — preview the decorators that would be added
+# Dry run — preview the decorators that would be added
 node ../gateway/scripts/broker-http-decorators.js ../gateway/tfr.yaml --src ./src
 
-***REMOVED*** Apply them
+# Apply them
 node ../gateway/scripts/broker-http-decorators.js ../gateway/tfr.yaml --src ./src --write
 ```

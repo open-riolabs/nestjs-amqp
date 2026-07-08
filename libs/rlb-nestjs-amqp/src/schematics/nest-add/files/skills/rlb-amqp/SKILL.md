@@ -3,13 +3,13 @@ name: rlb-amqp
 description: Reference, schema and gotchas for the @open-rlb/nestjs-amqp library (NestJS + RabbitMQ/AMQP + HTTP/WebSocket gateway). Use when answering questions about its YAML config (broker incl. routeDiscovery, topics, auth-providers, gateway paths/ws/events), AMQP rpc/handle/broadcast/event semantics, the @BrokerAction/@BrokerParam/@BrokerHTTP/@BrokerAuth decorators, the BrokerService API, route auto-discovery, gateway-admin (routes/auth-providers/metrics/health), the name-keyed ACL, or when debugging wiring/timeout/auth/websocket errors. Shared knowledge base for the rlb-amqp-add-action, rlb-amqp-add-route, rlb-amqp-add-ws-event, rlb-amqp-scaffold, rlb-amqp-acl and rlb-amqp-gateway-admin skills.
 ---
 
-***REMOVED*** @open-rlb/nestjs-amqp — reference
+# @open-rlb/nestjs-amqp — reference
 
 This library wraps RabbitMQ/AMQP for NestJS microservices and adds an HTTP/WebSocket
 API gateway. Business methods are decorated with `@BrokerAction` and wired to the
 broker through YAML config. The gateway turns HTTP/WS requests into broker messages.
 
-***REMOVED******REMOVED*** Mental model
+## Mental model
 
 ```
 HTTP/WS → Gateway (gateway.paths / gateway.events) → topic+action → RabbitMQ
@@ -26,7 +26,7 @@ HTTP/WS → Gateway (gateway.paths / gateway.events) → topic+action → Rabbit
 - A microservice can announce its `@BrokerHTTP` routes to a gateway over AMQP
   (**route auto-discovery**) so the gateway registers them without YAML edits.
 
-***REMOVED******REMOVED*** When to use this skill
+## When to use this skill
 
 Load the bundled reference files before editing config, handlers or the gateway:
 
@@ -50,7 +50,7 @@ Runnable examples live under `sample/config-sample/` (`gateway-in-memory`, `gate
 `calculator.ms`, plus the annotated `broker/gateway/acl/gateway-admin.yaml` reference
 configs). The retired `apps/gateway-2` is gone — do not cite it.
 
-***REMOVED******REMOVED*** Sibling task skills
+## Sibling task skills
 
 - `rlb-amqp-add-action` — add/modify a `@BrokerAction` handler and sync `config.yaml`.
 - `rlb-amqp-add-route` — expose an action over HTTP (`gateway.paths[]`).
@@ -59,7 +59,7 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
 - `rlb-amqp-acl` — name-keyed actions/roles, grant/revoke, the `acl-check-action` check.
 - `rlb-amqp-gateway-admin` — DB routes/auth-providers, metrics, health, route auto-discovery.
 
-***REMOVED******REMOVED*** Golden rules (summary — full list in references/gotchas.md)
+## Golden rules (summary — full list in references/gotchas.md)
 
 1. The topic `name` must be identical in: `@BrokerAction`, `topics[].name`,
    `requestData`/`publishMessage`, `gateway.paths[].topic` / `events[]`.

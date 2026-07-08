@@ -3,7 +3,7 @@ name: rlb-amqp-acl
 description: Manage access control (ACL) with @open-rlb/nestjs-amqp — actions, roles, grants/revokes, and "can user do X" checks. Use when wiring AclModule, gating gateway routes by actions, granting/revoking a user's roles, listing a user's resources, or answering authorization/permission questions (actions, roles, grants, acl-check).
 ---
 
-***REMOVED*** Manage ACL (@open-rlb/nestjs-amqp)
+# Manage ACL (@open-rlb/nestjs-amqp)
 
 Read first when you need depth:
 - `docs/acl.md` (model, wiring, URL table)
@@ -14,7 +14,7 @@ Read first when you need depth:
 Use when: managing **actions/roles/grants**, wiring `AclModule`, action-gating routes
 (`actions: [...]`), or answering "can user do X".
 
-***REMOVED******REMOVED*** Model (3 entities)
+## Model (3 entities)
 
 - **Action** — atomic capability (`read-doc`). Name-keyed.
 - **Role** — bundle of action names (`editor = [read-doc, write-doc]`). Name-keyed.
@@ -22,7 +22,7 @@ Use when: managing **actions/roles/grants**, wiring `AclModule`, action-gating r
 - **Checks** resolve the requested **action** → roles-that-include-it, then match the
   user's grants. The route/gate names **actions**; grants still assign **roles**.
 
-***REMOVED******REMOVED*** Decorator-bound (NOT configurable)
+## Decorator-bound (NOT configurable)
 
 Topic NAME `rlb-acl` (`ACL_TOPIC`) and every action string are bound in the library —
 reference them literally. The queue / exchange / routingKey that carry the topic ARE yours.
@@ -35,7 +35,7 @@ reference them literally. The queue / exchange / routingKey that carry the topic
 > **Removed in 2.0.5:** `acl-list-by-user`, `acl-verify-access`, `acl-create` /
 > id-based ACL CRUD. Entities are name-keyed: **PUT upserts, no POST.**
 
-***REMOVED******REMOVED*** Actions & roles — name-keyed CRUD
+## Actions & roles — name-keyed CRUD
 
 No id, no POST. `PUT` upserts by `name` (idempotent), `GET` lists (`?page=&limit=`),
 `GET …/get?name=` reads one, `DELETE` removes by `name`. Role upsert: every referenced
@@ -43,7 +43,7 @@ action must already exist (else **400**). The `*-search` actions (`acl-action-se
 `acl-role-search`, `acl-grant-search`) now take `?q=&page=&limit=` and return
 `PaginationModel<T>` (`{ page, limit, total, data }`), not a bare array.
 
-***REMOVED******REMOVED*** Grants — dual grant/revoke (now GATED)
+## Grants — dual grant/revoke (now GATED)
 
 One record per `(userId, companyId, resourceId)`. Both ops **require `userId` + `roles`**;
 `resourceId` + `companyId` are **optional** but PART of the record identity.
@@ -60,7 +60,7 @@ One record per `(userId, companyId, resourceId)`. Both ops **require `userId` + 
   overridable via `AclModuleOptions.roleManagementAction`. Bootstrap by seeding the first
   `role-management` grant directly in the DB (no caller can grant it otherwise).
 
-***REMOVED******REMOVED*** Checks — single primitive, GET → 200 with `true`/`false`
+## Checks — single primitive, GET → 200 with `true`/`false`
 
 `false` is real content; only `null`/`undefined` collapses to 204. Returns `false`
 (never throws) on missing input or error.
@@ -76,7 +76,7 @@ One record per `(userId, companyId, resourceId)`. Both ops **require `userId` + 
   from the forwarded `X-GTW-AUTH-USERID` header; lists accessible resources grouped by
   `companyId` with resolved actions.
 
-***REMOVED******REMOVED*** Nest wiring
+## Nest wiring
 
 Backend — `AclModule.forRoot([bindings], { cache })`. Bind the abstract repo tokens to
 your concrete impls + optional L2 store; second arg carries TTLs. Module is **global**,
@@ -115,25 +115,25 @@ Same process → `useExisting`. Separate services → gateway RPCs `acl-check-ac
 `rlb-acl` instead. A route's `actions` are ACTION NAMES; the caller is authorized if it
 holds **≥1** of them on the request's `(companyId, resourceId)`.
 
-***REMOVED******REMOVED*** YAML — topic + queue (names fixed, transport yours)
+## YAML — topic + queue (names fixed, transport yours)
 
 ```yaml
 broker:
   queues:
-    - name: rlb-acl          ***REMOVED*** consumed by the ACL backend handlers
+    - name: rlb-acl          # consumed by the ACL backend handlers
       exchange: rlb
       routingKey: rlb-acl
       createQueueIfNotExists: true
       options: { durable: true }
 topics:
-  - name: rlb-acl            ***REMOVED*** ACL_TOPIC — must match exactly
+  - name: rlb-acl            # ACL_TOPIC — must match exactly
     mode: rpc
     queue: rlb-acl
     exchange: rlb
     routingKey: rlb-acl
 ```
 
-***REMOVED******REMOVED*** Gateway paths[] — full ACL table
+## Gateway paths[] — full ACL table
 
 Every path forwards to topic `rlb-acl`, `mode: rpc`. `name` is a free label; `action` is
 the fixed library string.
@@ -160,28 +160,28 @@ the fixed library string.
 gateway:
   mode: gateway
   paths:
-    - name: acl-role-upsert        ***REMOVED*** PUT upserts by name. body: { name, actions, description? }
+    - name: acl-role-upsert        # PUT upserts by name. body: { name, actions, description? }
       method: PUT
       path: /acl/roles
       dataSource: body
       topic: rlb-acl
       action: acl-role-update
       mode: rpc
-    - name: acl-grant              ***REMOVED*** body: { userId, roles, resourceId?, companyId?, friendlyName? }
-      method: POST                 ***REMOVED*** gated: caller (X-GTW-AUTH-USERID) needs role-management on target
+    - name: acl-grant              # body: { userId, roles, resourceId?, companyId?, friendlyName? }
+      method: POST                 # gated: caller (X-GTW-AUTH-USERID) needs role-management on target
       path: /acl/grants
       dataSource: body
       topic: rlb-acl
       action: acl-grant
       mode: rpc
-    - name: acl-check              ***REMOVED*** ?userId=&action=read-doc&companyId=&resourceId= → 200 true/false
+    - name: acl-check              # ?userId=&action=read-doc&companyId=&resourceId= → 200 true/false
       method: GET
       path: /acl/check
       dataSource: query
       topic: rlb-acl
       action: acl-check-action
       mode: rpc
-    - name: acl-list-resources-by-user   ***REMOVED*** auth-gated; userId from X-GTW-AUTH-USERID
+    - name: acl-list-resources-by-user   # auth-gated; userId from X-GTW-AUTH-USERID
       method: GET
       path: /acl/resources
       dataSource: query
@@ -191,7 +191,7 @@ gateway:
       auth: gateway-jwks
 ```
 
-***REMOVED******REMOVED*** Verify
+## Verify
 
 - topic `rlb-acl` + its queue declared on the consuming service; gateway paths use the
   literal `action` strings above.

@@ -4,7 +4,7 @@ stages:
   - versioning
   - dependencies
   - build
-  ***REMOVED*** - test
+  # - test
   - deploy
 
 versioning:
@@ -63,21 +63,21 @@ build:
   only:
     - master
 
-***REMOVED***test:
-***REMOVED*** stage: test
-***REMOVED*** cache:
-***REMOVED***   paths:
-***REMOVED***     - node_modules
-***REMOVED***   policy: pull
-***REMOVED*** script:
-***REMOVED***   - wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
-***REMOVED***   - echo "deb http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list
-***REMOVED***   - apt-get update
-***REMOVED***   - apt-get install -y google-chrome-stable xvfb
-***REMOVED***   - npm run core:test-ci
-***REMOVED***   ***REMOVED***- npm run components:test-ci
-***REMOVED*** only:
-***REMOVED***   - master
+#test:
+# stage: test
+# cache:
+#   paths:
+#     - node_modules
+#   policy: pull
+# script:
+#   - wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+#   - echo "deb http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list
+#   - apt-get update
+#   - apt-get install -y google-chrome-stable xvfb
+#   - npm run core:test-ci
+#   #- npm run components:test-ci
+# only:
+#   - master
 
 deploy:
   stage: deploy

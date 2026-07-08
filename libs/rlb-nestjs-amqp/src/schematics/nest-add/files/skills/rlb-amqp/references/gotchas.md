@@ -1,10 +1,10 @@
-***REMOVED*** Gotchas — bug-prone cases checklist
+# Gotchas — bug-prone cases checklist
 
 Scan this before adding/changing a topic, queue, exchange, action, route, auth provider,
 WS event, or route-discovery wiring. Each item is a real failure mode in this codebase.
 Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 
-***REMOVED******REMOVED*** Decorators & handlers
+## Decorators & handlers
 1. **No destructuring in `@BrokerAction` parameters.** Param→message mapping parses the
    function source with a regex (`getParamNames`). `fn({a,b})` misaligns indices → params
    arrive `undefined`. Use flat params + an explicit `@BrokerParam` name on each.
@@ -30,7 +30,7 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
    - A route with no paired `@BrokerAuth` is **PUBLIC**. Two HTTP paths for the SAME action can now
      carry DIFFERENT auth — pair each to its route by `name`.
 
-***REMOVED******REMOVED*** Topic ↔ queue ↔ exchange wiring
+## Topic ↔ queue ↔ exchange wiring
 7. **The topic `name` must match everywhere**: `@BrokerAction`, `topics[].name`,
    `requestData`/`publishMessage`, `gateway.paths[].topic` / `events[]`. Typo →
    `Topic X not found in configuration`.
@@ -44,14 +44,27 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
     queue/exchange) must ALSO exist in the **gateway's own** `broker` config, or the forwarded
     request fails with `Topic ... not found in configuration`.
 
-***REMOVED******REMOVED*** connection_name (broadcast / WebSocket / route-discovery)
+## connection_name (broadcast / WebSocket / route-discovery)
 11. **`broadcast` + WebSocket require `connection_name`** (`clientProperties.connection_name`,
     or `broker.routeDiscovery.serviceName` which fills it when unset), else throw at boot.
-12. **Every instance needs a DISTINCT `connection_name`.** Sharing it makes RabbitMQ treat the
-    per-instance queues as one consumer group and **round-robin** broadcast/WS messages — reloads
-    land on "every other" instance, WS clients miss events delivered to the other one.
+12. **`connection_name` is a LOGICAL name: the library auto-appends `-<hostname>-<pid>` per
+    instance** (hostname is unique per container/pod; under Docker pid is always 1). Replicas can
+    share one config. Historical context: with a literally shared name RabbitMQ round-robined
+    broadcast/WS messages between instances. Auto-created broadcast queues are `autoDelete`.
 
-***REMOVED******REMOVED*** RPC / timeout / errors
+## Queues / overload
+Unbounded work queues trip RabbitMQ's mem/disk alarms → ALL publishers blocked. Set
+`messageTtl`/`maxLength` in `queues[].options` (⚠️ changing options on an EXISTING queue →
+406 loop; delete it first or use a broker policy). Put `gw-metrics-track` on the optional
+dedicated `rlb-gateway-metrics` topic (+ own bounded queue, `gateway.metrics.topic` → it):
+on the shared admin queue a slow metrics DB starves `gw-health`/`gw-reload`/admin RPCs.
+
+## RPC / timeout / errors
+Handler failures follow a BOUNDED retry policy (`broker.retry` / `topics[].retry`:
+`maxAttempts`, `delayMs`, `onExhausted: dead-letter|drop`; built-in default 5 attempts → drop) —
+the old infinite nack-requeue default is gone. Exhausted RPC messages reply `RetryExhaustedError`
+(gateway → 502); deserialization/pipe-validation failures skip retries. `deadLetter.exchange`
+must be declared in `broker.exchanges`. Explicit legacy `errorBehavior` still wins over defaults.
 13. **Wrong `replyQueues` key → silent timeout.** `requestData` resolves `replyTo` from
     `broker.replyQueues[exchange]`; absent → RabbitMQ direct-reply-to. Wrong exchange key → no
     reply routed back → the call just times out.
@@ -62,7 +75,7 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 15. **Default RPC timeout 10s** (`broker.defaultRpcTimeout`). Override per route (`paths[].timeout`)
     or per `requestData` call for slow RPCs.
 
-***REMOVED******REMOVED*** Gateway HTTP
+## Gateway HTTP
 16. **Boolean RPCs return `200` with `true`/`false`, not `204`.** A *defined* result — including
     falsy `false`/`0`/`""` — is real content, sent as `200` + JSON. Only `null`/`undefined`
     collapses to `204`. So `GET /acl/check?...` answers `200 false` for "no" — don't treat any
@@ -75,7 +88,7 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 20. **`/health` is a tiny liveness probe.** Action `gw-health` → `{ status: 'ok' }` (a real 200),
     NOT a metrics dump. Use `/admin/metrics*` (`gw-metrics-*`) for metrics.
 
-***REMOVED******REMOVED*** Auth / ACL
+## Auth / ACL
 21. **`actions` require `auth` on the same path/event.** No `auth` → no identity → fails closed
     (every request `403`, logged at boot). Always pair `actions: [...]` with `auth: <provider>`.
 22. **`actions` require an `IAclRoleService`** registered via `RLB_GTW_ACL_ROLE_SERVICE` in
@@ -127,7 +140,7 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 28. **Auth & gateway config go to `ProxyModule`** (`authOptions` / `gatewayOptions`), not
     `BrokerModule`. `BrokerModule` owns only `options` / `topics` / `appOptions`.
 
-***REMOVED******REMOVED*** Auth providers (hardening)
+## Auth providers (hardening)
 29. **JWKS verifies TLS by default.** `httpsAllowUnauthorized: true` only for self-signed dev issuers.
 30. **`algorithms` is REQUIRED for `jwt`/`jwks`.** Omitting denies verification (algorithm-confusion
     guard). For `jwks` only asymmetric algs are allowed (`RS*`/`ES*`/`PS*`); `HS*`/`none` rejected.
@@ -140,7 +153,7 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
 33. **Credential `mechanism` must be `PLAIN` | `EXTERNAL` | `AMQPLAIN`** (case-insensitive). Unknown
     value leaves SASL `response` unset → AMQP auth fails.
 
-***REMOVED******REMOVED*** WebSocket
+## WebSocket
 34. **Auth is per-event, not global.** `events[].auth` names the provider that verifies the
     connection token AND maps its claims for THAT event (memoized per provider at subscribe). `scopeClaim`
     references the MAPPED claim (prefixed, e.g. `X-GTW-AUTH-USERID`), `payloadKey` is the payload
@@ -155,13 +168,16 @@ Ported from `docs/gotchas.md` (re-verified against post-2.0.5 code).
     delivered afterward. Long-lived clients need token refresh + reconnect.
 37. **Set `gateway.ws.allowedOrigins`** to reject cross-site handshakes; omitted → all Origins
     accepted (logged at boot). `maxMessageBytes` (default 16384) drops oversized client frames.
+    `maxBufferedBytes` (default 1 MiB) is the outbound backpressure cap: a slow client above it
+    has its messages dropped until it drains. A down `loadConfig.events` source no longer crashes
+    the gateway at boot: it degrades to YAML-only events (remote ones missing until restart).
 
-***REMOVED******REMOVED*** Publish / events
+## Publish / events
 38. **`publishMessage` is `async` — `await` it** for the publisher-confirm guarantee and to catch
     failures. Un-awaited = fire-and-forget without guarantee. (For an `event`-mode route the gateway
     awaits the confirm before returning the 2xx — the success status is not optimistic.)
 
-***REMOVED******REMOVED*** Reload & route auto-discovery
+## Reload & route auto-discovery
 39. **The only reload action is `gw-reload`** (`GW_RELOAD_ACTION`). The control-topic subscriber
     rebuilds routes ONLY for `gw-reload`; every other message on the control topic is ignored.
     Seed then reload: `POST /admin/paths` → `POST /admin/reload` (publishes `gw-reload` on

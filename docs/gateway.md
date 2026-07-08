@@ -1,4 +1,4 @@
-***REMOVED*** Gateway (HTTP & WebSocket proxy)
+# Gateway (HTTP & WebSocket proxy)
 
 The **gateway** turns your RabbitMQ broker actions into a public surface. It mounts an
 Express router that maps HTTP routes to `topic`/`action` pairs (forwarding each call over the
@@ -14,7 +14,7 @@ The gateway is the `ProxyModule`. It is HTTP-transport-agnostic in spirit but sh
   route auto-discovery), see [./gateway-admin.md](./gateway-admin.md).
 - For action-gated routes and the `acl-check-action` check, see [./acl.md](./acl.md).
 
-***REMOVED******REMOVED*** Base features
+## Base features
 
 - **Declarative routes.** Each `gateway.paths[]` entry is a `PathDefinition`: HTTP method + path
   → broker `topic`/`action`, in `rpc` (wait for a reply) or `event` (fire-and-forget) mode.
@@ -30,7 +30,7 @@ The gateway is the `ProxyModule`. It is HTTP-transport-agnostic in spirit but sh
 - **Per-call metrics.** Every served request is emitted (fire-and-forget) to a broker sink and/or
   an in-process hook.
 
-***REMOVED******REMOVED*** NestJS configuration
+## NestJS configuration
 
 Register `ProxyModule.forRootAsync(...)`. It owns the gateway's `gatewayOptions`
 (the `gateway:` block) and `authOptions` (the `auth-providers:` block), plus any extra DI bindings:
@@ -61,7 +61,7 @@ Two bindings live in `providers`:
 - **`RLB_GTW_METRICS_HOOK`** — an optional `GatewayMetricsHook` (`{ track(point) }`). When present,
   the gateway calls it once per served request, independently of the broker `gateway.metrics` sink.
 
-***REMOVED******REMOVED******REMOVED*** `main.ts` requirements
+### `main.ts` requirements
 
 The bootstrap must enable **raw body** (so `parseRaw` paths can read `req.rawBody`) and install the
 **WsAdapter** (so the WebSocket layer works). See
@@ -74,7 +74,7 @@ app.enableShutdownHooks();
 await app.listen(port, host);
 ```
 
-***REMOVED******REMOVED*** YAML: the `gateway:` block
+## YAML: the `gateway:` block
 
 `GatewayConfig` fields:
 
@@ -100,8 +100,8 @@ gateway:
     paths:
       topic: rlb-gateway-admin
       action: gw-path-export
-  paths: [ ... ]   ***REMOVED*** see HTTP config
-  events: []       ***REMOVED*** see WebSocket config
+  paths: [ ... ]   # see HTTP config
+  events: []       # see WebSocket config
 ```
 
 > The reload control action is the literal string **`gw-reload`** (`GW_RELOAD_ACTION`). The control
@@ -110,9 +110,9 @@ gateway:
 > routes. Calling `reload()` concurrently is safe: overlapping signals are **coalesced** into exactly
 > one extra pass.
 
-***REMOVED******REMOVED*** HTTP configuration (paths & auth)
+## HTTP configuration (paths & auth)
 
-***REMOVED******REMOVED******REMOVED*** `PathDefinition` fields
+### `PathDefinition` fields
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -145,9 +145,13 @@ in, plus:
 | `query-body` | `{ ...params, ...body, ...query }` (query wins) |
 
 Uploaded files (multipart, any field) are attached as `$files` (buffers are converted to binary
-strings before forwarding).
+strings before forwarding). Multipart bodies are parsed **after** authentication (an anonymous
+client cannot make the gateway buffer uploads) and are capped by `gateway.upload`
+(`maxFileSizeMb`, default 25; `maxFiles`, default 10) — exceeding a limit returns `413`. Files
+are buffered in gateway RAM and re-encoded into the AMQP message (~2-3x the file size), so mind
+the broker's `max_message_size` when raising the caps.
 
-***REMOVED******REMOVED******REMOVED*** The three-case auth gate
+### The three-case auth gate
 
 For every request the gateway runs `processAuthData` (best-effort), then decides:
 
@@ -166,7 +170,7 @@ For every request the gateway runs `processAuthData` (best-effort), then decides
 > check requires a `jwt`/`jwks` provider with a `uidClaim`, and a registered `RLB_GTW_ACL_ROLE_SERVICE`;
 > any missing piece → deny.
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Resource scoping
+#### Resource scoping
 
 The action check is **resource-aware**: the caller must hold the action on the **exact**
 `(companyId, resourceId)` the request targets — there is no wildcard. A resource-less grant
@@ -181,7 +185,7 @@ rather than failing.
 There is no separate resource-scoped ACL action: the single `acl-check-action` primitive does both
 the gateway gate and any in-service check. See [./acl.md](./acl.md).
 
-***REMOVED******REMOVED******REMOVED*** Auth-providers (static config)
+### Auth-providers (static config)
 
 `gateway.auth` references a provider by `name` from the top-level `auth-providers:` list
 (`HandlerAuthConfig[]`). Fields:
@@ -225,7 +229,7 @@ auth-providers:
     clientId: my-app
 ```
 
-***REMOVED******REMOVED******REMOVED*** Response & error → HTTP status mapping
+### Response & error → HTTP status mapping
 
 For **`rpc`** routes:
 
@@ -251,7 +255,7 @@ When `mode: rpc` and the broker reply rejects, the error `name` maps to a status
 For **`event`** routes: a successful publish returns `successStatusCode || 202`; a publish failure
 returns `503`.
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Unified error envelope
+#### Unified error envelope
 
 **Every** gateway error response — across the whole HTTP surface — shares one shape:
 
@@ -268,7 +272,7 @@ This applies to **the auth gate too**: the `401`/`403` replies from the built-in
 now use this envelope (previously a bare `{ message: 'Unauthorized' }`). One shape for the whole
 HTTP surface — broker-reply errors and gate rejections alike.
 
-***REMOVED******REMOVED******REMOVED*** Metrics hook
+### Metrics hook
 
 When `gateway.metrics` and/or a `RLB_GTW_METRICS_HOOK` are present, the gateway emits one
 `GatewayMetricPoint` per served request **after** the response is flushed
@@ -276,12 +280,12 @@ When `gateway.metrics` and/or a `RLB_GTW_METRICS_HOOK` are present, the gateway 
 never throws and never delays the response. The broker sink feeds the gateway-admin metrics handler;
 the in-proxy hook (e.g. an InfluxDB writer) runs independently. See [./gateway-admin.md](./gateway-admin.md).
 
-***REMOVED******REMOVED*** WebSocket configuration
+## WebSocket configuration
 
 WebSocket streams are declared in `gateway.events[]`. Each `WebSocketEvent` binds a broker exchange
 to a named client-facing event. Connection-level limits live in `gateway.ws`.
 
-***REMOVED******REMOVED******REMOVED*** `WebSocketEvent` fields
+### `WebSocketEvent` fields
 
 | Field | Type | Purpose |
 | --- | --- | --- |
@@ -295,7 +299,7 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
 | `payloadKey` | `string?` | The message payload key compared against `scopeClaim`. |
 | `url` / `method` / `headers` / `timeout` | — | For `type: 'http'` events: the webhook target. |
 
-***REMOVED******REMOVED******REMOVED*** `WebSocketGatewayOptions` (`gateway.ws`) fields
+### `WebSocketGatewayOptions` (`gateway.ws`) fields
 
 | Field | Default | Purpose |
 | --- | --- | --- |
@@ -304,11 +308,12 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
 | `heartbeatIntervalMs` | `30000` | Ping/pong heartbeat (also drops dead sockets and expired-token sessions). |
 | `allowedOrigins` | — | Allowlist of accepted `Origin` headers. When unset, all origins are accepted (logged at boot). |
 | `maxMessageBytes` | `16384` | Max inbound client message size; larger frames are dropped. |
+| `maxBufferedBytes` | `1048576` | Outbound backpressure cap: when a client's send buffer exceeds this, its event messages are **dropped** until it drains (a slow-but-alive client can no longer grow gateway memory unbounded). |
 
 > Authentication/authorization is declared **per-event** (`auth`/`requireAuth`/`actions`/`scopeClaim`),
 > not in `gateway.ws`.
 
-***REMOVED******REMOVED******REMOVED*** How it works
+### How it works
 
 - **Token in subprotocol.** The connection token is read from `Sec-WebSocket-Protocol`
   (set via the second argument of the browser `WebSocket` constructor). A single value is the token;
@@ -330,7 +335,7 @@ to a named client-facing event. Connection-level limits live in `gateway.ws`.
 - **`http` events.** `type: 'http'` events forward each broker message to `url`/`method` instead of
   to WS clients.
 
-***REMOVED******REMOVED*** WebSocket client protocol & example
+## WebSocket client protocol & example
 
 A client opens one WebSocket and **multiplexes** many topics over it. The wire protocol is JSON:
 
@@ -375,14 +380,14 @@ wsSubject.next({ action: 'unsubscribe', topic: 'chat' });
 See the full runnable page at [../web-socket-sample.html](../web-socket-sample.html) and the
 bootstrap wiring at [../sample/config-sample/gateway-in-memory/src/main.ts](../sample/config-sample/gateway-in-memory/src/main.ts).
 
-***REMOVED******REMOVED*** Reference: sample routes
+## Reference: sample routes
 
 The demo gateway ([../sample/config-sample/gateway-in-memory/config/config.yaml](../sample/config-sample/gateway-in-memory/config/config.yaml))
 exposes, among others:
 
 | Method & path | Topic | Action | Mode | Notes |
 | --- | --- | --- | --- | --- |
-| `GET /health` | `rlb-gateway-admin` | `gw-health` | rpc | Readiness probe → `{ status, broker, dependencies }` (`up`/`down`); always HTTP 200. See [gateway-admin](./gateway-admin.md***REMOVED***health--gw-health-readiness-probe). |
+| `GET /health` | `rlb-gateway-admin` | `gw-health` | rpc | Readiness probe → `{ status, broker, dependencies }` (`up`/`down`); always HTTP 200. See [gateway-admin](./gateway-admin.md#health--gw-health-readiness-probe). |
 | `GET /acl/check` | `rlb-acl` | `acl-check-action` | rpc | `?userId=&action=&companyId=&resourceId=` → `200 true/false`. |
 | `PUT /acl/actions` | `rlb-acl` | `acl-action-update` | rpc | name-keyed upsert. |
 | `PUT /acl/roles` | `rlb-acl` | `acl-role-update` | rpc | name-keyed upsert. |

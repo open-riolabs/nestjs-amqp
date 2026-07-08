@@ -1,4 +1,4 @@
-***REMOVED*** gateway-db — MongoDB-backed gateway sample
+# gateway-db — MongoDB-backed gateway sample
 
 A persistent variant of the `@open-rlb/nestjs-amqp` HTTP/WebSocket gateway sample. It exposes the
 **same gateway surface** as [`gateway-in-memory`](../gateway-in-memory) — the same ACL actions/roles/grants,
@@ -10,7 +10,7 @@ every store that the in-memory sample keeps in RAM is here backed by **MongoDB v
 
 ---
 
-***REMOVED******REMOVED*** Purpose
+## Purpose
 
 The library ships the ACL and gateway-admin **services**; you supply the concrete **repositories**. In
 `gateway-in-memory` those repositories are plain in-process maps. In `gateway-db` they are Mongoose
@@ -37,7 +37,7 @@ Two things deliberately stay **non-Mongo**:
   until configured (see below). This is *separate* from the broker-based `gateway.metrics` sink that writes
   to Mongo — both can be active at once.
 
-***REMOVED******REMOVED*** Use cases
+## Use cases
 
 - **Production-like persistence** — routes, auth-providers, ACL data and metrics survive process restarts.
 - **Surviving restarts** — seed routes/roles once via the admin API; they are reloaded from Mongo on boot.
@@ -48,9 +48,9 @@ Two things deliberately stay **non-Mongo**:
 
 ---
 
-***REMOVED******REMOVED*** How the data is wired
+## How the data is wired
 
-***REMOVED******REMOVED******REMOVED*** Connection
+### Connection
 
 `DatabaseModule` (`src/modules/database/database.module.ts`) is a `@Global()` module that opens **one**
 Mongoose connection, named by `DATA_CONNECTION_NAME` (`gateway-2`) from
@@ -66,7 +66,7 @@ every other setting — no env vars). It:
 - appends `?<options>` (e.g. `authSource`, `readPreference`, `replicaSet`) when `options` is set;
 - and passes `database` as the Mongoose `dbName`.
 
-***REMOVED******REMOVED******REMOVED*** Repository bindings
+### Repository bindings
 
 `src/app.module.ts` binds the library's abstract repository tokens to the Mongo implementations:
 
@@ -81,12 +81,12 @@ every other setting — no env vars). It:
 
 ---
 
-***REMOVED******REMOVED*** Configuration (`config/config.yaml`)
+## Configuration (`config/config.yaml`)
 
 > All credentials in the shipped config are placeholders (`REPLACE_ME`). Replace them with your own
 > values; never commit real secrets.
 
-***REMOVED******REMOVED******REMOVED*** `data-mongodb`
+### `data-mongodb`
 
 Defaults to a local single-node dev Mongo at `localhost:27017`, database `amqp-gateway`, `auth: false`.
 For an authenticated cluster / replica set, set `auth: true`, fill `user`/`password`, list every `host`,
@@ -95,17 +95,17 @@ and add `options.replicaSet` / `options.authSource` as needed.
 ```yaml
 data-mongodb:
   protocol: mongodb
-  host: localhost:27017      ***REMOVED*** single string OR a YAML list of hosts
+  host: localhost:27017      # single string OR a YAML list of hosts
   user: REPLACE_ME
   password: REPLACE_ME
   database: amqp-gateway
-  auth: false                ***REMOVED*** true → prepend user:password@ to the URI
+  auth: false                # true → prepend user:password@ to the URI
   options:
     authSource: admin
     readPreference: primary
 ```
 
-***REMOVED******REMOVED******REMOVED*** `influx` (optional time-series sink)
+### `influx` (optional time-series sink)
 
 Read from config like everything else (no env vars). The `InfluxMetricsHook` is a **no-op until
 `influx.url`, `influx.token` and `influx.org` are ALL set** — leave `token`/`org` blank to keep the gateway
@@ -116,12 +116,12 @@ fields `duration_ms`+`count`).
 ```yaml
 influx:
   url: http://localhost:8086
-  token:                     ***REMOVED*** blank → hook stays a no-op
-  org:                       ***REMOVED*** blank → hook stays a no-op
+  token:                     # blank → hook stays a no-op
+  org:                       # blank → hook stays a no-op
   bucket: gateway
 ```
 
-***REMOVED******REMOVED******REMOVED*** Broker, topics, gateway
+### Broker, topics, gateway
 
 Identical in shape to the in-memory sample. Points to note:
 
@@ -137,7 +137,7 @@ Identical in shape to the in-memory sample. Points to note:
 - `gateway.reloadTopic: rlb-gateway-control` — the broadcast topic the gateway subscribes to and that
   route auto-discovery publishes `gw-reload` on after applying a manifest.
 
-***REMOVED******REMOVED******REMOVED*** Route auto-discovery (consumer side)
+### Route auto-discovery (consumer side)
 
 The gateway is the **consumer** in route auto-discovery: `RouteSyncService` (wired by `GatewayAdminModule`)
 listens for route manifests published by microservices, diffs them against the DB, applies changes, journals
@@ -155,7 +155,7 @@ a route-discovery demo microservice once one announces itself.
 
 ---
 
-***REMOVED******REMOVED*** How to run
+## How to run
 
 1. Start a reachable **MongoDB** (defaults to `localhost:27017`, `auth: false`; edit `data-mongodb` in
    `config/config.yaml` to point elsewhere).
@@ -171,14 +171,14 @@ then seed routes/roles/grants and inspect metrics via the admin and ACL endpoint
 
 ---
 
-***REMOVED******REMOVED*** Postman
+## Postman
 
 A ready-made collection is included: **`gateway-db.postman_collection.json`** (in this folder). Import it to
 exercise the ACL management, gateway-admin route/auth/metrics, and reload endpoints against the running gateway.
 
 ---
 
-***REMOVED******REMOVED*** Dependencies
+## Dependencies
 
 - Pins `@open-rlb/nestjs-amqp` at `^2.0.5`. When run **in-tree** inside this monorepo, it resolves to the
   local workspace library rather than the published package.

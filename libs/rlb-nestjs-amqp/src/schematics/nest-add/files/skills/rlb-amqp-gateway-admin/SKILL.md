@@ -3,7 +3,7 @@ name: rlb-amqp-gateway-admin
 description: Drive the @open-rlb/nestjs-amqp gateway-admin management plane and route auto-discovery. Use for DB-managed HTTP routes (gw-path-*), DB auth-providers CRUD (gw-auth-*, name-keyed PUT-upsert), gateway metrics (gw-metrics-get/series/points/track) and the gw-health probe, runtime route reload (gw-reload via the broadcast control topic), the in-proxy metrics hook (RLB_GTW_METRICS_HOOK), and wiring GatewayAdminModule.forRoot/forRootAsync. Also covers route auto-discovery: publisher (broker.routeDiscovery serviceName/publishOnBoot/exchange/queue) vs consumer (GatewayAdminModule routeDiscovery exchange/queue).
 ---
 
-***REMOVED*** Gateway-admin module + route auto-discovery
+# Gateway-admin module + route auto-discovery
 
 Read first:
 - `docs/gateway-admin.md` (full reference)
@@ -17,7 +17,7 @@ auto-discovery. All handlers bind to the topic `rlb-gateway-admin`
 **decorator-bound — NOT configurable**. You drive them by adding
 `gateway.paths[]` that forward to that topic/action.
 
-***REMOVED******REMOVED*** Fixed vs configurable
+## Fixed vs configurable
 
 - FIXED (write exactly): topic names `rlb-gateway-admin`, control action
   `gw-reload` + `gw-auth-reload`, and all action strings `gw-path-*` / `gw-auth-*`
@@ -27,7 +27,7 @@ auto-discovery. All handlers bind to the topic `rlb-gateway-admin`
   exchange/queue (defaults `rlb-route-discovery` / `rlb-route-sync`) — which must
   match on the publisher AND consumer sides.
 
-***REMOVED******REMOVED*** Nest wiring — `GatewayAdminModule`
+## Nest wiring — `GatewayAdminModule`
 
 `forRoot(providers, options)`: repo bindings FIRST, options SECOND. You supply
 the four repositories (any store); the module ships the services and wires
@@ -60,7 +60,7 @@ now returns `Promise<PaginationModel<T>>` (not a bare array); `RouteSyncLogRepos
 page?, limit?)` backs `gw-route-log-search`; `RouteSyncLogRepository.prune` + `HttpMetricRepository.prunePoints`
 back retention.
 
-***REMOVED******REMOVED*** Broker topic + queue (required)
+## Broker topic + queue (required)
 
 ```yaml
 broker:
@@ -71,12 +71,12 @@ broker:
       createQueueIfNotExists: true
       options: { durable: true }
 topics:
-  - name: rlb-gateway-admin     ***REMOVED*** MUST be this name
+  - name: rlb-gateway-admin     # MUST be this name
     mode: rpc
     queue: rlb-gateway-admin
     exchange: rlb
     routingKey: rlb-gateway-admin
-  - name: rlb-gateway-control   ***REMOVED*** name is yours; must match gateway.reloadTopic + gw-reload path
+  - name: rlb-gateway-control   # name is yours; must match gateway.reloadTopic + gw-reload path
     mode: broadcast
     exchange: rlb
     routingKey: rlb-gateway-control
@@ -90,10 +90,10 @@ gateway:
   loadConfig:
     paths: { topic: rlb-gateway-admin, action: gw-path-export }
   reloadTopic: rlb-gateway-control
-  metrics: { topic: rlb-gateway-admin, action: gw-metrics-track }  ***REMOVED*** auto-emit track per request
+  metrics: { topic: rlb-gateway-admin, action: gw-metrics-track }  # auto-emit track per request
 ```
 
-***REMOVED******REMOVED*** Route management — `gw-path-*` (id-keyed)
+## Route management — `gw-path-*` (id-keyed)
 
 `gw-path-create` is a **POST** (DB paths have an `id`) — unlike the name-keyed
 auth/ACL resources. `create` rejects a `(method, path)` collision (409).
@@ -111,7 +111,7 @@ auth/ACL resources. `create` rejects a `(method, path)` collision (409).
 | GET    | `/admin/route-log`    | `gw-route-log-list`   | query | route journal (who changed what); `?limit=` |
 | GET    | `/admin/route-log/search` | `gw-route-log-search` | query | filtered + paginated journal → `PaginationModel<RouteSyncLogEntry>`; `?actor=&service=&event=&routeKey=&from=&to=&page=&limit=` |
 
-***REMOVED******REMOVED*** Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)
+## Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)
 
 No `id`, no POST — a single `PUT` creates-or-updates by `name`. These are the
 DB-stored providers, ON TOP of the static `auth-providers[]` in YAML.
@@ -126,7 +126,7 @@ DB-stored providers, ON TOP of the static `auth-providers[]` in YAML.
 
 `gw-auth-export` (dump all enabled) also exists; not in the sample YAML.
 
-***REMOVED******REMOVED*** Metrics — `gw-metrics-*` + `gw-health`
+## Metrics — `gw-metrics-*` + `gw-health`
 
 | Method | Path | action | mode | dataSource | Returns |
 | --- | --- | --- | --- | --- | --- |
@@ -165,7 +165,7 @@ can't set 503) — readiness must inspect `status`.
   mode: rpc
 ```
 
-***REMOVED******REMOVED******REMOVED*** In-proxy metrics hook — `RLB_GTW_METRICS_HOOK`
+### In-proxy metrics hook — `RLB_GTW_METRICS_HOOK`
 
 Independent of the broker `gateway.metrics` sink: the gateway invokes a hook
 once per request, after the response is flushed. Register under
@@ -184,7 +184,7 @@ ProxyModule.forRootAsync({ /* ... */ providers: [
 (`sample/config-sample/gateway-db` ships an `InfluxMetricsHook` that is a no-op
 until `INFLUX_URL/TOKEN/ORG` env are set.)
 
-***REMOVED******REMOVED*** Runtime reload — `gw-reload` (routes) + `gw-auth-reload` (auth)
+## Runtime reload — `gw-reload` (routes) + `gw-auth-reload` (auth)
 
 Two SEPARATE control actions, both published to the **broadcast control topic**
 (`gateway.reloadTopic`, NOT `rlb-gateway-admin`), `mode: event`. The control-topic
@@ -202,10 +202,10 @@ subscriber handles only these two and ignores everything else.
   method: POST
   path: /admin/reload
   dataSource: body
-  topic: rlb-gateway-control   ***REMOVED*** the broadcast control topic
+  topic: rlb-gateway-control   # the broadcast control topic
   action: gw-reload
   mode: event
-- name: gw-auth-reload         ***REMOVED*** reload DB auth-providers into RAM (separate, deliberate)
+- name: gw-auth-reload         # reload DB auth-providers into RAM (separate, deliberate)
   method: POST
   path: /admin/auth/reload
   dataSource: body
@@ -218,13 +218,13 @@ Seed DB routes via `POST /admin/paths`, then `POST /admin/reload` — no restart
 Edit DB auth-providers via `PUT /admin/auth`, then `POST /admin/auth/reload` to
 activate them (a conscious choice).
 
-***REMOVED******REMOVED*** Route auto-discovery (publisher vs consumer)
+## Route auto-discovery (publisher vs consumer)
 
 A microservice announces its own `@BrokerHTTP`/`@BrokerAction` routes; the
 gateway persists + registers them, no YAML edits. Two halves must agree on the
 same exchange/queue (defaults `rlb-route-discovery` / `rlb-route-sync`).
 
-***REMOVED******REMOVED******REMOVED*** Publisher (microservice → gateway) — `broker.routeDiscovery`
+### Publisher (microservice → gateway) — `broker.routeDiscovery`
 
 Lives in `BrokerModule`, so its config is INSIDE the broker block.
 
@@ -236,12 +236,12 @@ Lives in `BrokerModule`, so its config is INSIDE the broker block.
 | `queue`         | `rlb-route-sync`      | Durable shared work-queue the gateway consumes. |
 
 ```yaml
-***REMOVED*** in the MICROSERVICE config.yaml:
+# in the MICROSERVICE config.yaml:
 broker:
   routeDiscovery:
-    serviceName: demo-ms     ***REMOVED*** required; also fills connection_name if unset
+    serviceName: demo-ms     # required; also fills connection_name if unset
     publishOnBoot: true
-    ***REMOVED*** exchange/queue default; override only to namespace per env (then match the consumer)
+    # exchange/queue default; override only to namespace per env (then match the consumer)
 ```
 
 Routes are declared `@BrokerHTTP` over a `@BrokerAction` method. The gateway must
@@ -258,7 +258,7 @@ routes over the same action can publish with different auth — a route with no 
 @BrokerAuth('admin-jwks', undefined, ['booking.admin'], 'admin-get-booking')  // 3rd param = ACL actions; pairs by httpName
 ```
 
-***REMOVED******REMOVED******REMOVED*** Consumer (gateway ← microservice) — `GatewayAdminModule` `routeDiscovery`
+### Consumer (gateway ← microservice) — `GatewayAdminModule` `routeDiscovery`
 
 Wired by `GatewayAdminModule` (NOT YAML). Asserts the fanout exchange, subscribes
 to the durable queue (competing consumers), then per manifest: diffs vs DB scoped
@@ -300,7 +300,7 @@ GatewayAdminModule.forRootAsync({
 The consumer has NO `serviceName` (it only receives). The exchange/queue MUST
 match every publisher's `broker.routeDiscovery`.
 
-***REMOVED******REMOVED*** Verify
+## Verify
 
 - Topic `rlb-gateway-admin` (+ queue) declared; `reloadTopic` matches the
   broadcast control topic name and the `gw-reload` path's `topic`.

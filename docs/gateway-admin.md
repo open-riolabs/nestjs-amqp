@@ -1,4 +1,4 @@
-***REMOVED*** Gateway-Admin
+# Gateway-Admin
 
 The **gateway-admin** module is the management plane for an `@open-rlb/nestjs-amqp` HTTP/WebSocket gateway. It turns the gateway into something you can drive at runtime — without restarts and without hand-editing YAML — by exposing a small set of broker actions for:
 
@@ -11,7 +11,7 @@ All handlers are decorator-bound to a single broker topic, `rlb-gateway-admin` (
 
 ---
 
-***REMOVED******REMOVED*** Base features
+## Base features
 
 | Capability | Backed by | Notes |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ The module ships the services; **you** supply the concrete repositories (any bac
 
 ---
 
-***REMOVED******REMOVED*** Nest config — `GatewayAdminModule`
+## Nest config — `GatewayAdminModule`
 
 `GatewayAdminModule.forRoot(providers, options)` takes the repository bindings as its **first** argument and the module options as its **second**. The four bindings it expects are `HttpPathRepository`, `AuthProviderRepository`, `HttpMetricRepository` and `RouteSyncLogRepository`.
 
@@ -48,7 +48,7 @@ GatewayAdminModule.forRoot([
 
 The module **exports** `GatewayPathService`, `GatewayAuthService` and `GatewayMetricsService` (handy if another module needs them directly). `RouteSyncService` is wired internally and runs on application bootstrap.
 
-***REMOVED******REMOVED******REMOVED*** `forRootAsync` — consumer-side `routeDiscovery`
+### `forRootAsync` — consumer-side `routeDiscovery`
 
 Use `forRootAsync` when you need to resolve options from config (e.g. `ConfigService`). The only option that matters today is the **consumer-side** `routeDiscovery { exchange, queue }` — the exchange/queue the gateway listens on for microservice manifests. These names **must match** the publishers' `broker.routeDiscovery` values.
 
@@ -81,20 +81,20 @@ GatewayAdminModule.forRootAsync({
 | `retentionDays` | `number` | `90` | Retention window (≈3 months) for the route journal + raw metric points. A daily job (`GatewayRetentionService`) prunes anything older. Set `0`/negative to disable. |
 | `rollupRetentionDays` | `number` | `365` | Retention window (≈1 year) for the persisted hourly metric **rollups** (long-term trends that survive raw-point pruning). When `> 0` the hourly rollup job (`GatewayMetricsRollupService`) runs and old rollups are pruned at this window; `0`/negative disables rollups. |
 
-The consumer side has **no `serviceName`** — the gateway only *receives* manifests and keeps its own `connection_name`. (The `serviceName` lives on the publisher side; see [Route auto-discovery](***REMOVED***route-auto-discovery).)
+The consumer side has **no `serviceName`** — the gateway only *receives* manifests and keeps its own `connection_name`. (The `serviceName` lives on the publisher side; see [Route auto-discovery](#route-auto-discovery).)
 
 ---
 
-***REMOVED******REMOVED*** YAML config
+## YAML config
 
-***REMOVED******REMOVED******REMOVED*** Declare the broker topic + queue
+### Declare the broker topic + queue
 
 The gateway-admin handlers consume from a topic that must be named **literally** `rlb-gateway-admin`, backed by a durable queue of the same name:
 
 ```yaml
 broker:
   queues:
-    ***REMOVED*** Queue consumed by the gateway-admin backend handlers.
+    # Queue consumed by the gateway-admin backend handlers.
     - name: rlb-gateway-admin
       exchange: rlb
       routingKey: rlb-gateway-admin
@@ -103,7 +103,7 @@ broker:
         durable: true
 
 topics:
-  ***REMOVED*** Topic the gateway-admin handlers bind to (GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin').
+  # Topic the gateway-admin handlers bind to (GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin').
   - name: rlb-gateway-admin
     mode: rpc
     queue: rlb-gateway-admin
@@ -111,7 +111,7 @@ topics:
     routingKey: rlb-gateway-admin
 ```
 
-***REMOVED******REMOVED******REMOVED*** Point `loadConfig.paths` at the export responder
+### Point `loadConfig.paths` at the export responder
 
 So the gateway loads its DB-stored routes (in addition to the YAML `gateway.paths`) at boot and on every reload, point `gateway.loadConfig.paths` at the `gw-path-export` responder:
 
@@ -127,7 +127,7 @@ DB routes are merged with the YAML routes and ordered **static-before-param**. S
 
 ---
 
-***REMOVED******REMOVED*** Route management — `gw-path-*` (id-keyed)
+## Route management — `gw-path-*` (id-keyed)
 
 `GatewayPathService` stores `PathDefinition`-shaped routes in the DB. Records are keyed by `id`. `create` validates `name` / `method` / `path` / `topic` and rejects a `(method, path)` collision with another enabled route (409). `export` returns all **enabled** paths, ordered static-before-param, and is what `loadConfig.paths` reads.
 
@@ -149,7 +149,7 @@ Wire them as HTTP routes (matches `config.yaml`):
 
 ---
 
-***REMOVED******REMOVED*** Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)
+## Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)
 
 `GatewayAuthService` manages stored auth-providers. These have **no `id`** — they are keyed by `name`. There is **no POST**: a single `PUT` creates-or-updates by name (`upsertByName`). `upsert` validates `name` and `type`. `export` returns all enabled providers (read in addition to / for the frontend).
 
@@ -167,9 +167,18 @@ There is also `gw-auth-export` (not exposed in the sample YAML) for dumping all 
 
 ---
 
-***REMOVED******REMOVED*** Metrics
+## Metrics
 
 `GatewayMetricsService` records and serves per-request metrics. The gateway can auto-emit a `track` event after every request (configured under `gateway.metrics`), so you normally never call `track` by hand.
+
+> **Isolate the track traffic.** `gw-metrics-track` fires once per HTTP request and does DB
+> writes: on the shared `rlb-gateway-admin` queue a slow metrics store fills the consumer's
+> prefetch slots and starves `gw-health`, `gw-reload` and every admin RPC. The handler is also
+> bound to the **optional dedicated topic `rlb-gateway-metrics`**: declare that topic (+ its own
+> queue, ideally with `maxLength`/`messageTtl` — metrics are droppable telemetry) in the broker
+> config and point `gateway.metrics.topic` at it. When the topic isn't configured, the binding
+> is simply skipped and everything keeps working on the admin topic. The `track` handler never
+> throws (fail-soft): a metrics DB outage costs data points, never the flow.
 
 | Method | Path | Action | mode | dataSource | Returns |
 | --- | --- | --- | --- | --- | --- |
@@ -196,7 +205,7 @@ gateway:
     action: gw-metrics-track
 ```
 
-***REMOVED******REMOVED******REMOVED*** `/health` → `gw-health` (readiness probe)
+### `/health` → `gw-health` (readiness probe)
 
 `/health` maps to the **`gw-health`** action — a **readiness** probe (not a metrics dump). It returns:
 
@@ -238,7 +247,7 @@ import { RLB_GW_HEALTH_INDICATORS, GatewayHealthIndicator } from '@open-rlb/nest
   mode: rpc
 ```
 
-***REMOVED******REMOVED******REMOVED*** In-proxy metrics hook — `RLB_GTW_METRICS_HOOK` / `GatewayMetricsHook`
+### In-proxy metrics hook — `RLB_GTW_METRICS_HOOK` / `GatewayMetricsHook`
 
 Independently of the broker-based `gateway.metrics` sink, the gateway invokes an optional **in-proxy hook once per served request, after the response is flushed**. Register an implementation under the `RLB_GTW_METRICS_HOOK` token in `ProxyModule.forRootAsync`'s `providers`. Both sinks can be active at once; the hook must not throw and should be cheap/async.
 
@@ -289,17 +298,17 @@ export class InfluxMetricsHook implements GatewayMetricsHook {
 
 Enable with: `INFLUX_URL=http://localhost:8086 INFLUX_TOKEN=<token> INFLUX_ORG=<org> INFLUX_BUCKET=gateway`.
 
-***REMOVED******REMOVED******REMOVED*** Retention
+### Retention
 
 Both the route-change journal and the raw metric points grow unbounded otherwise, so a daily job (`GatewayRetentionService`) prunes anything older than `GatewayAdminModuleOptions.retentionDays` (**default `90`** ≈ 3 months). It calls `RouteSyncLogRepository.prune(olderThanTs)` and `HttpMetricRepository.prunePoints(olderThanTs)`. Set `retentionDays` to `0` or a negative number to disable pruning entirely. (Counters and time-series aggregates are not pruned — only the raw points behind them.)
 
 ---
 
-***REMOVED******REMOVED*** Route auto-discovery
+## Route auto-discovery
 
 Route auto-discovery lets a **microservice announce its own HTTP routes** to the gateway, which then persists and registers them automatically — no YAML edits. It has two halves that must agree on the same exchange/queue.
 
-***REMOVED******REMOVED******REMOVED*** Publisher (microservice → gateway)
+### Publisher (microservice → gateway)
 
 The publisher (`RouteDiscoveryPublisherService`) lives in **`BrokerModule`**, so any microservice can announce itself. Its config lives **inside the broker block** as `broker.routeDiscovery`:
 
@@ -312,11 +321,11 @@ The publisher (`RouteDiscoveryPublisherService`) lives in **`BrokerModule`**, so
 
 ```yaml
 broker:
-  ***REMOVED*** ... uri, exchanges, queues ...
+  # ... uri, exchanges, queues ...
   routeDiscovery:
     serviceName: demo-ms
     publishOnBoot: true
-    ***REMOVED*** exchange/queue default to rlb-route-discovery / rlb-route-sync; override to namespace per env.
+    # exchange/queue default to rlb-route-discovery / rlb-route-sync; override to namespace per env.
 ```
 
 On bootstrap (when `serviceName` is set and `publishOnBoot !== false`), the publisher maps this app's `@BrokerHTTP` / `@BrokerAction` / `@BrokerAuth` metadata into a `RouteManifest` and publishes it as a **durable, persistent** message. Each route in the manifest carries its own auth, declared with `@BrokerAuth` and paired to that route **by name** (see the per-route auth model in [Broker](./broker.md)). The durable queue buffers the manifest even if no gateway consumer is up yet — it's delivered once one connects.
@@ -350,7 +359,7 @@ getBooking(@BrokerParam('tag', 'id') id: string) { /* ... */ }
 
 > The gateway must declare the microservice's broker **topic** in its own broker config (queue + topic) so it can route forwarded calls to the service.
 
-***REMOVED******REMOVED******REMOVED*** Consumer (gateway ← microservice)
+### Consumer (gateway ← microservice)
 
 The consumer (`RouteSyncService`) is wired by `GatewayAdminModule`. On bootstrap it asserts the fanout exchange and subscribes to the durable queue (**competing consumers** — one gateway instance processes each manifest). Its exchange/queue come from the `GatewayAdminModule` `routeDiscovery { exchange, queue }` option and **must match the publishers'** `broker.routeDiscovery`.
 
@@ -363,7 +372,7 @@ For each manifest it:
 
 The handler never throws — errors are logged and the message is acked (no poison loop). An empty manifest for a service that has existing routes soft-disables them all (and logs a warning), so a mis-firing publisher is visible in the journal rather than silently destructive.
 
-***REMOVED******REMOVED******REMOVED******REMOVED*** Ownership, user edits & audit (`source` / `modified` / `actor`)
+#### Ownership, user edits & audit (`source` / `modified` / `actor`)
 
 Every stored route carries `source` — `'microservice'` (auto-discovered) or `'user'` (created via `gw-path-create`) — and `modified`, set `true` the moment a user edits an auto-discovered route. When a manifest re-announces a route a user has edited, the sync **skips** it (the user's version wins) and journals a `skipped` row with an info log; auto-discovery never overwrites it again.
 

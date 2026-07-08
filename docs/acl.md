@@ -1,4 +1,4 @@
-***REMOVED*** ACL
+# ACL
 
 Action-based access control for `@open-rlb/nestjs-amqp`. The ACL module ships a set of
 `@BrokerAction` handlers (bound to a fixed broker topic) that answer the single
@@ -6,7 +6,7 @@ authorization question and manage the actions / roles / grants that back it. The
 also wires the same `AclService` in-process so it can enforce per-route action filters
 without a round trip over the broker.
 
-***REMOVED******REMOVED*** Introduction
+## Introduction
 
 ACL is built from three named entities and a small set of decisions:
 
@@ -22,9 +22,9 @@ All handlers are bound to the topic `rlb-acl` (the constant `ACL_TOPIC`). That t
 and every action string are decorator-bound in the library and are **not** configurable —
 your broker/gateway config must reference them literally.
 
-***REMOVED******REMOVED*** Base features
+## Base features
 
-***REMOVED******REMOVED******REMOVED*** Action-based authorization
+### Action-based authorization
 
 A grant attaches a list of **role names** to a user; each role bundles **actions**.
 Authorization is expressed in terms of **actions** through one primitive:
@@ -55,7 +55,7 @@ resource.
 
 The check returns `false` (never throws) on missing input or internal error.
 
-***REMOVED******REMOVED******REMOVED*** Grants per user and target
+### Grants per user and target
 
 There is exactly **one grant record per `(userId, companyId, resourceId)` triple** (an absent
 `companyId`/`resourceId` is part of the key — absent ids compare equal). `grant` and `revoke`
@@ -74,7 +74,7 @@ longer grouping-only — it participates in both targeting and the authorization
 `grant` validates that every supplied role already exists (unknown roles → `400`), and both
 operations invalidate the user's cached decisions on success.
 
-***REMOVED******REMOVED******REMOVED*** Admin gate on grant / revoke
+### Admin gate on grant / revoke
 
 `grant` and `revoke` are themselves **gated**. The caller — identified by the forwarded
 `X-GTW-AUTH-USERID` header — must hold the **`role-management`** action on the **target**
@@ -88,7 +88,7 @@ The gate action defaults to `role-management`
 very first `role-management` grant by seeding the grant store directly** — the library adds
 no bypass.
 
-***REMOVED******REMOVED******REMOVED*** Gateway route gating (action-based)
+### Gateway route gating (action-based)
 
 The gateway gates HTTP routes and WebSocket events on **actions**, not roles. A route
 declares the actions it requires; the gateway resolves the caller's identity from the auth
@@ -112,7 +112,7 @@ request **and** the grant. See [the gateway docs](./gateway.md) for the full pat
 field reference, and note the `@BrokerAuth` decorator's 3rd parameter is now `actions` (was
 `roles`): `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`.
 
-***REMOVED******REMOVED******REMOVED*** Two-level cache (L1 RAM + optional L2)
+### Two-level cache (L1 RAM + optional L2)
 
 Check results are cached to avoid hitting the grant store on every request:
 
@@ -125,9 +125,9 @@ Lookups go L1 → L2; a hit in L2 re-populates L1. Any mutation (`grant`, `revok
 upsert/delete) invalidates the relevant cache entries. The `acl-invalidate` action exists for
 broadcast invalidation across instances (it clears the in-process RAM tier).
 
-***REMOVED******REMOVED*** Nest configuration
+## Nest configuration
 
-***REMOVED******REMOVED******REMOVED*** Backend (the ACL microservice)
+### Backend (the ACL microservice)
 
 Register `AclModule.forRoot(providers, options)`. The first argument is a list of DI
 bindings supplied by **your** app: the concrete repositories bound to the abstract
@@ -171,7 +171,7 @@ export class AppModule {}
 `AclModule` is registered as a **global** module and exports `AclService` and
 `AclCacheService`.
 
-***REMOVED******REMOVED******REMOVED*** Gateway side (in-process action filter)
+### Gateway side (in-process action filter)
 
 So the gateway can enforce `actions: [...]` route filters without an extra broker round trip,
 bind the gateway's `RLB_GTW_ACL_ROLE_SERVICE` token to the same `AclService`. The token
@@ -197,7 +197,7 @@ When the gateway and ACL backend run in the same process, `useExisting: AclServi
 the already-registered instance. If they run in separate services, the gateway instead
 issues a broker RPC to the `acl-check-action` action on the `rlb-acl` topic.
 
-***REMOVED******REMOVED*** YAML configuration
+## YAML configuration
 
 The ACL handlers consume the topic literally named **`rlb-acl`**, backed by a queue. Declare
 both in the consuming service's broker config — the topic name is fixed and must match
@@ -206,7 +206,7 @@ exactly:
 ```yaml
 broker:
   queues:
-    ***REMOVED*** Queue consumed by the ACL backend handlers (AclService / AclManagementService).
+    # Queue consumed by the ACL backend handlers (AclService / AclManagementService).
     - name: rlb-acl
       exchange: rlb
       routingKey: rlb-acl
@@ -215,7 +215,7 @@ broker:
         durable: true
 
 topics:
-  ***REMOVED*** Topic the ACL @BrokerAction handlers bind to (ACL_TOPIC = 'rlb-acl').
+  # Topic the ACL @BrokerAction handlers bind to (ACL_TOPIC = 'rlb-acl').
   - name: rlb-acl
     mode: rpc
     queue: rlb-acl
@@ -223,7 +223,7 @@ topics:
     routingKey: rlb-acl
 ```
 
-***REMOVED******REMOVED*** Default configuration + URL table for ACL management
+## Default configuration + URL table for ACL management
 
 The gateway exposes the ACL actions over HTTP via `gateway.paths[]`. The table below mirrors
 the shipped `sample/config-sample/gateway-in-memory/config/config.yaml`. Every path forwards to the `rlb-acl` topic
@@ -233,7 +233,7 @@ in `rpc` mode and maps to the action string shown.
 > separate id and **no POST**. `PUT` upserts by `name` (create-or-update, idempotent), `GET`
 > lists, `GET …/get?name=` reads one, and `DELETE` removes by `name`.
 
-***REMOVED******REMOVED******REMOVED*** Actions (name-keyed)
+### Actions (name-keyed)
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|
@@ -243,7 +243,7 @@ in `rpc` mode and maps to the action string shown.
 | `DELETE` | `/acl/actions` | `acl-action-delete` | Delete by `name`. Body: `{ name }`. |
 | `GET` | `/acl/actions/search?q=` | `acl-action-search` | Free-text search over actions → `AclAction[]` (`?q=&limit=`). |
 
-***REMOVED******REMOVED******REMOVED*** Roles (name-keyed)
+### Roles (name-keyed)
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|
@@ -253,7 +253,7 @@ in `rpc` mode and maps to the action string shown.
 | `DELETE` | `/acl/roles` | `acl-role-delete` | Delete by `name`. Body: `{ name }`. |
 | `GET` | `/acl/roles/search?q=` | `acl-role-search` | Free-text search over roles → `AclRole[]` (`?q=&limit=`). |
 
-***REMOVED******REMOVED******REMOVED*** Grants (per user + target; admin-gated)
+### Grants (per user + target; admin-gated)
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|
@@ -267,7 +267,7 @@ Both operations require `userId` and `roles`; `resourceId` and `companyId` are o
 on the target `(companyId, resourceId)`, else `403` (`ForbiddenError`). Seed the first
 `role-management` grant directly in the store to bootstrap.
 
-***REMOVED******REMOVED******REMOVED*** Check and resource listing
+### Check and resource listing
 
 | Method | Path | Action | Behavior |
 |---|---|---|---|

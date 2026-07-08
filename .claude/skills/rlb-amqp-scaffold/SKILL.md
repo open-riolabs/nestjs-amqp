@@ -3,7 +3,7 @@ name: rlb-amqp-scaffold
 description: Bootstrap a new microservice or gateway using @open-rlb/nestjs-amqp. Use when the user wants to start a new service, set up the AppModule/main.ts wiring, create the YAML config loader, or generate a starter config.yaml for an AMQP microservice and/or an HTTP+WebSocket gateway. Generates the full module wiring and a minimal-but-correct config.
 ---
 
-***REMOVED*** Scaffold a @open-rlb/nestjs-amqp service
+# Scaffold a @open-rlb/nestjs-amqp service
 
 Read first:
 - `.claude/skills/rlb-amqp/references/config-schema.md`
@@ -17,7 +17,7 @@ examples live under `sample/config-sample/` (`gateway-in-memory`, `gateway-db`,
 
 ---
 
-***REMOVED******REMOVED*** Path A — `nest add` schematic (preferred)
+## Path A — `nest add` schematic (preferred)
 
 From a NestJS project root:
 
@@ -30,7 +30,7 @@ It **patches in place** (does not scaffold a new app): edits `src/app.module.ts`
 RUNNABLE in-memory repositories for the selected features, adds deps, and copies the
 Claude skills.
 
-***REMOVED******REMOVED******REMOVED*** Interactive flow
+### Interactive flow
 
 1. **"Create a gateway (HTTP/WebSocket) configuration? y/N"**
 2. **YES** → checkbox of gateway features:
@@ -45,17 +45,17 @@ Claude skills.
      on boot (adds `broker.routeDiscovery`). Prompts service name + route exchange/queue.
 4. "Copy the Claude skills into .claude/skills? Y/n"
 
-***REMOVED******REMOVED******REMOVED*** Non-interactive flags (CI / scripted)
+### Non-interactive flags (CI / scripted)
 
 Passing `--gatewayConfig` or any `--features` skips the prompts; everything else falls
 back to `rlb-*` defaults.
 
 ```bash
-***REMOVED*** Gateway with ACL + admin + route reception
+# Gateway with ACL + admin + route reception
 nest add @open-rlb/nestjs-amqp \
   --gatewayConfig --features acl --features gateway-admin --features route-reception
 
-***REMOVED*** Plain microservice that auto-publishes its @BrokerHTTP routes on boot
+# Plain microservice that auto-publishes its @BrokerHTTP routes on boot
 nest add @open-rlb/nestjs-amqp \
   --gatewayConfig=false --features auto-config-publish \
   --serviceName my-service --routeExchange rlb-route-discovery --routeQueue rlb-route-sync
@@ -81,11 +81,11 @@ the `<APP_NAME>` `connection_name` placeholder. Then use `rlb-amqp-add-action` /
 
 ---
 
-***REMOVED******REMOVED*** Path B — manual wiring
+## Path B — manual wiring
 
 Mirrors `sample/config-sample/gateway-in-memory` (gateway) and `calculator.ms` (pure MS).
 
-***REMOVED******REMOVED******REMOVED*** 1. `src/config/config.loader.ts`
+### 1. `src/config/config.loader.ts`
 
 ```ts
 import { readFileSync } from 'fs';
@@ -101,7 +101,7 @@ export default () =>
 (`js-yaml` + `@nestjs/config` are deps; the gateway also needs `@nestjs/axios`,
 `@nestjs/platform-ws`, `@nestjs/websockets`, `ws`.)
 
-***REMOVED******REMOVED******REMOVED*** 2. `src/app.module.ts`
+### 2. `src/app.module.ts`
 
 ```ts
 import { HttpModule } from '@nestjs/axios';            // gateway only
@@ -155,7 +155,7 @@ export class AppModule {}
 > `GatewayAdminModule.forRoot([...repos])` — see the `gateway-in-memory` sample and the
 > ACL / Gateway Admin docs.
 
-***REMOVED******REMOVED******REMOVED*** 3. `src/main.ts`
+### 3. `src/main.ts`
 
 **Gateway** (needs `rawBody` + `WsAdapter`):
 
@@ -189,7 +189,7 @@ async function bootstrap() {
 bootstrap();
 ```
 
-***REMOVED******REMOVED******REMOVED*** 4. `config/config.yaml` (starter)
+### 4. `config/config.yaml` (starter)
 
 ```yaml
 app:
@@ -197,7 +197,7 @@ app:
   host: 0.0.0.0
   environment: development
 
-auth-providers: []   ***REMOVED*** gateway only — JWT/JWKS providers
+auth-providers: []   # gateway only — JWT/JWKS providers
 
 broker:
   name: rabbitmq
@@ -209,7 +209,7 @@ broker:
     reconnectTimeInSeconds: 60
     connectionOptions:
       clientProperties:
-        connection_name: my-service     ***REMOVED*** distinct per instance; needed for broadcast/WebSocket
+        connection_name: my-service     # distinct per instance; needed for broadcast/WebSocket
       credentials: { mechanism: PLAIN, username: guest, password: guest }
   exchanges:
     - name: rlb
@@ -230,7 +230,7 @@ topics:
     exchange: rlb
     routingKey: my-rpc-q
 
-***REMOVED*** --- gateway only ---
+# --- gateway only ---
 gateway:
   mode: gateway
   events: []
@@ -239,12 +239,12 @@ gateway:
       method: GET
       path: /health
       dataSource: query
-      topic: rlb-gateway-admin       ***REMOVED*** gateway-admin gw-health → 200 { status: 'ok' }
+      topic: rlb-gateway-admin       # gateway-admin gw-health → 200 { status: 'ok' }
       action: gw-health
       mode: rpc
 ```
 
-***REMOVED******REMOVED******REMOVED*** Route auto-discovery (publisher side, optional)
+### Route auto-discovery (publisher side, optional)
 
 A microservice can announce its `@BrokerHTTP` routes on boot. Add INSIDE the `broker`
 block — `serviceName` is the ownership key AND fills `connection_name` when none is set
@@ -253,15 +253,15 @@ must match the gateway's `GatewayAdminModule` `routeDiscovery { exchange, queue 
 
 ```yaml
 broker:
-  ***REMOVED*** ...
+  # ...
   routeDiscovery:
     serviceName: my-service
     publishOnBoot: true
-    ***REMOVED*** exchange: rlb-route-discovery   ***REMOVED*** override to namespace per env (must match the gateway)
-    ***REMOVED*** queue: rlb-route-sync
+    # exchange: rlb-route-discovery   # override to namespace per env (must match the gateway)
+    # queue: rlb-route-sync
 ```
 
-***REMOVED******REMOVED******REMOVED*** 5. Sample handler (one method, both transports)
+### 5. Sample handler (one method, both transports)
 
 ```ts
 import { Injectable } from '@nestjs/common';
@@ -282,7 +282,7 @@ Add auth with `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)` — 
 `httpName` needed); with multiple, each `@BrokerHTTP` sets a `name` and each `@BrokerAuth`
 targets it via `httpName`. A route with no `@BrokerAuth` is public.
 
-***REMOVED******REMOVED*** Verify
+## Verify
 - topic/queue/exchange names line up across `broker`/`topics`/paths (gotchas 5–7);
   `connection_name` set if using broadcast/WebSocket (8).
 - Route-discovery `exchange`/`queue` identical on publisher and gateway.

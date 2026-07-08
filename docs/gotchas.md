@@ -1,4 +1,4 @@
-***REMOVED*** Gotchas & Troubleshooting
+# Gotchas & Troubleshooting
 
 A field guide to the failure modes that actually bite people using `@open-rlb/nestjs-amqp`.
 Skim the relevant section before adding or changing a topic, queue, exchange, action, HTTP
@@ -10,7 +10,7 @@ Related pages: [Broker](./broker.md) · [Gateway](./gateway.md) · [ACL](./acl.m
 
 ---
 
-***REMOVED******REMOVED*** Decorators & handlers
+## Decorators & handlers
 
 **Don't destructure `@BrokerAction` parameters.** The parameter-to-message mapping parses the
 function source with a regex (`getParamNames`). A signature like `fn({ a, b })` misaligns the
@@ -47,7 +47,7 @@ overwrites the previous handler — no error, the old one just stops being calle
 
 ---
 
-***REMOVED******REMOVED*** Topic ↔ queue ↔ exchange wiring
+## Topic ↔ queue ↔ exchange wiring
 
 **The topic `name` must match everywhere.** The same string ties together the `@BrokerAction`
 decorator, `topics[].name`, `requestData`/`publishMessage` calls, and
@@ -71,7 +71,7 @@ points at a topic the gateway never declared, the request fails with
 
 ---
 
-***REMOVED******REMOVED*** Distinct `connection_name` per broadcast / WebSocket instance
+## Distinct `connection_name` per broadcast / WebSocket instance
 
 Anything that fans out — the `gw-reload` control topic and WebSocket events — relies on each
 process owning a **distinct** AMQP `connection_name` (`clientProperties.connection_name`, or
@@ -80,14 +80,37 @@ process owning a **distinct** AMQP `connection_name` (`clientProperties.connecti
 If two gateway instances share the same `connection_name`, RabbitMQ treats their per-instance
 queues as one logical consumer group and **round-robins** broadcast messages between them.
 Symptoms: reloads only land on "every other" instance, and WS clients on one instance miss
-events that were delivered to the other. Give every instance a unique name.
+events that were delivered to the other.
+
+The library now treats the configured name as a **logical** name and automatically appends a
+per-instance `-<hostname>-<pid>` suffix (hostname is unique per container/pod; pid covers
+multiple processes on one host — under Docker pid is always 1, so hostname carries the
+uniqueness). You can therefore ship the same config to every replica. Auto-created broadcast
+queues are `autoDelete` so a retired instance's queue doesn't linger and accumulate messages.
 
 A `broadcast` topic with a WebSocket gateway also *requires* `connection_name` to be set
 (`clientProperties`) or it throws at startup.
 
 ---
 
-***REMOVED******REMOVED*** RPC, timeouts & errors
+## RPC, timeouts & errors
+
+**Nothing bounds queue growth unless you configure it.** Work queues without
+`messageTtl`/`maxLength` grow unbounded when producers outpace consumers, until RabbitMQ's
+memory/disk alarms **block every publisher** (freezing gateway `event` paths too). Set bounds in
+`queues[].options` — but beware: changing options on an **existing** queue makes the re-declare
+fail with `406 PRECONDITION_FAILED` in a loop; delete the queue first or use a broker-side
+policy. High-volume droppable traffic (e.g. `gw-metrics-track`) belongs on its **own queue**:
+declare the optional `rlb-gateway-metrics` topic and point `gateway.metrics.topic` at it, or a
+slow metrics DB will starve `gw-health`/`gw-reload`/admin RPCs on the shared admin queue.
+
+**Failed handlers no longer requeue forever.** The old implicit default (infinite immediate
+nack-requeue) hot-looped poison messages. Handler failures now follow a bounded retry policy —
+`broker.retry` / `topics[].retry` (`maxAttempts`, `delayMs`, `onExhausted: dead-letter|drop`),
+built-in default 5 attempts → drop. Exhausted RPC messages send an error reply
+(`RetryExhaustedError` → HTTP 502 at the gateway); deserialization/validation failures skip
+retries entirely. Explicitly configured legacy `errorBehavior` values still win. See
+[broker.md](./broker.md#retry-policy-brokerretry--topicsretry).
 
 **Wrong `replyQueues` key → silent timeout.** `requestData` resolves `replyTo` from
 `broker.replyQueues[exchange]`; when absent it falls back to RabbitMQ direct-reply-to. A wrong
@@ -105,7 +128,7 @@ otherwise fail with a timeout while the handler is still working.
 
 ---
 
-***REMOVED******REMOVED*** Gateway HTTP
+## Gateway HTTP
 
 **`/acl/check` (and any boolean RPC) returns `200` with `true`/`false`, not `204`.** A *defined*
 result is real content — including the falsy `false`, `0`, or `""` — so it is sent as
@@ -157,7 +180,7 @@ runtime.
 
 ---
 
-***REMOVED******REMOVED*** Auth & ACL
+## Auth & ACL
 
 **Route gating uses `actions`, not `roles`; `@BrokerAuth`'s 3rd param is `actions`.** The
 gateway gates paths and WS events on ACTION names (`paths[].actions` / `events[].actions`),
@@ -270,7 +293,7 @@ unchanged: `@BrokerHTTP`'s `action` option disambiguates when a method declares 
 
 ---
 
-***REMOVED******REMOVED*** Auth providers (hardening)
+## Auth providers (hardening)
 
 **JWKS verifies TLS by default.** Set `httpsAllowUnauthorized: true` only for self-signed dev
 issuers.
@@ -292,7 +315,7 @@ unknown value leaves the SASL `response` unset and AMQP auth fails.
 
 ---
 
-***REMOVED******REMOVED*** WebSocket
+## WebSocket
 
 **Auth is per-event, not global.** `gateway.events[].auth` names the provider that verifies the
 connection token AND maps its claims for *that* event (memoized per provider at subscribe time).
@@ -316,9 +339,18 @@ messages, so clients on one instance miss events delivered to another.
 **Set `gateway.ws.allowedOrigins`.** If omitted, ALL Origins are accepted (logged at boot).
 `maxMessageBytes` (default 16384) drops oversized client frames.
 
+**Slow WS clients don't grow gateway memory anymore.** `maxBufferedBytes` (default 1 MiB) caps
+the outbound send buffer per client: above it, that client's event messages are dropped until it
+drains (logged on the saturate/drain transitions). Push semantics are best-effort by design —
+size the cap to message size × tolerable burst if clients must survive short stalls.
+
+**A down events source no longer kills the gateway at boot.** `gateway.loadConfig.events`
+failures degrade to YAML-only events with a warning; remote events stay missing until a restart
+(unlike HTTP routes, WS events have no runtime reload).
+
 ---
 
-***REMOVED******REMOVED*** Publish / events
+## Publish / events
 
 **`publishMessage` is `async` — `await` it.** Awaiting gives you the publisher-confirm guarantee
 and surfaces failures. Un-awaited, it's fire-and-forget with no guarantee. (For an `event`-mode
@@ -327,7 +359,7 @@ optimistic.)
 
 ---
 
-***REMOVED******REMOVED*** Reload & route auto-discovery
+## Reload & route auto-discovery
 
 **The only reload action is `gw-reload`.** The control-topic subscriber rebuilds routes ONLY for
 action `gw-reload` (`GW_RELOAD_ACTION`); every other message on the control topic is ignored. So

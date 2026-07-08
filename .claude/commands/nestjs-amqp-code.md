@@ -3,17 +3,17 @@ description: Generate NestJS code using @open-rlb/nestjs-amqp — decorators (@B
 argument-hint: "[topic] [action] [mode: rpc|handle|broadcast|event]"
 ---
 
-***REMOVED*** @open-rlb/nestjs-amqp — Code Generation
+# @open-rlb/nestjs-amqp — Code Generation
 
 Generate code for the `@open-rlb/nestjs-amqp` library based on: `$ARGUMENTS`
 
 ---
 
-***REMOVED******REMOVED*** DECORATOR PATH — `@BrokerAction`
+## DECORATOR PATH — `@BrokerAction`
 
 Use this path when the handler is part of a NestJS service that should be auto-discovered at startup. The `MetadataScannerService` scans all providers for decorated methods and registers one AMQP subscription per **topic** (not per action).
 
-***REMOVED******REMOVED******REMOVED*** Signatures
+### Signatures
 
 ```typescript
 // Method decorator — binds a method to a topic+action combination
@@ -30,7 +30,7 @@ Use this path when the handler is part of a NestJS service that should be auto-d
 //   'topic'     → topic name string
 ```
 
-***REMOVED******REMOVED******REMOVED*** Example — RPC handler
+### Example — RPC handler
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -57,7 +57,7 @@ export class UsersService {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Example — Nack esplicito da handler decorato
+### Example — Nack esplicito da handler decorato
 
 ```typescript
 import { Nack } from '@open-rlb/nestjs-amqp';
@@ -75,7 +75,7 @@ async processOrder(@BrokerParam('body-full') order: OrderDto) {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Valori di ritorno dagli handler decorati
+### Valori di ritorno dagli handler decorati
 
 | Valore | Effetto |
 |---|---|
@@ -85,7 +85,7 @@ async processOrder(@BrokerParam('body-full') order: OrderDto) {
 | `Promise<T>` | Atteso, poi stesse regole |
 | `Observable<T>` | `lastValueFrom`, poi stesse regole |
 
-***REMOVED******REMOVED******REMOVED*** Vincoli critici
+### Vincoli critici
 
 - Tutti i metodi decorati con `@BrokerAction` sullo **stesso topic** condividono **una sola subscription AMQP**.
   Il dispatcher instrada i messaggi per `msg.action` al metodo corretto.
@@ -96,11 +96,11 @@ async processOrder(@BrokerParam('body-full') order: OrderDto) {
 
 ---
 
-***REMOVED******REMOVED*** MANUAL PATH — `registerRpc` e `registerHandler`
+## MANUAL PATH — `registerRpc` e `registerHandler`
 
 Usa questo path in `onModuleInit` quando la logica di sottoscrizione è dinamica o condizionale.
 
-***REMOVED******REMOVED******REMOVED*** `BrokerService.registerRpc` — sottoscrittore RPC
+### `BrokerService.registerRpc` — sottoscrittore RPC
 
 ```typescript
 import { Injectable, OnModuleInit } from '@nestjs/common';
@@ -124,7 +124,7 @@ export class OrdersConsumerService implements OnModuleInit {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** `BrokerService.registerHandler` — handler di sottoscrizione (nessuna risposta)
+### `BrokerService.registerHandler` — handler di sottoscrizione (nessuna risposta)
 
 ```typescript
 async onModuleInit() {
@@ -139,7 +139,7 @@ async onModuleInit() {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** `registerHandler` con Observable stream
+### `registerHandler` con Observable stream
 
 Se il topic ha `toObservable: true` nella config, ometti l'handler:
 
@@ -155,7 +155,7 @@ this.broker.getEvents$<NotificationPayload>().subscribe(event => {
 });
 ```
 
-***REMOVED******REMOVED******REMOVED*** Forma di `BrokerEvent<T>`
+### Forma di `BrokerEvent<T>`
 
 ```typescript
 interface BrokerEvent<Payload = any> {
@@ -172,7 +172,7 @@ interface BrokerEvent<Payload = any> {
 }
 ```
 
-***REMOVED******REMOVED******REMOVED*** Gestione errori negli handler manuali
+### Gestione errori negli handler manuali
 
 ```typescript
 async (event: BrokerEvent<T>) => {
@@ -192,9 +192,9 @@ async (event: BrokerEvent<T>) => {
 
 ---
 
-***REMOVED******REMOVED*** PUBLISHING — `requestData` e `publishMessage`
+## PUBLISHING — `requestData` e `publishMessage`
 
-***REMOVED******REMOVED******REMOVED*** Chiamata RPC — `requestData`
+### Chiamata RPC — `requestData`
 
 ```typescript
 // Restituisce il payload della risposta oppure lancia su timeout/errore
@@ -209,7 +209,7 @@ const result = await this.broker.requestData<RequestType, ResponseType>(
 if (!result) throw new NotFoundException();
 ```
 
-***REMOVED******REMOVED******REMOVED*** Pubblicazione evento — `publishMessage`
+### Pubblicazione evento — `publishMessage`
 
 ```typescript
 // Fire-and-forget, nessuna risposta
@@ -223,7 +223,7 @@ this.broker.publishMessage(
 
 ---
 
-***REMOVED******REMOVED*** PIPES in `@BrokerParam`
+## PIPES in `@BrokerParam`
 
 ```typescript
 import { NumberPipe, BooleanPipe } from '@open-rlb/nestjs-amqp';
@@ -239,7 +239,7 @@ Pipe built-in: `NumberPipe`, `BooleanPipe`. Qualsiasi `PipeTransform` NestJS è 
 
 ---
 
-***REMOVED******REMOVED*** REGOLE DI GENERAZIONE
+## REGOLE DI GENERAZIONE
 
 Quando generi codice basato su `$ARGUMENTS`:
 

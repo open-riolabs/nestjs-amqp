@@ -155,8 +155,8 @@ function buildConfigYaml(sel: Resolved): string {
   const anyAdmin = sel.admin || sel.routeReception;
 
   const routeDiscoveryPub = sel.autoPublish ? `
-  ***REMOVED*** Route auto-discovery (publisher side): announce this service's @BrokerHTTP routes on boot.
-  ***REMOVED*** serviceName also fills the AMQP connection_name (none is set explicitly below).
+  # Route auto-discovery (publisher side): announce this service's @BrokerHTTP routes on boot.
+  # serviceName also fills the AMQP connection_name (none is set explicitly below).
   routeDiscovery:
     serviceName: "${n.serviceName}"
     publishOnBoot: true
@@ -211,7 +211,7 @@ function buildConfigYaml(sel: Resolved): string {
 
   const topics: string[] = [];
   if (sel.acl) {
-    topics.push(`  ***REMOVED*** Fixed topic name (decorator-bound in the lib): the ACL handlers bind to 'rlb-acl'.
+    topics.push(`  # Fixed topic name (decorator-bound in the lib): the ACL handlers bind to 'rlb-acl'.
   - name: rlb-acl
     mode: rpc
     queue: ${n.aclQueue}
@@ -219,13 +219,13 @@ function buildConfigYaml(sel: Resolved): string {
     routingKey: ${n.aclQueue}`);
   }
   if (anyAdmin) {
-    topics.push(`  ***REMOVED*** Fixed topic name (decorator-bound): the gateway-admin handlers bind to 'rlb-gateway-admin'.
+    topics.push(`  # Fixed topic name (decorator-bound): the gateway-admin handlers bind to 'rlb-gateway-admin'.
   - name: rlb-gateway-admin
     mode: rpc
     queue: ${n.adminQueue}
     exchange: ${n.exchange}
     routingKey: ${n.adminQueue}
-  ***REMOVED*** Broadcast control topic: the gateway rebuilds its routes at runtime on a 'gw-reload'.
+  # Broadcast control topic: the gateway rebuilds its routes at runtime on a 'gw-reload'.
   - name: ${n.controlTopic}
     mode: broadcast
     exchange: ${n.exchange}
@@ -290,20 +290,20 @@ function buildGatewayBlock(sel: Resolved): string {
   events: []
   ws:
     heartbeatIntervalMs: 30000
-    ***REMOVED*** Auth is declared per-event (events[].auth / requireAuth / actions / scopeClaim).
+    # Auth is declared per-event (events[].auth / requireAuth / actions / scopeClaim).
   paths:
 ${paths.join('\n')}`;
 
   if (anyAdmin) {
     block += `
-  ***REMOVED*** Load DB-managed routes at boot AND on every runtime reload (ordered static-before-param).
+  # Load DB-managed routes at boot AND on every runtime reload (ordered static-before-param).
   loadConfig:
     paths:
       topic: rlb-gateway-admin
       action: gw-path-export
-  ***REMOVED*** Broadcast topic that triggers a runtime route rebuild (see topics: ${n.controlTopic}).
+  # Broadcast topic that triggers a runtime route rebuild (see topics: ${n.controlTopic}).
   reloadTopic: ${n.controlTopic}
-  ***REMOVED*** Per-request metrics auto-emitted to the gateway-admin metrics handler.
+  # Per-request metrics auto-emitted to the gateway-admin metrics handler.
   metrics:
     topic: rlb-gateway-admin
     action: gw-metrics-track`;
@@ -311,7 +311,7 @@ ${paths.join('\n')}`;
   return block + '\n';
 }
 
-const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
+const ACL_PATHS = `    # --- ACL management: actions (name is the key — PUT upserts, GET lists, DELETE by name) ---
     - name: acl-action-list
       method: GET
       path: /acl/actions
@@ -340,14 +340,14 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-action-delete
       mode: rpc
-    - name: acl-action-search ***REMOVED*** query: ?q=&limit=
+    - name: acl-action-search # query: ?q=&limit=
       method: GET
       path: /acl/actions/search
       dataSource: query
       topic: rlb-acl
       action: acl-action-search
       mode: rpc
-    ***REMOVED*** --- ACL management: roles ---
+    # --- ACL management: roles ---
     - name: acl-role-list
       method: GET
       path: /acl/roles
@@ -376,14 +376,14 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-role-delete
       mode: rpc
-    - name: acl-role-search ***REMOVED*** query: ?q=&limit=
+    - name: acl-role-search # query: ?q=&limit=
       method: GET
       path: /acl/roles/search
       dataSource: query
       topic: rlb-acl
       action: acl-role-search
       mode: rpc
-    ***REMOVED*** --- ACL grants (per-user; resourceId/companyId optional) ---
+    # --- ACL grants (per-user; resourceId/companyId optional) ---
     - name: acl-grant
       method: POST
       path: /acl/grants
@@ -398,17 +398,17 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-revoke
       mode: rpc
-    - name: acl-grant-search ***REMOVED*** access search; query: ?q=&limit=
+    - name: acl-grant-search # access search; query: ?q=&limit=
       method: GET
       path: /acl/grants/search
       dataSource: query
       topic: rlb-acl
       action: acl-grant-search
       mode: rpc
-    ***REMOVED*** --- ACL check (GET → 200 with true/false) ---
-    ***REMOVED*** checkAction(userId, {companyId?, resourceId?}, action): true if the user holds the action
-    ***REMOVED*** via any role on the EXACT (companyId, resourceId). companyId/resourceId are optional;
-    ***REMOVED*** when both are absent the check matches resource-less grants only (no wildcard).
+    # --- ACL check (GET → 200 with true/false) ---
+    # checkAction(userId, {companyId?, resourceId?}, action): true if the user holds the action
+    # via any role on the EXACT (companyId, resourceId). companyId/resourceId are optional;
+    # when both are absent the check matches resource-less grants only (no wildcard).
     - name: acl-check-action
       method: GET
       path: /acl/check
@@ -416,7 +416,7 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       topic: rlb-acl
       action: acl-check-action
       mode: rpc
-    ***REMOVED*** Lists the caller's accessible resources. Add an 'auth: <provider>' line once you declare an auth-provider.
+    # Lists the caller's accessible resources. Add an 'auth: <provider>' line once you declare an auth-provider.
     - name: acl-list-resources-by-user
       method: GET
       path: /acl/resources
@@ -426,7 +426,7 @@ const ACL_PATHS = `    ***REMOVED*** --- ACL management: actions (name is the ke
       mode: rpc`;
 
 function adminPaths(controlTopic: string): string {
-  return `    ***REMOVED*** --- gateway-admin: health + DB routes + auth-providers + metrics ---
+  return `    # --- gateway-admin: health + DB routes + auth-providers + metrics ---
     - name: health
       method: GET
       path: /health
@@ -448,7 +448,7 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-path-list
       mode: rpc
-    - name: gw-path-search ***REMOVED*** query: ?q=&limit=
+    - name: gw-path-search # query: ?q=&limit=
       method: GET
       path: /admin/paths/search
       dataSource: query
@@ -483,7 +483,7 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-path-delete
       mode: rpc
-    ***REMOVED*** Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
+    # Route-change journal (who changed what): actor=system for auto-discovery, userId for manual CRUD.
     - name: gw-route-log-list
       method: GET
       path: /admin/route-log
@@ -491,7 +491,7 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-route-log-list
       mode: rpc
-    - name: gw-route-log-search ***REMOVED*** filtered+paginated; query: ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
+    - name: gw-route-log-search # filtered+paginated; query: ?actor=&service=&event=&routeKey=&from=&to=&page=&limit=
       method: GET
       path: /admin/route-log/search
       dataSource: query
@@ -505,7 +505,7 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-auth-list
       mode: rpc
-    - name: gw-auth-search ***REMOVED*** query: ?q=&limit=
+    - name: gw-auth-search # query: ?q=&limit=
       method: GET
       path: /admin/auth/search
       dataSource: query
@@ -554,14 +554,14 @@ function adminPaths(controlTopic: string): string {
       topic: rlb-gateway-admin
       action: gw-metrics-points
       mode: rpc
-    - name: gw-metrics-summary ***REMOVED*** dashboard overview; query: ?from=&to=&method=&route=&name=&topN=
+    - name: gw-metrics-summary # dashboard overview; query: ?from=&to=&method=&route=&name=&topN=
       method: GET
       path: /admin/metrics/summary
       dataSource: query
       topic: rlb-gateway-admin
       action: gw-metrics-summary
       mode: rpc
-    - name: gw-metrics-prometheus ***REMOVED*** Prometheus text exposition (returned as text/plain)
+    - name: gw-metrics-prometheus # Prometheus text exposition (returned as text/plain)
       method: GET
       path: /admin/metrics/prometheus
       dataSource: query
@@ -570,7 +570,7 @@ function adminPaths(controlTopic: string): string {
       mode: rpc
       headers:
         Content-Type: text/plain; version=0.0.4
-    - name: gw-metrics-rollups ***REMOVED*** long-term downsampled aggregates; query: ?from=&to=&method=&route=
+    - name: gw-metrics-rollups # long-term downsampled aggregates; query: ?from=&to=&method=&route=
       method: GET
       path: /admin/metrics/rollups
       dataSource: query
@@ -591,7 +591,7 @@ function adminPaths(controlTopic: string): string {
       topic: ${controlTopic}
       action: gw-reload
       mode: event
-    - name: gw-auth-reload ***REMOVED*** deliberate: reload DB auth-providers into RAM (separate from gw-reload)
+    - name: gw-auth-reload # deliberate: reload DB auth-providers into RAM (separate from gw-reload)
       method: POST
       path: /admin/auth/reload
       dataSource: body
@@ -810,7 +810,7 @@ function extractYamlSection(yaml: string, sectionKey: string): string {
   const lines = yaml.split('\n');
   const startIdx = lines.findIndex((l) => l.startsWith(sectionKey));
   if (startIdx === -1) return '';
-  const endIdx = lines.findIndex((l, i) => i > startIdx && l.length > 0 && !l.startsWith(' ') && !l.startsWith('***REMOVED***'));
+  const endIdx = lines.findIndex((l, i) => i > startIdx && l.length > 0 && !l.startsWith(' ') && !l.startsWith('#'));
   const sectionLines = endIdx === -1 ? lines.slice(startIdx) : lines.slice(startIdx, endIdx);
   return sectionLines.join('\n').trimEnd();
 }

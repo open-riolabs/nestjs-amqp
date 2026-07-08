@@ -1,4 +1,4 @@
-***REMOVED*** gateway-in-memory
+# gateway-in-memory
 
 A full HTTP + WebSocket **gateway** for `@open-rlb/nestjs-amqp` that keeps **all** of its
 state in RAM. The ACL store, the gateway-admin DB routes / auth-providers / metrics, and the
@@ -14,7 +14,7 @@ standalone, runnable sample.
 > production deployment. For a real deployment, plug shared stores (Mongo, Redis, …) under the
 > same repository / cache tokens — see the `gateway-db` sample.
 
-***REMOVED******REMOVED*** What it demonstrates
+## What it demonstrates
 
 - **ACL name-keyed CRUD** — actions and roles are keyed by `name`: `PUT` upserts (idempotent,
   create-or-update), `GET` lists, `GET …/get?name=` reads one, `DELETE` removes by name. Grants
@@ -41,7 +41,7 @@ standalone, runnable sample.
   in this sample's config; see [`docs/gateway.md`](../../../docs/gateway.md) and
   [`web-socket-sample.html`](../../../web-socket-sample.html) to add and drive one.)
 
-***REMOVED******REMOVED*** What it wires (`src/app.module.ts`)
+## What it wires (`src/app.module.ts`)
 
 - **`BrokerModule.forRootAsync`** — the AMQP connection, topics and queues. The
   route-discovery **publisher** lives inside the broker block as `broker.routeDiscovery`
@@ -63,7 +63,7 @@ standalone, runnable sample.
 The concrete in-memory classes are provided by a `@Global` **`DatabaseModule`** and aliased onto
 the library's abstract tokens with `useExisting`.
 
-***REMOVED******REMOVED******REMOVED*** In-memory building blocks (`src/`)
+### In-memory building blocks (`src/`)
 
 | File | Role |
 | --- | --- |
@@ -75,7 +75,7 @@ the library's abstract tokens with `useExisting`.
 | `metrics/influx-metrics-hook.ts` | `InfluxMetricsHook` — example `GatewayMetricsHook` writing each request to InfluxDB via line protocol. **No-op until** `INFLUX_URL`, `INFLUX_TOKEN`, `INFLUX_ORG` (+ optional `INFLUX_BUCKET`) env vars are set, so the sample boots without InfluxDB. |
 | `samples/route-discovery-demo.service.ts` | `RouteDiscoveryDemoService` — the publisher-side demo microservice. |
 
-***REMOVED******REMOVED*** Fixed names vs. configurable wiring
+## Fixed names vs. configurable wiring
 
 These are **decorator-bound** on the backend handlers and are **not** configurable — your YAML
 must reference them literally:
@@ -91,7 +91,7 @@ and the route-discovery `exchange`/`queue` (which default to `rlb-route-discover
 `connection_name` if one were not already set — in this sample `connection_name` is set explicitly
 (`gateway-in-memory`), so it wins.
 
-***REMOVED******REMOVED*** Prerequisites
+## Prerequisites
 
 - A reachable **RabbitMQ**. Edit `config/config.yaml` → `broker.uri` (and the credentials under
   `broker.connectionManagerOptions.connectionOptions.credentials`) to point at it.
@@ -101,7 +101,7 @@ and the route-discovery `exchange`/`queue` (which default to `rlb-route-discover
 > `https://auth.example.com/realms/demo`, and broker credentials are redacted. Replace them with
 > your own values before running against real infrastructure.
 
-***REMOVED******REMOVED*** How to run
+## How to run
 
 From **VS Code**: pick the launch configuration **"Debug gateway-in-memory (in-memory stores)"**
 and press **F5**. It runs `src/main.ts` via `ts-node` on `PORT=3000`.
@@ -118,7 +118,7 @@ via `PORT`).
 > **Dependency note.** `package.json` pins `@open-rlb/nestjs-amqp` `^2.0.5`. In-tree, the import
 > resolves to the **local workspace library** rather than the published package.
 
-***REMOVED******REMOVED*** Postman collection
+## Postman collection
 
 `gateway-in-memory.postman_collection.json` is a runnable, ordered playlist
 ("setup & test playlist") that walks the whole surface end to end:
@@ -146,7 +146,7 @@ to a **real** JWKS/OIDC provider, and make `auth-providers[0]` in `config/config
 (`gateway-jwks`) point at the same realm (`issuer`, `tokenUrl`, `jwksUri`, `clientId`). `baseUrl`
 defaults to `http://localhost:3000`.
 
-***REMOVED******REMOVED*** See also
+## See also
 
 - [`docs/gateway.md`](../../../docs/gateway.md) — the `gateway:` block, auth gate, WebSocket events.
 - [`docs/acl.md`](../../../docs/acl.md) — actions / roles / grants, the `acl-check-action` check, and the cache.

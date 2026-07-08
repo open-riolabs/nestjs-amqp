@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
         with:
-          fetch-depth: 0 ***REMOVED*** 0 indica di ottenere tutta la cronologia
+          fetch-depth: 0 # 0 indica di ottenere tutta la cronologia
       - name: Install GitVersion.Tool
         id: gitversion
         run: |
@@ -51,8 +51,8 @@ jobs:
       - name: Upload TarGz Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node_modules-tar ***REMOVED*** Artifact name
-          path: node_modules.tar.gz ***REMOVED*** Path to the created `.tar.gz`
+          name: node_modules-tar # Artifact name
+          path: node_modules.tar.gz # Path to the created `.tar.gz`
 
   build:
     needs: dependencies
@@ -65,8 +65,8 @@ jobs:
       - name: Download TarGz Artifact
         uses: actions/download-artifact@v4
         with:
-          name: node_modules-tar ***REMOVED*** The artifact name
-          path: ./ ***REMOVED*** Where to download the artifact
+          name: node_modules-tar # The artifact name
+          path: ./ # Where to download the artifact
       - name: Extract node_modules
         run: tar -xzf node_modules.tar.gz
       - name: Build
