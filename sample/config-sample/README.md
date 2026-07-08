@@ -25,25 +25,27 @@ These are reference fragments, not whole apps — combine the blocks you need in
 
 ***REMOVED******REMOVED*** (b) Sample projects — runnable
 
-Three full NestJS projects. Each has its own README with run instructions.
+Four full NestJS projects. Each has its own README with run instructions.
 
 | Sample | Purpose / use-case | Modules exercised |
 | --- | --- | --- |
 | [`gateway-in-memory`](./gateway-in-memory/README.md) | Gateway with ACL + gateway-admin kept entirely in RAM (in-memory repositories, in-RAM ACL L2 cache). Only RabbitMQ required — no database. Also doubles as a route-discovery demo microservice. | broker, proxy/gateway, acl, gateway-admin, route-discovery |
 | [`gateway-db`](./gateway-db/README.md) | Gateway backed by MongoDB (persistent routes / auth-providers / ACL / metrics) with an InfluxDB time-series metrics hook. | broker, proxy/gateway, acl, gateway-admin (DB-backed), metrics |
+| [`gateway-hardening`](./gateway-hardening/README.md) | Focused sample wiring **only** the multi-instance hardening features: cross-instance ACL cache invalidation (AMQP broadcast), bounded ACL RAM cache, an optional scheduler lock for the rollup/retention jobs, and an HTTP body-size limit + in-flight concurrency cap. In-memory stores — only RabbitMQ required. | broker, proxy/gateway, acl, gateway-admin |
 | [`calculator.ms`](./calculator.ms/README.md) | A pure AMQP microservice (no HTTP listener — `app.init()`, reachable over the broker) that announces its `@BrokerHTTP` routes to a gateway via route auto-discovery on boot. | broker, route-discovery (publisher) |
 
 ***REMOVED******REMOVED*** Versioning & how the samples resolve the library
 
-All three samples target **`@open-rlb/nestjs-amqp` `^2.0.5`** — the next release, currently on `master`.
+All four samples target **`@open-rlb/nestjs-amqp` `^2.0.5`** — the next release, currently on `master`.
 
 - **Inside this monorepo** they run against the **local workspace library** (`libs/rlb-nestjs-amqp`), not a published package. Launch them from VS Code:
   - **Debug gateway-in-memory (in-memory stores)**
   - **Debug gateway-db (MongoDB)**
+  - **Debug gateway-hardening (multi-instance features)** — plus its **two-instance** compound for the cross-instance ACL invalidation demo.
   - **Debug calculator.ms (microservice)**
-  - **Debug all samples** — the compound that starts all three at once.
+  - **Debug all samples** — the compound that starts the core three at once.
 
-  They are also registered as nest-cli projects in the root `nest-cli.json` (`gateway-in-memory`, `gateway-db`, `calculator.ms`), so `nest build <project>` / `nest start <project>` work from the repo root.
+  They are also registered as nest-cli projects in the root `nest-cli.json` (`gateway-in-memory`, `gateway-db`, `gateway-hardening`, `calculator.ms`), so `nest build <project>` / `nest start <project>` work from the repo root.
 - **Copied out standalone** (outside the monorepo), each project installs the published `@open-rlb/nestjs-amqp` package per its own `package.json` and runs with the usual `npm install` + `npm run start`.
 
 ***REMOVED******REMOVED*** Placeholders
