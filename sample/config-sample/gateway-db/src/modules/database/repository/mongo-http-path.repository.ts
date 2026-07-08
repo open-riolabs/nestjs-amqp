@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { flattenObject, HttpPathRepository, PaginationModel, PathDefinition, StoredHttpPath } from '@open-rlb/nestjs-amqp';
+import { ConflictError, flattenObject, HttpPathRepository, PaginationModel, PathDefinition, StoredHttpPath } from '@open-rlb/nestjs-amqp';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { HTTP_PATH_MODEL } from '../connections';
 
@@ -11,11 +11,21 @@ export class MongoHttpPathRepository extends HttpPathRepository {
     super();
   }
 
+  /** True for a Mongo duplicate-key error (unique index violation), incl. the bulk-write shape. */
+  private isDuplicateKey(error: any): boolean {
+    return error?.code === 11000 || (error?.writeErrors || []).some((w: any) => w?.code === 11000 || w?.err?.code === 11000);
+  }
+
   async insert(model: StoredHttpPath): Promise<StoredHttpPath> {
     try {
       const data = await this.model.insertMany([{ ...model, _id: new Types.ObjectId() }]);
       return this.toModel(data.find((o: any) => !!o))!;
-    } catch (error) { this.logger.error(error); throw error; }
+    } catch (error) {
+      // Map the unique-routeKey violation to ConflictError so route-sync reconciles the insert race
+      // (and manual create returns 409) instead of surfacing a raw MongoError.
+      if (this.isDuplicateKey(error)) throw new ConflictError(`A route with this identity already exists (routeKey '${(model as any)?.routeKey}').`);
+      this.logger.error(error); throw error;
+    }
   }
 
   async findById(id: string): Promise<StoredHttpPath> {
@@ -32,7 +42,12 @@ export class MongoHttpPathRepository extends HttpPathRepository {
     try {
       const data = await this.model.findOneAndUpdate({ _id: new Types.ObjectId(id) }, { $set: flattenObject(model) }, { new: true }).exec();
       return this.toModel(data)!;
-    } catch (error) { this.logger.error(error); throw error; }
+    } catch (error) {
+      // A concurrent update that would collide the routeKey trips the unique index too — surface it
+      // as ConflictError for consistent handling with insert.
+      if (this.isDuplicateKey(error)) throw new ConflictError(`A route with this identity already exists (routeKey '${(model as any)?.routeKey}').`);
+      this.logger.error(error); throw error;
+    }
   }
 
   async removeById(id: string): Promise<StoredHttpPath> {

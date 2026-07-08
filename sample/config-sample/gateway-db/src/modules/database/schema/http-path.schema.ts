@@ -43,7 +43,12 @@ export const httpPathSchema = HttpPathSchema;
 
 HttpPathSchema.index({ name: 1 }, { unique: true });
 HttpPathSchema.index({ owner: 1 });
-HttpPathSchema.index({ routeKey: 1 });
+// `routeKey` (METHOD path) is the stable identity used by route-sync + manual CRUD for upsert/diff/
+// collision detection. UNIQUE so it is the authoritative cross-instance guard against duplicate rows
+// for the same route (the app-level find-then-insert check is racy). Partial (string-only) so legacy
+// rows without a routeKey do not collide on a shared null. The repo maps the resulting duplicate-key
+// error (E11000) to ConflictError, which route-sync catches to reconcile the race instead of failing.
+HttpPathSchema.index({ routeKey: 1 }, { unique: true, partialFilterExpression: { routeKey: { $type: 'string' } } });
 // gateway-auth guards an auth-provider deletion with filter({ auth: name }) — index that lookup.
 HttpPathSchema.index({ auth: 1 });
 
