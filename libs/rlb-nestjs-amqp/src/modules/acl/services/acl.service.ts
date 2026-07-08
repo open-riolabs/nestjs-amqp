@@ -17,6 +17,8 @@ export class AclService implements IAclRoleService {
    *  time. Bounded staleness matches the decision cache; role mutations clear it (invalidateRolesCache). */
   private rolesCache?: { data: AclRole[]; exp: number; };
   private readonly rolesTtlMs: number;
+  /** Deadline for the DB resolution on a cache miss; <= 0 disables it. See AclModuleOptions.checkTimeoutMs. */
+  private readonly checkTimeoutMs: number;
 
   constructor(
     private readonly grants: AclGrantRepository,
@@ -25,6 +27,21 @@ export class AclService implements IAclRoleService {
     @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
   ) {
     this.rolesTtlMs = options?.cache?.ramTtlMs ?? 30_000;
+    this.checkTimeoutMs = options?.checkTimeoutMs ?? 5_000;
+  }
+
+  /**
+   * Race a promise against a deadline. On timeout REJECTS (so a gated request fails closed → 503)
+   * rather than hanging on a stalled ACL DB. `ms <= 0` disables the deadline (unbounded wait).
+   */
+  private withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    if (!ms || ms <= 0) return p;
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`ACL ${label} timed out after ${ms}ms`)), ms);
+      timer.unref?.();
+    });
+    return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
   }
 
   private toList(value: string | string[]): string[] {
@@ -64,20 +81,29 @@ export class AclService implements IAclRoleService {
     const cacheAction = `act:${scopeKey}:${[...actions].sort().join(',')}`;
     const cached = await this.cache.get(userId, cacheAction);
     if (cached !== null) return cached;
+    // Snapshot the cache generation BEFORE any DB read: if a grant/revoke invalidates the cache while
+    // this resolution is in flight, the generation moves and `cache.set` below drops this now-stale
+    // decision instead of re-populating it (closing the L2 re-population race).
+    const seenGen = this.cache.generation;
+    // Resolve under a deadline so a stalled ACL DB fails the check closed (→ 503) instead of blocking
+    // the request indefinitely and holding a concurrency slot.
+    const allowed = await this.withTimeout(this.resolveAllowed(userId, ctx, actions), this.checkTimeoutMs, 'checkAction');
+    await this.cache.set(userId, cacheAction, allowed, seenGen);
+    return allowed;
+  }
+
+  /** DB-backed resolution for a cache miss: role→action match then grant→resource match, all JS-side. */
+  private async resolveAllowed(userId: string, ctx: AclResourceContext | undefined, actions: string[]): Promise<boolean> {
     // Resolve the requested action(s) to the role names that include any of them. JS-side
     // resolution keeps this portable across consumer repos (no array-contains filter needed).
     const allRoles = await this.listRolesCached();
     const roleNames = new Set(
       (allRoles || []).filter((r) => (r.actions || []).some((a) => actions.includes(a))).map((r) => r.name),
     );
-    let allowed = false;
-    if (roleNames.size) {
-      const grants = await this.grants.filter({ userId });
-      const scoped = ctx === undefined ? grants : grants.filter((g) => grantMatchesResource(g, ctx));
-      allowed = scoped.some((g) => (g.roles || []).some((r) => roleNames.has(r)));
-    }
-    await this.cache.set(userId, cacheAction, allowed);
-    return allowed;
+    if (!roleNames.size) return false;
+    const grants = await this.grants.filter({ userId });
+    const scoped = ctx === undefined ? grants : grants.filter((g) => grantMatchesResource(g, ctx));
+    return scoped.some((g) => (g.roles || []).some((r) => roleNames.has(r)));
   }
 
   @BrokerAction(ACL_TOPIC, ACL_ACTIONS.checkAction, 'rpc')

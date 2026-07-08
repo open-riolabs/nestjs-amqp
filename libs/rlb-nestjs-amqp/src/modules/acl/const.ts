@@ -13,6 +13,11 @@ export const RLB_ACL_INVALIDATION = 'RLB_ACL_INVALIDATION';
  *  Override per-deployment via `AclModuleOptions.roleManagementAction`. */
 export const ACL_DEFAULT_ROLE_MANAGEMENT_ACTION = 'role-management';
 
+/** Default SYSTEM-level override action: held resource-agnostically, it lets a caller grant/revoke on
+ *  ANY resource — bypassing the per-resource role-management check (e.g. seeding the first owner on a
+ *  freshly created resource that has no grants yet). Override via `AclModuleOptions.roleSystemAction`. */
+export const ACL_DEFAULT_ROLE_SYSTEM_ACTION = 'role-system';
+
 /** Lib-defined action names handled on ACL_TOPIC. */
 export const ACL_ACTIONS = {
   /** The single authorization primitive {userId, action(s), companyId?, resourceId?}: true when

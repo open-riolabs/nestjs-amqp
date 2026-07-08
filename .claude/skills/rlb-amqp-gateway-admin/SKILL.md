@@ -53,7 +53,17 @@ from config (see Route auto-discovery). Exports `GatewayPathService`,
 `prune`/`prunePoints`) and the hourly rollups (`rollupRetentionDays`, via `pruneRollups`). An hourly
 `GatewayMetricsRollupService` downsamples the previous hour's raw points into persisted
 `HttpMetricRollup` rows (`recordRollups`) so long-term trends survive raw-point pruning;
-`gw-metrics-rollups` reads them back via `rollupSeries`.
+`gw-metrics-rollups` reads them back via `rollupSeries`. The rollup also runs a **boot catch-up**
+(last 3 completed hours) on bootstrap, so short-lived / autoscaled instances (< 1 h) still produce
+rollups before raw points are pruned.
+
+**More options:**
+- `metricsQueryMaxPoints` (default `500000`; `0`/negative disables) — hard cap on the raw points a
+  single `gw-metrics-series` / `gw-metrics-summary` loads into memory before app-side aggregation;
+  when hit, the newest N are used and a warning is logged. Prevents an OOM on a wide `from/to` window.
+- **Multi-instance:** provide a `GatewaySchedulerLock` (token `RLB_GW_SCHED_LOCK`, e.g. Mongo TTL or
+  Redis `SET NX PX`) so the rollup/retention jobs run on ONE instance per tick. Without it every
+  instance runs them — idempotent (rollups upsert-by-bucket, prunes are deletes) but wasteful.
 
 **New repo contract methods consumers must implement:** every `*Repository.search(q?, page?, limit?)`
 now returns `Promise<PaginationModel<T>>` (not a bare array); `RouteSyncLogRepository.query(filter,

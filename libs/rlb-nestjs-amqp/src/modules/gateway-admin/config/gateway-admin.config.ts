@@ -23,4 +23,12 @@ export interface GatewayAdminModuleOptions {
    * old rollups are pruned at this window; set 0/negative to disable rollups entirely.
    */
   rollupRetentionDays?: number;
+  /**
+   * Hard cap on the number of raw points a single `series` / `summary` query may load into memory
+   * before aggregating app-side (percentiles need the full set, so the window drives the row count).
+   * Protects the consumer from an OOM on a wide `from/to` window. Default 500000; when the cap is hit
+   * the newest N points are used and a warning is logged (results are then computed over a truncated
+   * window). Set 0/negative to disable the cap (unbounded — not recommended in production).
+   */
+  metricsQueryMaxPoints?: number;
 }

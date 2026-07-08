@@ -4,7 +4,7 @@ import { BrokerAction, BrokerParam } from '../../broker';
 import { grantMatchesResource } from '../auth-match';
 import { AclCacheService } from '../cache/acl-cache.service';
 import { AclModuleOptions } from '../config/acl.config';
-import { ACL_ACTIONS, ACL_DEFAULT_ROLE_MANAGEMENT_ACTION, ACL_TOPIC, RLB_ACL_OPTIONS } from '../const';
+import { ACL_ACTIONS, ACL_DEFAULT_ROLE_MANAGEMENT_ACTION, ACL_DEFAULT_ROLE_SYSTEM_ACTION, ACL_TOPIC, RLB_ACL_OPTIONS } from '../const';
 import { AclAction, AclGrant, AclRole } from '../models';
 import { AclActionRepository } from '../repository/acl-action.repository';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
@@ -17,6 +17,8 @@ export class AclManagementService {
   private readonly logger = new Logger(AclManagementService.name);
   /** Action the caller must hold (on the target company/resource) to grant or revoke. */
   private readonly roleMgmtAction: string;
+  /** SYSTEM-level override action: held resource-agnostically, it bypasses the per-resource check. */
+  private readonly roleSystemAction: string;
 
   constructor(
     private readonly actions: AclActionRepository,
@@ -28,6 +30,22 @@ export class AclManagementService {
     @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
   ) {
     this.roleMgmtAction = options.roleManagementAction ?? ACL_DEFAULT_ROLE_MANAGEMENT_ACTION;
+    this.roleSystemAction = options.roleSystemAction ?? ACL_DEFAULT_ROLE_SYSTEM_ACTION;
+  }
+
+  /**
+   * Authorize a grant/revoke by `currentUser` on the target (companyId, resourceId).
+   * Two ways to pass:
+   *   1. the SYSTEM override `roleSystemAction`, held resource-AGNOSTICALLY (ctx undefined) — a
+   *      trusted system admin may act on ANY resource, including a brand-new one with no grants yet;
+   *   2. the per-resource `roleMgmtAction`, held on the EXACT target (companyId, resourceId).
+   * Throws ForbiddenError when neither holds. The per-resource check runs first so a normal manager
+   * costs a single (cached) lookup; the system override is only evaluated when it fails.
+   */
+  private async assertCanManage(currentUser: string, companyId: string | undefined, resourceId: string | undefined, verb: 'grant' | 'revoke'): Promise<void> {
+    if (await this.acl.checkAction(currentUser, { companyId, resourceId }, this.roleMgmtAction)) return;
+    if (await this.acl.checkAction(currentUser, undefined, this.roleSystemAction)) return;
+    throw new ForbiddenError(`'${this.roleMgmtAction}' on the target resource, or the system-level '${this.roleSystemAction}', is required to ${verb}`);
   }
 
   /**
@@ -64,9 +82,7 @@ export class AclManagementService {
   ): Promise<AclGrant> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
-    if (!(await this.acl.checkAction(currentUser ?? '', { companyId, resourceId }, this.roleMgmtAction))) {
-      throw new ForbiddenError(`'${this.roleMgmtAction}' is required on the target resource to grant`);
-    }
+    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'grant');
     await this.assertRolesExist(roles);
     // ONE grant per (userId, companyId, resourceId): create it if absent, otherwise MERGE the roles
     // into the existing one. Idempotent — re-granting the same roles never produces a duplicate doc.
@@ -96,9 +112,7 @@ export class AclManagementService {
   ): Promise<AclGrant | null> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
-    if (!(await this.acl.checkAction(currentUser ?? '', { companyId, resourceId }, this.roleMgmtAction))) {
-      throw new ForbiddenError(`'${this.roleMgmtAction}' is required on the target resource to revoke`);
-    }
+    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'revoke');
     const existing = await this.findGrant(userId, companyId, resourceId);
     if (!existing) return null;
     // Remove the given roles from the (userId, companyId, resourceId) grant; keep the record while

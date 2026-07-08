@@ -13,6 +13,21 @@ export class AclCacheService {
   private readonly l2TtlSec: number;
   /** Hard cap on L1 entries; <= 0 disables the cap. */
   private readonly maxRamEntries: number;
+  /**
+   * Monotonic invalidation counter. Bumped on every invalidation (local, L2 or broadcast-received).
+   * A `checkAction` snapshots it BEFORE reading the DB and passes it back to `set()`; if the counter
+   * has moved in between, the decision was computed from now-stale data and the write is dropped.
+   * This closes the re-population race where a concurrent grant/revoke invalidated the cache but an
+   * in-flight check then re-wrote the pre-mutation decision into L1/L2 (which would otherwise persist
+   * for up to `l2TtlSec`). Coarse by design (any invalidation drops all in-flight writes) but a single
+   * bounded integer — a rejected write just becomes a cache miss, never an incorrect grant/deny.
+   */
+  private gen = 0;
+
+  /** Current invalidation generation; snapshot it before a DB resolution and pass to `set()`. */
+  get generation(): number {
+    return this.gen;
+  }
 
   constructor(
     @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
@@ -66,7 +81,10 @@ export class AclCacheService {
     return null;
   }
 
-  async set(userId: string, action: string, value: boolean): Promise<void> {
+  async set(userId: string, action: string, value: boolean, seenGen?: number): Promise<void> {
+    // Drop a decision computed from data that was invalidated while this check was in flight: the
+    // caller snapshotted `generation` before its DB read, so a moved counter means the value is stale.
+    if (seenGen !== undefined && seenGen !== this.gen) return;
     const key = this.key(userId, action);
     this.ramSet(key, { v: value, exp: Date.now() + this.ramTtlMs });
     if (this.store) {
@@ -93,6 +111,10 @@ export class AclCacheService {
 
   /** Clears only the in-process RAM tier (used by the broadcast invalidation handler). */
   invalidateLocalRam(userId?: string): void {
+    // Bump the generation so any check already in flight (which snapshotted the previous value)
+    // will not re-populate a stale decision. This is the single choke point for every invalidation
+    // path — `invalidate()` calls it, and the broadcast handler calls it directly.
+    this.gen++;
     if (!userId) {
       this.ram.clear();
       return;

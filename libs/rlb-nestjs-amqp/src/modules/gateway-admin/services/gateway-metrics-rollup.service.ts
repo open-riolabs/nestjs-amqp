@@ -9,6 +9,13 @@ const HOUR_MS = 3_600_000;
 const DEFAULT_ROLLUP_RETENTION_DAYS = 365;
 /** Lock lease for one rollup run; auto-expires if the holder dies mid-aggregation. */
 const LOCK_TTL_MS = 5 * 60_000;
+/**
+ * How many recently-completed hours the boot catch-up rolls up. Covers instances that live < 1h
+ * (autoscaled / frequently redeployed) which would otherwise never reach the hourly interval tick,
+ * so raw points get pruned before any rollup is produced. Idempotent, so overlap between instances
+ * is harmless.
+ */
+const BOOT_CATCHUP_HOURS = 3;
 
 /**
  * Downsamples raw metric points into persisted hourly rollups so long-term trends survive raw-point
@@ -34,6 +41,10 @@ export class GatewayMetricsRollupService implements OnApplicationBootstrap, OnMo
       this.logger.log('[rollup] disabled (rollupRetentionDays <= 0)');
       return;
     }
+    // Boot catch-up: roll up the last few COMPLETED hours immediately. Without this the first tick
+    // only fires after HOUR_MS, so an instance that lives < 1h never produces any rollup and its raw
+    // points are pruned un-aggregated. Idempotent (upsert-by-bucket), so overlapping a peer is safe.
+    void this.runCatchup(BOOT_CATCHUP_HOURS);
     this.timer = setInterval(() => void this.rollup(), HOUR_MS);
     this.timer.unref?.();
   }
@@ -57,13 +68,42 @@ export class GatewayMetricsRollupService implements OnApplicationBootstrap, OnMo
     }
   }
 
-  /** Aggregate the just-completed hour's raw points into hourly rollups. Never throws. */
+  /** Scheduled tick: aggregate the just-completed hour under the distributed lock. Never throws. */
   private async rollup(): Promise<void> {
     if (!(await this.acquire(GW_SCHED_LOCK_NAMES.rollup))) {
       this.logger.debug?.('[rollup] skipped this tick: lock held by another instance');
       return;
     }
-    const hourStart = Math.floor(Date.now() / HOUR_MS) * HOUR_MS - HOUR_MS;
+    try {
+      await this.rollupHour(this.previousHourStart());
+    } finally {
+      await this.releaseLock();
+    }
+  }
+
+  /** Boot-time catch-up over the last `hours` completed hours, under a single lock lease. Never throws. */
+  private async runCatchup(hours: number): Promise<void> {
+    if (!(await this.acquire(GW_SCHED_LOCK_NAMES.rollup))) {
+      this.logger.debug?.('[rollup] boot catch-up skipped: lock held by another instance');
+      return;
+    }
+    try {
+      const base = this.previousHourStart();
+      for (let i = 0; i < hours; i++) {
+        await this.rollupHour(base - i * HOUR_MS);
+      }
+    } finally {
+      await this.releaseLock();
+    }
+  }
+
+  /** Start (epoch ms) of the most recently COMPLETED hour. */
+  private previousHourStart(): number {
+    return Math.floor(Date.now() / HOUR_MS) * HOUR_MS - HOUR_MS;
+  }
+
+  /** Aggregate one hour's raw points into hourly rollups (idempotent upsert-by-bucket). Never throws. */
+  private async rollupHour(hourStart: number): Promise<void> {
     try {
       const points = await this.metrics.points({ from: hourStart, to: hourStart + HOUR_MS - 1 });
       if (!points.length) return;
@@ -71,11 +111,14 @@ export class GatewayMetricsRollupService implements OnApplicationBootstrap, OnMo
       await this.metrics.recordRollups(rollups);
       this.logger.log(`[rollup] ${points.length} point(s) → ${rollups.length} hourly rollup(s) for ${new Date(hourStart).toISOString()}`);
     } catch (e) {
-      this.logger.warn(`[rollup] failed: ${(e as Error)?.message}`);
-    } finally {
-      if (this.lock?.release) {
-        try { await this.lock.release(GW_SCHED_LOCK_NAMES.rollup); } catch { /* lease will expire on its own */ }
-      }
+      this.logger.warn(`[rollup] failed for ${new Date(hourStart).toISOString()}: ${(e as Error)?.message}`);
+    }
+  }
+
+  /** Best-effort early lock release; a failure is fine because the lease auto-expires. */
+  private async releaseLock(): Promise<void> {
+    if (this.lock?.release) {
+      try { await this.lock.release(GW_SCHED_LOCK_NAMES.rollup); } catch { /* lease will expire on its own */ }
     }
   }
 }

@@ -1,15 +1,39 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { BrokerAction, BrokerParam } from '../../broker';
-import { GATEWAY_ADMIN_TOPIC, GATEWAY_METRICS_TOPIC, GW_ADMIN_ACTIONS } from '../const';
+import { GatewayAdminModuleOptions } from '../config/gateway-admin.config';
+import { GATEWAY_ADMIN_TOPIC, GATEWAY_METRICS_TOPIC, GW_ADMIN_ACTIONS, RLB_GW_ADMIN_OPTIONS } from '../const';
 import { HttpMetric, HttpMetricPoint, HttpMetricRollup, MetricSeriesBucket, MetricSummary, TrackCallInput } from '../models';
 import { HttpMetricRepository } from '../repository/http-metric.repository';
 import { buildSeries, buildSummary, toPrometheus } from '../util/metrics';
 
+const DEFAULT_QUERY_MAX_POINTS = 500_000;
+
 @Injectable()
 export class GatewayMetricsService {
   private readonly logger = new Logger(GatewayMetricsService.name);
+  /** Hard cap on points loaded by series/summary; <= 0 disables it. See metricsQueryMaxPoints. */
+  private readonly queryMaxPoints: number;
 
-  constructor(private readonly repo: HttpMetricRepository) { }
+  constructor(
+    private readonly repo: HttpMetricRepository,
+    @Optional() @Inject(RLB_GW_ADMIN_OPTIONS) options?: GatewayAdminModuleOptions,
+  ) {
+    this.queryMaxPoints = options?.metricsQueryMaxPoints ?? DEFAULT_QUERY_MAX_POINTS;
+  }
+
+  /**
+   * Load raw points for an aggregation query, capped so a wide window cannot OOM the consumer.
+   * When the cap is hit the newest N are used (points() returns newest-first) and a warning is logged
+   * so the truncation is visible rather than silent.
+   */
+  private async pointsCapped(query: Parameters<HttpMetricRepository['points']>[0], label: string): Promise<HttpMetricPoint[]> {
+    const cap = this.queryMaxPoints;
+    const points = await this.repo.points(cap > 0 ? { ...query, limit: cap } : query);
+    if (cap > 0 && points.length >= cap) {
+      this.logger.warn(`[metrics] '${label}' hit the ${cap}-point cap; aggregates cover only the newest ${cap} point(s). Narrow the from/to window or raise metricsQueryMaxPoints.`);
+    }
+    return points;
+  }
 
   /** Fire-and-forget per-call event: the gateway publishes one of these per request. Updates the
    *  rolling counters AND appends a raw data point so the backend can build time-series.
@@ -59,7 +83,7 @@ export class GatewayMetricsService {
   ): Promise<MetricSeriesBucket[]> {
     const f = from != null ? Number(from) : undefined;
     const t = to != null ? Number(to) : undefined;
-    const points = await this.repo.points({ method, route, name, from: f, to: t });
+    const points = await this.pointsCapped({ method, route, name, from: f, to: t }, 'series');
     return buildSeries(points, { bucketMs: Number(bucketMs) || 60_000, from: f, to: t, method, route, name });
   }
 
@@ -92,11 +116,11 @@ export class GatewayMetricsService {
     @BrokerParam('body', 'name') name?: string,
     @BrokerParam('body', 'topN') topN?: number | string,
   ): Promise<MetricSummary> {
-    const points = await this.repo.points({
+    const points = await this.pointsCapped({
       method, route, name,
       from: from != null ? Number(from) : undefined,
       to: to != null ? Number(to) : undefined,
-    });
+    }, 'summary');
     return buildSummary(points, Number(topN) || 10);
   }
 

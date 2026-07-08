@@ -54,11 +54,21 @@ One record per `(userId, companyId, resourceId)`. Both ops **require `userId` + 
 - `companyId` (replaced `resourceBusinessId`) is **load-bearing**: it is part of the grant
   identity AND part of authorization (a grant matches only when its `companyId` equals the
   request's). It also groups `acl-list-resources-by-user` output.
-- **Caller gating:** `acl-grant`/`acl-revoke` require the caller (forwarded
-  `X-GTW-AUTH-USERID`) to hold the `role-management` action on the TARGET
-  `(companyId, resourceId)`, else **403**. The gate action defaults to `role-management`,
-  overridable via `AclModuleOptions.roleManagementAction`. Bootstrap by seeding the first
-  `role-management` grant directly in the DB (no caller can grant it otherwise).
+- **Caller gating (two ways to pass):** `acl-grant`/`acl-revoke` authorize the caller
+  (forwarded `X-GTW-AUTH-USERID`) if EITHER:
+  1. it holds the `role-management` action on the TARGET `(companyId, resourceId)` — the
+     per-resource path (default action, override via `AclModuleOptions.roleManagementAction`); OR
+  2. it holds the SYSTEM action `role-system`, checked **resource-agnostically** (any grant,
+     typically a global one with no company/resource) — this **bypasses** the per-resource check
+     and lets the caller grant/revoke on ANY resource (override via
+     `AclModuleOptions.roleSystemAction`).
+  Neither → **403**. The per-resource check runs first (a normal manager costs one cached lookup);
+  the `role-system` bypass is only evaluated when it fails.
+- **Use `role-system` to bootstrap a new resource's first owner:** a freshly created resource has
+  no grants, so nobody holds `role-management` on it — a system admin with `role-system` grants the
+  first `role-manager` (owner). Grant `role-system` only to trusted admins (agnostic = global power).
+  Bootstrap the very first `role-system`/`role-management` grant directly in the DB (no caller can
+  grant it otherwise).
 
 ## Checks — single primitive, GET → 200 with `true`/`false`
 
@@ -95,9 +105,24 @@ AclModule.forRoot(
     { provide: AclGrantRepository,  useClass: MyAclGrantRepository },
     { provide: RLB_ACL_CACHE_STORE, useClass: MyRedisAclCacheStore }, // OPTIONAL L2 (omit → RAM-only)
   ],
-  { cache: { ramTtlMs: 30_000, l2TtlSec: 600 } }, // L1 RAM (default 30000) / L2 (default 600s)
+  {
+    cache: { ramTtlMs: 30_000, l2TtlSec: 600, maxRamEntries: 50_000 }, // L1 RAM / L2 (s) / hard cap
+    // roleManagementAction: 'role-management',  // per-resource grant/revoke gate (default)
+    // roleSystemAction: 'role-system',          // agnostic bypass action (default)
+    checkTimeoutMs: 5_000,                        // deadline on the miss DB read → 503 (0 = disable)
+    invalidation: { exchange: 'acl-invalidate' }, // MULTI-INSTANCE: fanout broadcast so peers flush
+  },                                              //   L1 at once (else stale ≤ ramTtlMs after mutate)
 );
 ```
+
+Options quick-ref (`AclModuleOptions`):
+- `roleManagementAction` (default `role-management`) — per-resource grant/revoke gate.
+- `roleSystemAction` (default `role-system`) — agnostic bypass on grant/revoke (see gating above).
+- `checkTimeoutMs` (default `5000`) — deadline on the cache-miss DB resolution; on timeout the check
+  throws → gateway **503** (fail-closed). `0`/negative disables it. Cache hits never hit the DB.
+- `invalidation.exchange` — cross-instance L1 invalidation over an AMQP fanout. **Required in
+  multi-instance** or peers serve stale allow/deny for up to `cache.ramTtlMs` after a grant/revoke.
+  Declare the exchange in `broker.exchanges`.
 
 Gateway side — let route `actions: [...]` gates run **in-process** (no broker hop) by
 binding the gateway token to the same `AclService` (implements
@@ -150,8 +175,8 @@ the fixed library string.
 | acl-role-upsert | PUT | /acl/roles | body | acl-role-update |
 | acl-role-delete | DELETE | /acl/roles | body | acl-role-delete |
 | acl-role-search | GET | /acl/roles/search | query | acl-role-search (`?q=&page=&limit=` → `PaginationModel<AclRole>`) |
-| acl-grant | POST | /acl/grants | body | acl-grant (gated: caller needs `role-management`) |
-| acl-revoke | DELETE | /acl/grants | body | acl-revoke (gated: caller needs `role-management`) |
+| acl-grant | POST | /acl/grants | body | acl-grant (gated: caller needs `role-management` on target **or** `role-system`) |
+| acl-revoke | DELETE | /acl/grants | body | acl-revoke (gated: caller needs `role-management` on target **or** `role-system`) |
 | acl-grant-search | GET | /acl/grants/search | query | acl-grant-search — access search (`?q=&page=&limit=` → `PaginationModel<AclGrant>`) |
 | acl-check | GET | /acl/check | query | acl-check-action |
 | acl-list-resources-by-user | GET | /acl/resources | query | acl-list-resources-by-user (+ `auth:`) |
@@ -198,6 +223,6 @@ gateway:
 - action-gated routes (`actions: [...]`) → `RLB_GTW_ACL_ROLE_SERVICE` bound to an
   `IAclRoleService` (`AclService`, `checkAction`). Auth-provider needs `uidClaim`
   (+ `headerPrefix`).
-- `acl-grant`/`acl-revoke` are gated — seed the first `role-management` grant directly in
-  the DB or every caller gets `403`.
+- `acl-grant`/`acl-revoke` are gated — caller needs `role-management` on the target **or** the
+  agnostic `role-system`; seed the first such grant directly in the DB or every caller gets `403`.
 - a check returning `false` is a **200**, not an error.
