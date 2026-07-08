@@ -16,13 +16,19 @@ export class GatewayMetricsService {
    *  Also bound to the OPTIONAL dedicated metrics topic: declaring `rlb-gateway-metrics`
    *  (+ its own queue) in the broker config and pointing `gateway.metrics.topic` at it moves
    *  this high-volume traffic off the admin queue, so a slow metrics DB can no longer starve
-   *  `gw-health` / `gw-reload` / admin RPCs. Never throws (fail-soft by design). */
+   *  `gw-health` / `gw-reload` / admin RPCs. Never throws (fail-soft by design).
+   *
+   *  The two writes are best-effort and NOT atomic: the counters (`increment` → `get`/`prometheus`)
+   *  and the raw points (`record` → `series`/`summary`) are independent observability views that are
+   *  not reconcilable exactly anyway — counters are lifetime and never pruned, raw points are pruned
+   *  by retention — so do not compare the two for equality. The raw point is written FIRST because it
+   *  is the un-reconstructable source of series/summary; if the second write throws, only the counter
+   *  (the recoverable, points-derivable side) drifts by one, never the raw data. */
   @BrokerAction(GATEWAY_METRICS_TOPIC, GW_ADMIN_ACTIONS.metricsTrack, 'event', { optional: true })
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsTrack, 'event')
   async track(@BrokerParam('body-full') input: TrackCallInput): Promise<void> {
     try {
       if (!input?.method || !input?.route) return;
-      await this.repo.increment(input);
       await this.repo.record({
         ts: input.ts ?? Date.now(),
         method: input.method,
@@ -35,6 +41,7 @@ export class GatewayMetricsService {
         durationMs: input.durationMs,
         code: input.code,
       });
+      await this.repo.increment(input);
     } catch (error) {
       this.logger.error(error);
     }
