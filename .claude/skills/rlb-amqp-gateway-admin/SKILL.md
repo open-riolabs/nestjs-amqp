@@ -60,6 +60,22 @@ now returns `Promise<PaginationModel<T>>` (not a bare array); `RouteSyncLogRepos
 page?, limit?)` backs `gw-route-log-search`; `RouteSyncLogRepository.prune` + `HttpMetricRepository.prunePoints`
 back retention.
 
+**Required DB indexes (the abstract repos ASSUME them; the concrete store must declare them —
+without them every query/prune is a collection scan):**
+- `http-metric`: **unique** `(method, route)` — the `increment` upsert key. NOT `+name`: name is
+  updated, not part of the identity; adding it would split the counter.
+- `http-metric-point`: `(method, route, ts)` for `points()` (filters method+route, newest-first) +
+  a standalone `(ts)` — or a TTL index — for `prunePoints`.
+- `http-metric-rollup`: **unique** `(bucketStart, granularityMs, method, route)` — the `recordRollups`
+  upsert key; its `bucketStart` prefix also serves `rollupSeries` + `pruneRollups`.
+- `http-path`: `routeKey`, `owner`, and `auth` (the last backs gateway-auth's `filter({ auth })`
+  delete guard) + **unique** `name`.
+- `auth-provider`: **unique** `name` (sole identity — no `_id`).
+- `route-sync-log`: `(service, ts)` + `(routeKey, ts)` for `query()`, and `(ts)` (or TTL) for `prune`.
+
+The `gateway-db` sample (`sample/config-sample/gateway-db/.../database/schema/`) carries the reference
+Mongo declarations.
+
 ## Broker topic + queue (required)
 
 ```yaml

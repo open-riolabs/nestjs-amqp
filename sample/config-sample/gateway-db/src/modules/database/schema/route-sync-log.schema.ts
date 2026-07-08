@@ -32,6 +32,8 @@ const RouteSyncLogSchema = new mongoose.Schema({
 export const routeSyncLogSchema = RouteSyncLogSchema;
 
 RouteSyncLogSchema.index({ service: 1, ts: -1 });
+// query() also filters by routeKey (newest-first) for the /admin/route-log/search ?routeKey= facet.
+RouteSyncLogSchema.index({ routeKey: 1, ts: -1 });
 
 export const routeSyncLogModel = {
   provide: ROUTE_SYNC_LOG_MODEL,
