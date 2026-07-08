@@ -27,6 +27,10 @@ export const httpMetricPointSchema = HttpMetricPointSchema;
 // Common series query shape: filter by route/method over a time window.
 HttpMetricPointSchema.index({ route: 1, ts: 1 });
 HttpMetricPointSchema.index({ method: 1, ts: 1 });
+// points() filters method+route together and sorts newest-first — the ideal covering index.
+// prunePoints() uses the standalone { ts } above. (In this sample points live in InfluxDB, so
+// these serve the Mongo-points variant; keep them in sync with the InfluxPointStore query shape.)
+HttpMetricPointSchema.index({ method: 1, route: 1, ts: -1 });
 
 export const httpMetricPointModel = {
   provide: HTTP_METRIC_POINT_MODEL,

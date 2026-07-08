@@ -44,6 +44,8 @@ export const httpPathSchema = HttpPathSchema;
 HttpPathSchema.index({ name: 1 }, { unique: true });
 HttpPathSchema.index({ owner: 1 });
 HttpPathSchema.index({ routeKey: 1 });
+// gateway-auth guards an auth-provider deletion with filter({ auth: name }) — index that lookup.
+HttpPathSchema.index({ auth: 1 });
 
 export const httpPathModel = {
   provide: HTTP_PATH_MODEL,
