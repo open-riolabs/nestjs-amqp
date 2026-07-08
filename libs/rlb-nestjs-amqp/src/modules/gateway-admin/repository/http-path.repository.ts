@@ -22,11 +22,21 @@ export type StoredHttpPath = Partial<PathDefinition> & {
   userOverrides?: string[];
 };
 
-/** Repository contract for stored HTTP gateway paths. Implemented by the consuming app. */
+/**
+ * Repository contract for stored HTTP gateway paths. Implemented by the consuming app.
+ *
+ * routeKey uniqueness: the app-level collision checks in route-sync / gateway-path are find-then-
+ * write and therefore racy across instances. The implementation MUST enforce a unique constraint on
+ * `routeKey` (e.g. a unique DB index) and surface a violation from `insert`/`updateById` as a
+ * `ConflictError` (from the lib's common errors). route-sync catches it to reconcile same-owner vs
+ * cross-owner races; gateway-path lets it bubble as a 409.
+ */
 export abstract class HttpPathRepository {
+  /** @throws ConflictError if `routeKey` already exists (unique-constraint violation). */
   abstract insert(model: StoredHttpPath): Promise<StoredHttpPath>;
   abstract findById(id: string): Promise<StoredHttpPath>;
   abstract findOne(filter: Record<string, any>): Promise<StoredHttpPath>;
+  /** @throws ConflictError if the update would collide with another row's `routeKey`. */
   abstract updateById(id: string, model: StoredHttpPath): Promise<StoredHttpPath>;
   abstract removeById(id: string): Promise<StoredHttpPath>;
   /** Enabled paths mapped to plain PathDefinition objects (no _id/enabled). */

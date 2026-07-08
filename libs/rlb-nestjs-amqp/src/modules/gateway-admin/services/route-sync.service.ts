@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
+import { ConflictError } from '../../../common';
 import { AmqpConnection } from '../../../amqp-lib';
 import { BrokerService, RouteManifest } from '../../broker';
 import { GW_RELOAD_ACTION, RLB_AMQP_GATEWAY_OPTIONS, ROUTE_DISCOVERY_EXCHANGE, ROUTE_SYNC_QUEUE } from '../../broker/const';
@@ -99,10 +100,34 @@ export class RouteSyncService implements OnApplicationBootstrap {
         await this.journal({ service, level: 'error', event: 'invalid', message: `invalid route dropped: ${JSON.stringify(inv.route)?.slice(0, 200)}` });
       }
       for (const u of diff.upserts) {
-        if (u.existingId) await this.paths.updateById(u.existingId, u.model);
-        else await this.paths.insert(u.model);
+        let added = u.added;
+        try {
+          if (u.existingId) await this.paths.updateById(u.existingId, u.model);
+          else await this.paths.insert(u.model);
+        } catch (e) {
+          // The unique routeKey index is the authoritative guard the app-level reserve-check above
+          // cannot provide (find-then-insert is racy across instances). A ConflictError here means
+          // another writer inserted this routeKey between our check and our insert. Re-resolve the
+          // current winner and reconcile instead of clobbering it.
+          if (!(e instanceof ConflictError)) throw e;
+          const clashes = await this.paths.findByRouteKey(u.routeKey);
+          const mine = (clashes || []).find((c) => (c.owner ?? 'manual') === service);
+          if (mine?._id) {
+            // Same owner won the race (e.g. two of this service's manifests processed concurrently)
+            // → idempotent update of the existing row, not a duplicate insert.
+            await this.paths.updateById(mine._id, u.model);
+            added = false;
+          } else {
+            // A DIFFERENT owner won → genuine cross-service collision. Skip + journal (mirrors the
+            // diff.collisions path); never overwrite the winner's route.
+            const conflictWith = (clashes || []).find((c) => (c.owner ?? 'manual') !== service)?.owner ?? 'manual';
+            this.logger.warn(`[route-sync] ${service}: insert race lost on '${u.routeKey}' (won by '${conflictWith}') → skipped`);
+            await this.journal({ service, level: 'warn', event: 'collision', routeKey: u.routeKey, method: u.model.method, path: u.model.path, conflictWith, message: `route '${u.routeKey}' claimed concurrently by '${conflictWith}'; skipped` });
+            continue;
+          }
+        }
         const rendered = u.changes?.length ? renderChanges(u.changes) : undefined;
-        await this.journal({ service, level: 'info', event: u.added ? 'added' : 'updated', routeKey: u.routeKey, method: u.model.method, path: u.model.path, topic: u.model.topic, action: u.model.action, changes: u.changes, message: rendered });
+        await this.journal({ service, level: 'info', event: added ? 'added' : 'updated', routeKey: u.routeKey, method: u.model.method, path: u.model.path, topic: u.model.topic, action: u.model.action, changes: u.changes, message: rendered });
         if (rendered) this.logger.log(`[route-sync] ${service}: '${u.routeKey}' updated → ${rendered}`);
       }
       for (const d of diff.disables) {
