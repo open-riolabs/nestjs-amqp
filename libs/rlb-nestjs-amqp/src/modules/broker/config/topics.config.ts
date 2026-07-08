@@ -1,3 +1,4 @@
+import { RetryPolicyConfig } from '../../../amqp-lib/amqp/retry-policy';
 import { MessageHandlerErrorBehavior } from '../../../amqp-lib/types';
 
 /**
@@ -38,11 +39,18 @@ export interface BrokerTopic {
   exchange?: string;
 
   /**
-   * Error behavior when message processing fails at the connection level.
-   * Applies to the decorator-based path (@BrokerAction via MetadataScanner).
-   * @default MessageHandlerErrorBehavior.REQUEUE
+   * Legacy error behavior when message processing fails at the connection level
+   * (ACK/NACK/REQUEUE). Prefer `retry`. When neither is set here nor at broker level,
+   * the built-in bounded retry applies (5 attempts, then drop).
    */
   errorBehavior?: MessageHandlerErrorBehavior;
+
+  /**
+   * Per-topic retry policy for failed message processing: bounded re-publish with optional
+   * delay, then dead-letter or drop. Overrides the broker-level `retry` config; overridden
+   * by `errorBehavior` only when `retry` is absent.
+   */
+  retry?: RetryPolicyConfig;
 
   /**
    * Publish with the AMQP `mandatory` flag. When true, messages that cannot be

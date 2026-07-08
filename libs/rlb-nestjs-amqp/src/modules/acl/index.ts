@@ -8,6 +8,7 @@ export * from './models';
 export * from './repository/acl-action.repository';
 export * from './repository/acl-grant.repository';
 export * from './repository/acl-role.repository';
+export * from './services/acl-invalidation.service';
 export * from './services/acl-management.service';
 export * from './services/acl.service';
 

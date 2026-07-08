@@ -1,0 +1,145 @@
+app:
+  port: 3000
+  host: 0.0.0.0
+  environment: development
+
+# Focused sample: only the multi-instance HARDENING features are wired. ACL / gateway-admin data is
+# in RAM (in-memory repositories); the ACL L2 cache is in RAM too. Only RabbitMQ is required.
+
+broker:
+  name: "rabbitmq"
+  uri: "amqp://localhost:5672/"
+  defaultSubscribeErrorBehavior: "ack"
+  connectionManagerOptions:
+    heartbeatIntervalInSeconds: 60
+    reconnectTimeInSeconds: 60
+    connectionOptions:
+      # connection_name is auto-uniquified per instance by the lib, so you can boot N copies.
+      clientProperties:
+        connection_name: "gateway-hardening"
+      credentials:
+        mechanism: PLAIN
+        username: guest
+        password: guest
+
+  exchanges:
+    - name: rlb
+      type: direct
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+    # HARDENING #2: fanout exchange for cross-instance ACL cache invalidation. Every instance binds
+    # an ephemeral, per-instance queue to it (done automatically by AclInvalidationService). Its name
+    # MUST match AppModule's ACL_INVALIDATION_EXCHANGE.
+    - name: rlb-acl-invalidate
+      type: fanout
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+
+  queues:
+    - name: rlb-acl
+      exchange: rlb
+      routingKey: rlb-acl
+      createQueueIfNotExists: true
+      options:
+        durable: true
+    - name: rlb-gateway-admin
+      exchange: rlb
+      routingKey: rlb-gateway-admin
+      createQueueIfNotExists: true
+      options:
+        durable: true
+
+topics:
+  - name: rlb-acl
+    mode: rpc
+    queue: rlb-acl
+    exchange: rlb
+    routingKey: rlb-acl
+  - name: rlb-gateway-admin
+    mode: rpc
+    queue: rlb-gateway-admin
+    exchange: rlb
+    routingKey: rlb-gateway-admin
+  # Broadcast control topic for runtime route reloads (per-instance queue).
+  - name: rlb-gateway-control
+    mode: broadcast
+    exchange: rlb
+    routingKey: rlb-gateway-control
+
+auth-providers:
+  # Basic auth keeps the sample dependency-free (no Keycloak needed): the basic username becomes the
+  # authenticated userId (X-GTW-AUTH-USERID), which the ACL check and grant/revoke gate read.
+  - name: demo-basic
+    type: basic
+    clientSecret: secret
+    headerPrefix: "X-GTW-AUTH-"
+    uidClaim: USERID
+
+gateway:
+  mode: gateway
+
+  # --- HARDENING #5: HTTP protection -------------------------------------------------------------
+  # Max in-flight requests before shedding load with 503 (Retry-After: 1). Sized low here so it is
+  # easy to trip with a small load test (see README).
+  maxConcurrentRequests: 100
+  # Max NON-multipart body size; applied by the body parser in main.ts (413 over the limit).
+  maxBodyBytes: "1mb"
+
+  paths:
+    - name: health
+      method: GET
+      path: /health
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-health
+      mode: rpc
+
+    # ACL check (anonymous, for observing a decision): ?userId=&action=&companyId=&resourceId=
+    - name: acl-check-action
+      method: GET
+      path: /acl/check
+      dataSource: query
+      topic: rlb-acl
+      action: acl-check-action
+      mode: rpc
+
+    # Grant / revoke are gated: the caller (Basic auth → X-GTW-AUTH-USERID) must hold role-management.
+    # The seed service bootstraps user 'admin' with it (see README).
+    - name: acl-grant
+      method: POST
+      path: /acl/grants
+      dataSource: body
+      topic: rlb-acl
+      action: acl-grant
+      mode: rpc
+      auth: demo-basic
+    - name: acl-revoke
+      method: DELETE
+      path: /acl/grants
+      dataSource: body
+      topic: rlb-acl
+      action: acl-revoke
+      mode: rpc
+      auth: demo-basic
+
+    # Action-protected route: passes only if the caller holds the `gateway-access` action.
+    # After a revoke on ONE instance, HARDENING #2 makes THIS return 403 on EVERY instance at once.
+    - name: protected-resource
+      method: GET
+      path: /protected
+      dataSource: query
+      topic: rlb-gateway-admin
+      action: gw-health
+      mode: rpc
+      auth: demo-basic
+      actions: [gateway-access]
+
+  # DB-exported routes are merged at boot and on every runtime reload (none seeded here).
+  loadConfig:
+    paths:
+      topic: rlb-gateway-admin
+      action: gw-path-export
+  reloadTopic: rlb-gateway-control
+  events: []

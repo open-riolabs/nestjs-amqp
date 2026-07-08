@@ -19,6 +19,12 @@ const ERROR_STATUS: Record<string, number> = {
   ForbiddenError: 403,
   NotFoundError: 404,
   ConflictError: 409,
+  // Upstream microservice didn't reply within the RPC timeout: a load/availability condition,
+  // not a gateway bug — 504 lets callers and load balancers tell the two apart (it was 500).
+  RpcTimeoutError: 504,
+  // The microservice's retry policy exhausted every attempt and replied with the failure:
+  // the upstream handler is broken/failing, not the gateway.
+  RetryExhaustedError: 502,
 };
 
 @Injectable()
@@ -28,6 +34,8 @@ export class HttpHandlerService implements OnModuleInit {
   /** Swappable route table. Mounted once via a stable delegator; rebuilt on reload so
    *  routes can be added/modified/removed at runtime without restarting the process. */
   private dynamicRouter: Router | null = null;
+  /** Live count of in-flight requests, for the optional concurrency cap (gateway.maxConcurrentRequests). */
+  private inFlight = 0;
 
   /** Serializes route reloads: concurrent reload signals must never overlap (overlap could corrupt
    *  the atomic router swap or race the DB-paths RPC — a likely cause of "reloads every other time").
@@ -37,6 +45,8 @@ export class HttpHandlerService implements OnModuleInit {
 
   private readonly logger: Logger;
   private readonly multer: multer.Multer;
+  /** Single multipart parser instance, invoked manually AFTER the auth gate (see registerPath). */
+  private readonly multipartParser: ReturnType<multer.Multer['any']>;
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
@@ -49,13 +59,55 @@ export class HttpHandlerService implements OnModuleInit {
     @Optional() @Inject(RLB_GTW_METRICS_HOOK) private readonly metricsHook?: GatewayMetricsHook,
   ) {
     this.logger = new Logger(HttpHandlerService.name);
+    // memoryStorage buffers whole files in gateway RAM (they must be re-encoded into the AMQP
+    // message anyway), so unbounded uploads are an OOM vector: the limits below are mandatory.
     this.multer = multer({
       storage: multer.memoryStorage(),
+      limits: {
+        fileSize: (this.gatewayConfig.upload?.maxFileSizeMb ?? 25) * 1024 * 1024,
+        files: this.gatewayConfig.upload?.maxFiles ?? 10,
+      },
     });
+    this.multipartParser = this.multer.any();
+  }
+
+  /**
+   * Runs the multipart parser on demand. Called AFTER authentication (so an anonymous client
+   * cannot make the gateway buffer arbitrary payloads) but BEFORE the ACL check (whose
+   * resource context may read multipart form fields from req.body). No-op for
+   * non-multipart requests. Rejects with the underlying MulterError on limit violations.
+   */
+  private parseMultipart(req: Request, res: Response): Promise<void> {
+    return new Promise((resolve, reject) =>
+      this.multipartParser(req, res, (err: unknown) => (err ? reject(err) : resolve())),
+    );
   }
 
   async onModuleInit() {
     this.server = this.httpAdapterHost.httpAdapter.getInstance<ExpressAdapter>();
+
+    // Optional in-flight concurrency cap: shed load with a fast 503 once the instance is at
+    // capacity, instead of letting unbounded concurrent requests pile up (each an outstanding RPC
+    // that costs memory and inflates the correlation-matching work). Mounted BEFORE the router.
+    const maxConcurrent = this.gatewayConfig.maxConcurrentRequests;
+    if (maxConcurrent && maxConcurrent > 0) {
+      this.server.use((req: Request, res: Response, next: NextFunction) => {
+        if (this.inFlight >= maxConcurrent) {
+          res.setHeader('Retry-After', '1');
+          this.sendError(res, { name: 'ServiceUnavailable', message: 'Server busy' }, 503);
+          return;
+        }
+        this.inFlight++;
+        // Release exactly once, whether the response finishes normally or the socket closes/aborts.
+        let released = false;
+        const release = () => { if (!released) { released = true; this.inFlight--; } };
+        res.once('finish', release);
+        res.once('close', release);
+        next();
+      });
+      this.logger.log(`[gateway] HTTP concurrency cap enabled: ${maxConcurrent} in-flight requests`);
+    }
+
     // Mount a single stable delegator. The actual route table lives in `dynamicRouter`,
     // which `reload()` rebuilds and swaps atomically — so subsequent requests hit the
     // new table while in-flight ones finish on the old one.
@@ -173,7 +225,7 @@ export class HttpHandlerService implements OnModuleInit {
     }
 
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
-    target[path.method.toLowerCase()](path.path, this.multer.any(), async (req: Request, res: Response) => {
+    target[path.method.toLowerCase()](path.path, async (req: Request, res: Response) => {
       // Auto per-call metrics: when a metrics sink is configured, emit one fire-and-forget
       // track event per request after the response is flushed (captures the FINAL status
       // and duration whatever branch handled it). Disabled when gateway.metrics is unset.
@@ -186,17 +238,43 @@ export class HttpHandlerService implements OnModuleInit {
       // anonymous route is simply not blocked.
       const authData = await this.httpAuthHandlerService.processAuthData(req, path);
 
+      // (1) Authentication — a configured provider must validate the request.
+      if (path.allowAnonymous !== true && path.auth && !authData?.success) {
+        this.sendError(res, { name: 'Unauthorized', message: 'Unauthorized' }, 401);
+        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
+        return;
+      }
+
+      // Multipart parsing runs only for requests that passed authentication (an anonymous
+      // client must not be able to make the gateway buffer arbitrary uploads in RAM), and
+      // BEFORE the ACL check so its resource context can read multipart form fields.
+      try {
+        await this.parseMultipart(req, res);
+      } catch (error) {
+        // MulterError = a configured limit was exceeded (fileSize/files) → 413; anything else
+        // is a malformed multipart body → 400.
+        this.sendError(res, error, error?.name === 'MulterError' ? 413 : 400);
+        this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UPLOAD REJECTED '${error?.message}'`);
+        return;
+      }
+
       if (path.allowAnonymous !== true) {
-        // (1) Authentication — a configured provider must validate the request.
-        if (path.auth && !authData?.success) {
-          this.sendError(res, { name: 'Unauthorized', message: 'Unauthorized' }, 401);
-          this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
-          return;
-        }
         // (2) Authorization — action-based ACL (no-op when `auth` or `actions` is absent). The
         // gateway extracts the request's (companyId, resourceId) and requires an exact grant match.
         const resourceCtx = this.httpAuthHandlerService.extractResourceContext(req);
-        if (!(await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx))) {
+        let allowed: boolean;
+        try {
+          allowed = await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx);
+        } catch (error) {
+          // The authorization store (e.g. Mongo) errored/timed out on a cache miss. This block runs
+          // OUTSIDE the downstream try, and an async Express handler that rejects sends NO response —
+          // the connection would hang until a socket timeout. Fail closed with a clear 503 instead of
+          // ever forwarding, and always answer the client.
+          this.logger.error(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | ACL CHECK FAILED '${error?.name}' ${error?.message}`);
+          this.sendError(res, { name: 'ServiceUnavailable', message: 'Authorization service unavailable' }, 503);
+          return;
+        }
+        if (!allowed) {
           this.sendError(res, { name: 'Forbidden', message: 'Forbidden' }, 403);
           this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | FORBIDDEN '403'`);
           return;

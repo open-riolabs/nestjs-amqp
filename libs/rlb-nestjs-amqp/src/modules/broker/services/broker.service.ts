@@ -40,9 +40,22 @@ export class BrokerService implements OnModuleInit {
   onModuleInit() {
     this.logger.log('Initializing broker service');
 
+    // The retry dead-letter exchange is NOT auto-asserted (a wrong assert would 406 the
+    // channel): it must be declared in broker.exchanges. Surface a misconfiguration at
+    // boot instead of at the first dead-letter attempt.
+    const dlExchanges = new Set<string>();
+    if (this.brokerConfig.retry?.deadLetter?.exchange) dlExchanges.add(this.brokerConfig.retry.deadLetter.exchange);
+    for (const t of this.topicConfigurations || []) {
+      if (t.retry?.deadLetter?.exchange) dlExchanges.add(t.retry.deadLetter.exchange);
+    }
+    for (const ex of dlExchanges) {
+      if (!this.brokerConfig.exchanges?.some(e => e.name === ex)) {
+        this.logger.warn(`Retry dead-letter exchange '${ex}' is not declared in broker.exchanges; dead-lettering will fail at runtime (messages fall back to nack-requeue) until the exchange exists.`);
+      }
+    }
+
     for (const topic of this.topicConfigurations || []) {
       if (topic.mode === 'rpc') {
-        let queueName: string | undefined;
         if (!topic.queue && !topic.exchange) {
           this.logger.warn(`RPC Topic ${topic.name} not added to pool. Queue or exchange are required`);
           continue;
@@ -52,7 +65,7 @@ export class BrokerService implements OnModuleInit {
           continue;
         }
         const par: { queue?: string, subscribed: boolean; exchange?: string; routingKey?: string; } = { subscribed: false };
-        if (queueName) par.queue = queueName;
+        if (topic.queue) par.queue = topic.queue;
         if (topic.exchange) par.exchange = topic.exchange;
         if (topic.routingKey) par.routingKey = topic.routingKey;
         this.rpcsPool.set(topic.name, par);
@@ -68,10 +81,10 @@ export class BrokerService implements OnModuleInit {
         this.handlersPool.set(topic.name, { exchange: topic.exchange, queue: `${topic.name}-${cname}`, routingKey: topic.routingKey, subscribed: false });
       } else if (topic.mode === 'handle') {
         const queue = this.brokerConfig.queues.find(q => q.name === topic.queue);
-        const exchange = this.brokerConfig.exchanges.find(e => e.name === queue.exchange);
         if (!queue) {
           this.logger.warn(`Queue ${topic.queue} not found in broker configuration`);
         }
+        const exchange = this.brokerConfig.exchanges.find(e => e.name === (queue?.exchange ?? topic.exchange));
         if (exchange?.type === 'topic') {
           if (!queue?.routingKey) {
             throw new Error(`Queue ${queue.name} has no routing key`);
@@ -170,18 +183,27 @@ export class BrokerService implements OnModuleInit {
               const func = this.handlerRegistryService.getHandlers('fun', topic.name);
               const result = await this.executeFunction<RpcEventHandler, boolean>(func, _msg, rawMessage, headers);
               if (!result.success) {
-                this.logger.warn(`An error occurred while processing message for topic ${topic.name}. Requeued!`);
+                this.logger.warn(`An error occurred while processing message for topic ${topic.name}.`);
                 this.logger.error(result.error);
-                return new Nack(true);
+                // Throw so the connection-level error handler applies the configured retry
+                // policy (bounded attempts + dead-letter/drop). Returning Nack(true) here
+                // bypassed it and requeued the message forever (poison-message hot loop).
+                throw result.error;
               }
             }
           }, {
           queue: qName,
           exchange: eName,
           routingKey: rKey,
+          retry: topic.retry,
+          // Broadcast queues are PER-INSTANCE (named `${topic}-${connection_name}`, which is
+          // uniquified per instance). They must die with their consumer: a durable leftover
+          // from a retired/renamed instance would stay bound to the exchange and accumulate
+          // every broadcast forever (unbounded broker disk growth).
+          queueOptions: topic.mode === 'broadcast' ? { durable: false, autoDelete: true } : undefined,
         }, topic.name);
         this.handlersPool.set(_topic, { queue: _q.queue, exchange: eName, routingKey: rKey, subscribed: true, consumerTag: o.consumerTag });
-        this.logger.log(`Handler subscribed [${topic.name}]. Path: '${eName}/${qName}***REMOVED***${rKey}' Consumer Tag: ${o.consumerTag}`);
+        this.logger.log(`Handler subscribed [${topic.name}]. Path: '${eName}/${qName}#${rKey}' Consumer Tag: ${o.consumerTag}`);
       } catch (error) {
         this.logger.error(`An error occured subscribing handler for topic: '${topic.name}' Details: ${error.message}`);
       }
@@ -200,7 +222,17 @@ export class BrokerService implements OnModuleInit {
     }
     if (!_q.subscribed) {
       const topic = this.topicConfigurations.find(t => t.name === _topic);
-      const queue = this.brokerConfig.queues.find(q => q.name === _q.queue);
+      // Resolve the AMQP path from the queue config when the topic names one, falling back
+      // to the pool entry (exchange-only rpc topics have no queue: the broker assigns a
+      // server-named queue bound to exchange/routingKey).
+      const queue = _q.queue ? this.brokerConfig.queues.find(q => q.name === _q.queue) : undefined;
+      if (_q.queue && !queue) {
+        this.logger.error(`Queue ${_q.queue} for topic ${_topic} not found in broker configuration`);
+        return;
+      }
+      const qName = queue?.name ?? _q.queue;
+      const eName = queue?.exchange ?? _q.exchange;
+      const rKey = queue?.routingKey ?? _q.routingKey;
       const subscription = await this.amqpConnection.createRpc<ActionPayload<Request>, MangedFunctionExecutor<Response>>(async (msg: ActionPayload<Request>, rawMessage?: ConsumeMessage, headers?: any) => {
         const _msg: BrokerEvent<Request> = {
           topic: topic.name,
@@ -221,21 +253,24 @@ export class BrokerService implements OnModuleInit {
         }
         catch (err) {
           this.logger.error(`An error occurred while processing message for topic ${topic.name}: ${err.message}`);
-          return new Nack(true);
+          // Rethrow so the configured retry policy applies (bounded attempts, then error
+          // reply to the RPC caller + dead-letter/drop) instead of requeueing forever.
+          throw err;
         }
       }, {
-        queue: queue.name,
-        exchange: queue.exchange,
-        routingKey: queue.routingKey
+        queue: qName,
+        exchange: eName,
+        routingKey: rKey,
+        retry: topic?.retry,
       });
       this.rpcsPool.set(_topic, {
-        queue: _q.queue,
-        exchange: queue.exchange,
-        routingKey: queue.routingKey,
+        queue: qName,
+        exchange: eName,
+        routingKey: rKey,
         subscribed: true,
         consumerTag: subscription.consumerTag,
       });
-      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${queue.exchange}' Queue: '${queue.name}' Consumer Tag: ${subscription.consumerTag}`);
+      this.logger.log(`Subscribed to ${topic.name}. Exchange: '${eName}' Queue: '${qName}' Consumer Tag: ${subscription.consumerTag}`);
     }
     this.handlerRegistryService.registerHandler<Request, Response>('rpc', _topic, handler);
   }
@@ -269,6 +304,8 @@ export class BrokerService implements OnModuleInit {
     }
     const replyTo = this.brokerConfig.replyQueues?.[exchange];
 
+    const rpcTimeout = timeout || this.brokerConfig.defaultRpcTimeout || 10000;
+
     try {
       const result = await this.amqpConnection.request<MangedFunctionExecutor<Response>>({
         exchange: exchange,
@@ -277,7 +314,12 @@ export class BrokerService implements OnModuleInit {
         correlationId,
         replyTo,
         headers,
-        timeout: timeout || this.brokerConfig.defaultRpcTimeout || 10000,
+        timeout: rpcTimeout,
+        // Message TTL = the caller's timeout: once the caller has already received an
+        // RpcTimeoutError nobody is waiting for the reply, so a request still sitting in a
+        // backed-up queue must NOT be executed later (ghost side effects, duplicate writes
+        // when the client retries). RabbitMQ drops (or dead-letters) it instead.
+        expiration: rpcTimeout,
         publishOptions: { mandatory: msTopic.mandatory, persistent: msTopic.persistent },
       });
       if (!result.success) {

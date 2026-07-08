@@ -15,6 +15,19 @@ export class RpcTimeoutError extends Error {
 }
 
 /**
+ * Thrown when an incoming message body cannot be deserialized (e.g. non-JSON
+ * content with the default deserializer). Marked as NOT retriable by the retry
+ * policy: the message can never become valid, so it goes straight to the
+ * dead-letter/drop path instead of hot-looping the consumer.
+ */
+export class MessageDeserializationError extends Error {
+  constructor(public readonly cause: any) {
+    super(`Failed to deserialize message: ${cause?.message ?? cause}`);
+    this.name = 'MessageDeserializationError';
+  }
+}
+
+/**
  * Custom error thrown when a message is null or undefined.
  */
 export class NullMessageError extends Error {

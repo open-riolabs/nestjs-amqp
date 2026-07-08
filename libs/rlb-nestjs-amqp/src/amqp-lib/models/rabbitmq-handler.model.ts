@@ -1,4 +1,5 @@
 import { Options } from "amqplib";
+import { RetryPolicyConfig } from "../amqp/retry-policy";
 import { QueueOptions } from "../config/rabbitmq-queue.config";
 import { AssertQueueErrorHandler, BatchMessageErrorHandler, MessageDeserializer, MessageErrorHandler, MessageHandlerErrorBehavior } from "../types";
 
@@ -38,6 +39,12 @@ export interface MessageHandlerOptions {
    * A function that will be called if an error is thrown during processing of an incoming message
    */
   errorHandler?: MessageErrorHandler;
+  /**
+   * Per-subscription retry policy (bounded re-publish + dead-letter/drop). Takes precedence
+   * over the connection-level `retry` config; `errorHandler`/`errorBehavior` take precedence
+   * over this.
+   */
+  retry?: RetryPolicyConfig;
   /**
    * A function that will be called if an error is thrown during queue creation (i.e. during channel.assertQueue)
    */

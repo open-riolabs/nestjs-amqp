@@ -9,6 +9,7 @@ import { AclAction, AclGrant, AclRole } from '../models';
 import { AclActionRepository } from '../repository/acl-action.repository';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
 import { AclRoleRepository } from '../repository/acl-role.repository';
+import { AclInvalidationService } from './acl-invalidation.service';
 import { AclService } from './acl.service';
 
 @Injectable()
@@ -23,9 +24,29 @@ export class AclManagementService {
     private readonly grants: AclGrantRepository,
     private readonly cache: AclCacheService,
     private readonly acl: AclService,
+    private readonly invalidation: AclInvalidationService,
     @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
   ) {
     this.roleMgmtAction = options.roleManagementAction ?? ACL_DEFAULT_ROLE_MANAGEMENT_ACTION;
+  }
+
+  /**
+   * Invalidate one user's cached decisions locally + L2, then broadcast so peer instances flush
+   * their RAM too. Used by grant/revoke (a single user's grants changed).
+   */
+  private async invalidateUser(userId: string): Promise<void> {
+    await this.cache.invalidate(userId);
+    await this.invalidation.broadcast('user', userId);
+  }
+
+  /**
+   * Invalidate ALL cached decisions locally + L2 and drop the roles memo, then broadcast the same
+   * to peers. Used by role/action mutations, which can affect every user's decisions.
+   */
+  private async invalidateAll(): Promise<void> {
+    await this.cache.invalidate();
+    this.acl.invalidateRolesCache();
+    await this.invalidation.broadcast('all');
   }
 
   // grant/revoke are DUAL ops on the single (userId, companyId, resourceId) record: grant ADDS roles
@@ -61,7 +82,7 @@ export class AclManagementService {
     } else {
       result = await this.grants.insert({ userId, roles: Array.from(new Set(roles)), resourceId, companyId, friendlyName });
     }
-    await this.cache.invalidate(userId);
+    await this.invalidateUser(userId);
     return result;
   }
 
@@ -86,7 +107,7 @@ export class AclManagementService {
     const result = remaining.length
       ? await this.grants.updateById(existing._id!, { roles: remaining })
       : await this.grants.removeById(existing._id!);
-    await this.cache.invalidate(userId);
+    await this.invalidateUser(userId);
     return result;
   }
 
@@ -106,7 +127,7 @@ export class AclManagementService {
     if (!name) throw new BadRequestError('name is required');
     const model: Partial<AclAction> = { name, ...(description !== undefined ? { description } : {}) };
     const result = await this.actions.upsertOne({ name }, model);
-    await this.cache.invalidate();
+    await this.invalidateAll();
     return result;
   }
 
@@ -114,7 +135,7 @@ export class AclManagementService {
   async deleteAction(@BrokerParam('body', 'name') name: string): Promise<AclAction> {
     if (!name) throw new BadRequestError('name is required');
     const removed = await this.actions.removeOne({ name });
-    await this.cache.invalidate();
+    await this.invalidateAll();
     return removed;
   }
 
@@ -145,7 +166,7 @@ export class AclManagementService {
     await this.assertActionsExist(actions);
     const model: Partial<AclRole> = { name, actions, ...(description !== undefined ? { description } : {}) };
     const result = await this.roles.upsertOne({ name }, model);
-    await this.cache.invalidate();
+    await this.invalidateAll();
     return result;
   }
 
@@ -155,7 +176,7 @@ export class AclManagementService {
     // (the filter value is ignored) and silently delete it. Fail with 400 instead.
     if (!name) throw new BadRequestError('name is required');
     const removed = await this.roles.removeOne({ name });
-    await this.cache.invalidate();
+    await this.invalidateAll();
     return removed;
   }
 

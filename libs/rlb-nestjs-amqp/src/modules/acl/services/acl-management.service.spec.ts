@@ -14,10 +14,11 @@ class FakeGrants {
 // assertRolesExist queries roles.filter({ name: { $in } }); treat every queried role as existing.
 const rolesRepo = { filter: async (f: any) => (f?.name?.$in ?? []).map((name: string) => ({ name, actions: [] })) } as any;
 const cache = { invalidate: jest.fn() } as any;
+const invalidation = { broadcast: jest.fn() } as any;
 
 const mk = (acl: any, options: any = {}) => {
   const grants = new FakeGrants();
-  const svc = new AclManagementService({} as any, rolesRepo, grants as any, cache, acl as any, options);
+  const svc = new AclManagementService({} as any, rolesRepo, grants as any, cache, acl as any, invalidation, options);
   return { svc, grants, acl };
 };
 const allow = () => ({ checkAction: jest.fn().mockResolvedValue(true) });

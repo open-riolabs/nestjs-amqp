@@ -2,7 +2,21 @@
  *  matching topic and points `gateway.loadConfig.paths` to {topic: this, action: 'gw-path-export'}. */
 export const GATEWAY_ADMIN_TOPIC = 'rlb-gateway-admin';
 
+/**
+ * OPTIONAL dedicated topic for the high-volume `gw-metrics-track` events (one per HTTP request,
+ * each doing DB writes). On the shared admin topic a slow metrics store fills the queue's
+ * prefetch slots and starves `gw-health`, `gw-reload` and every admin RPC behind a growing
+ * backlog. Declare this topic (+ its own queue) in the app's broker config and point
+ * `gateway.metrics.topic` at it to isolate metrics traffic; when not configured, the binding
+ * is skipped and metrics keep flowing on the admin topic as before.
+ */
+export const GATEWAY_METRICS_TOPIC = 'rlb-gateway-metrics';
+
 export const RLB_GW_ADMIN_OPTIONS = 'RLB_GW_ADMIN_OPTIONS';
+
+/** Optional distributed scheduler lock (see GatewaySchedulerLock). Injected with @Optional(). When
+ *  supplied, cluster-wide jobs (rollup, retention) run on ONE instance per tick instead of all. */
+export const RLB_GW_SCHED_LOCK = 'RLB_GW_SCHED_LOCK';
 
 export const GW_ADMIN_ACTIONS = {
   pathCreate: 'gw-path-create',

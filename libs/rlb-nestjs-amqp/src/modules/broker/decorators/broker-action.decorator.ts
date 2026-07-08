@@ -11,7 +11,12 @@ export type BrokerHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
  *  `body-query` → {...params, ...query, ...body} (body wins); `query-body` → query wins. */
 export type BrokerHttpDataSource = 'query' | 'body' | 'params' | 'body-query' | 'query-body';
 
-export function BrokerAction(topic: string, action: string, type?: BrokerActionType): MethodDecorator {
+export function BrokerAction(topic: string, action: string, type?: BrokerActionType, options?: {
+  /** When true, a topic missing from the app's `topics[]` config is fine: the binding is just
+   *  skipped (logged at debug) instead of raising a boot error. Used for opt-in topics like the
+   *  dedicated gateway-metrics queue — the consumer activates only when the topic is configured. */
+  optional?: boolean,
+}): MethodDecorator {
   return (target, propertyKey, descriptor) => {
     const existingMetadata = Reflect.getMetadata(RLB_BROKER_METHOD_METADATA_KEY, target.constructor) || [];
     const params = getParamNames(descriptor.value);
@@ -20,6 +25,7 @@ export function BrokerAction(topic: string, action: string, type?: BrokerActionT
       topic,
       action,
       type,
+      optional: options?.optional,
       params
     });
     Reflect.defineMetadata(RLB_BROKER_METHOD_METADATA_KEY, existingMetadata, target.constructor);

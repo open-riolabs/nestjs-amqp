@@ -204,6 +204,8 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     if (this.subscriptions[client.id][eventDef.name]) return; // already subscribed
 
     const scopeValue = eventDef.scopeClaim ? claims?.[eventDef.scopeClaim] : undefined;
+    const maxBuffered = this.gatewayConfig.ws?.maxBufferedBytes ?? 1048576; // 1 MiB
+    let saturated = false; // logs only on state transitions, not per dropped message
     this.subscriptions[client.id][eventDef.name] = this.subjects[eventDef.name]
       .pipe(filter((o) => this.matches(o, select, eventDef, scopeValue)))
       .subscribe((o) => {
@@ -211,6 +213,22 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
         if (this.isExpired(client)) {
           this.closeExpired(client);
           return;
+        }
+        // Send only on live sockets: ws buffers writes on CONNECTING/CLOSING sockets too.
+        if (client.readyState !== WebSocket.OPEN) return;
+        // Outbound backpressure: a slow-but-alive client (answers pongs, never drains) grows
+        // `bufferedAmount` in gateway RAM without bound. Above the cap, drop THIS message for
+        // THIS client; delivery resumes once the client drains below the cap.
+        if (client.bufferedAmount > maxBuffered) {
+          if (!saturated) {
+            saturated = true;
+            this.logger.warn(`[WS] client ${client.id} saturated on event '${eventDef.name}' (${client.bufferedAmount}B buffered > ${maxBuffered}B): dropping messages until it drains`);
+          }
+          return;
+        }
+        if (saturated) {
+          saturated = false;
+          this.logger.log(`[WS] client ${client.id} drained: resuming delivery for event '${eventDef.name}'`);
         }
         client.send(JSON.stringify({
           topic: `on${eventDef.name.charAt(0).toUpperCase() + eventDef.name.slice(1)}`,
@@ -282,8 +300,20 @@ export class WebSocketService implements OnModuleInit, OnModuleDestroy, OnGatewa
     this.logger.log('Initializing WebSocket service');
     const extEvents: WebSocketEvent[] = [];
     if (this.gatewayConfig.loadConfig?.events) {
-      const o = await this.broker.requestData(this.gatewayConfig.loadConfig.events.topic, this.gatewayConfig.loadConfig.events.action, {});
-      extEvents.push(...o);
+      const src = this.gatewayConfig.loadConfig.events;
+      // Fail-soft like the HTTP paths pull: a slow/down events source (microservice or its
+      // DB) must degrade to YAML-only events, NOT abort onModuleInit and kill the whole
+      // gateway at boot. Remote events stay missing until a restart — logged loudly.
+      try {
+        const o = await this.broker.requestData(src.topic, src.action, {});
+        if (Array.isArray(o)) {
+          extEvents.push(...o);
+        } else {
+          this.logger.warn(`[WS] events source ${src.topic}/${src.action} returned a non-array reply; ignoring it.`);
+        }
+      } catch (error) {
+        this.logger.warn(`[WS] failed to pull remote events (${src.topic}/${src.action}): ${error?.message}. Keeping YAML events only — remote events will be missing until restart.`);
+      }
     }
     this.wsEvents = [...this.gatewayConfig?.events || [], ...extEvents]; // load events from config and from broker
     this.wsEvents.forEach(e => e.name = e.name.trim());

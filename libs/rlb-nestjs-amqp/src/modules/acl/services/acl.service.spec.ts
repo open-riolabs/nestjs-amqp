@@ -18,7 +18,8 @@ const cacheFake = () => {
     set: jest.fn(async (u: string, a: string, v: boolean) => { store.set(`${u}::${a}`, v); }),
   } as any;
 };
-const mk = () => new AclService(grantsRepo(), rolesRepo(), cacheFake());
+const options = { cache: { ramTtlMs: 30000 } } as any;
+const mk = () => new AclService(grantsRepo(), rolesRepo(), cacheFake(), options);
 
 describe('AclService.checkAction (single action-based primitive)', () => {
   it('exact (companyId, resourceId) + role-grants-the-action → true', async () => {
@@ -76,7 +77,7 @@ describe('AclService.checkAction (single action-based primitive)', () => {
 
   it('serves a cached decision on the second identical call (resolves roles once)', async () => {
     const roles = rolesRepo();
-    const svc = new AclService(grantsRepo(), roles, cacheFake());
+    const svc = new AclService(grantsRepo(), roles, cacheFake(), options);
     await svc.checkAction('u1', { companyId: 'c1', resourceId: 'r1' }, 'role-management');
     await svc.checkAction('u1', { companyId: 'c1', resourceId: 'r1' }, 'role-management');
     expect(roles.list).toHaveBeenCalledTimes(1);

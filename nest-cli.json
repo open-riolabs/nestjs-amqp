@@ -37,6 +37,15 @@
         "tsConfigPath": "sample/config-sample/gateway-db/tsconfig.app.json"
       }
     },
+    "gateway-hardening": {
+      "type": "application",
+      "root": "sample/config-sample/gateway-hardening",
+      "entryFile": "main",
+      "sourceRoot": "sample/config-sample/gateway-hardening/src",
+      "compilerOptions": {
+        "tsConfigPath": "sample/config-sample/gateway-hardening/tsconfig.app.json"
+      }
+    },
     "calculator.ms": {
       "type": "application",
       "root": "sample/config-sample/calculator.ms",

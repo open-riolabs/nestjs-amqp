@@ -33,6 +33,8 @@ export class MetadataScannerService implements OnModuleInit {
         service?: any;
         method?: Function;
         type?: string;
+        /** From @BrokerAction options: missing topic config → skip binding instead of boot error. */
+        optional?: boolean;
         auth?: { allowAnonymous?: boolean, authName?: string, methodName?: string, actions?: string | string[], httpName?: string; }[];
         // `name` comes from the @BrokerHTTP options; `auth`/`allowAnonymous`/`actions` are resolved
         // onto each route by pairAuthToRoutes (paired to a @BrokerAuth by name).
@@ -91,6 +93,7 @@ export class MetadataScannerService implements OnModuleInit {
                   service: instance,
                   method: instance[method.methodName],
                   type: method.type,
+                  optional: method.optional,
                   auth: [...allAuthForMethod],
                   http: [...httpMetadata],
                   params: this.removeDefaultsFromParams(method.params as string[] || []).reduce((acc, param, index) => {
@@ -115,7 +118,13 @@ export class MetadataScannerService implements OnModuleInit {
       }
       const cfgTopic = this.topicConfigurations.find(t => t.name === topic);
       if (!cfgTopic) {
-        this.logger.error(`Topic ${topic} not found in configuration`);
+        // A topic whose actions are ALL declared optional is an opt-in binding (e.g. the
+        // dedicated gateway-metrics queue): skipping it silently is the expected behavior.
+        if (Object.values(actions).every(a => a.optional)) {
+          this.logger.debug(`Optional topic ${topic} not configured — skipping its bindings`);
+        } else {
+          this.logger.error(`Topic ${topic} not found in configuration`);
+        }
         continue;
       }
       const queue = this.brokerConfig.queues.find(q => q.name === cfgTopic.queue);
@@ -139,38 +148,47 @@ export class MetadataScannerService implements OnModuleInit {
               this.logger.error(`Action ${msg.action} not managed by any service`);
               return new Nack(false);
             }
-            for (const [param, meta] of Object.entries(method.params)) {
-              let transform: (o: any, name: string) => Promise<any> = (o, name) => Promise.resolve(o);
-              if (meta.pipe) {
-                transform = async (o: any, name: string) => {
-                  const result = meta.pipe.transform(o, { type: 'custom', data: name });
-                  return result instanceof Promise ? await result : result;
-                };
+            // Param resolution (incl. validation pipes) fails DETERMINISTICALLY for a given
+            // payload: retrying is pointless, so the failure is returned as an error result
+            // (error reply for RPC callers, ack+log otherwise) instead of being thrown into
+            // the connection's retry/requeue path.
+            try {
+              for (const [param, meta] of Object.entries(method.params)) {
+                let transform: (o: any, name: string) => Promise<any> = (o, name) => Promise.resolve(o);
+                if (meta.pipe) {
+                  transform = async (o: any, name: string) => {
+                    const result = meta.pipe.transform(o, { type: 'custom', data: name });
+                    return result instanceof Promise ? await result : result;
+                  };
+                }
+                if (meta.source === 'header') {
+                  args.push(await transform(headers[meta.name || param], meta.name || param));
+                  continue;
+                }
+                if (meta.source === 'body-full') {
+                  args.push(await transform(payload, ''));
+                  continue;
+                }
+                if (meta.source === 'body') {
+                  args.push(await transform(payload[meta.name || param], meta.name || param));
+                  continue;
+                }
+                if (meta.source === 'tag') {
+                  args.push(await transform(rawMessage.fields.consumerTag, 'tag'));
+                  continue;
+                }
+                if (meta.source === 'action') {
+                  args.push(await transform(msg.action, 'action'));
+                  continue;
+                }
+                if (meta.source === 'topic') {
+                  args.push(await transform(topic, 'topic'));
+                  continue;
+                }
               }
-              if (meta.source === 'header') {
-                args.push(await transform(headers[meta.name || param], meta.name || param));
-                continue;
-              }
-              if (meta.source === 'body-full') {
-                args.push(await transform(payload, ''));
-                continue;
-              }
-              if (meta.source === 'body') {
-                args.push(await transform(payload[meta.name || param], meta.name || param));
-                continue;
-              }
-              if (meta.source === 'tag') {
-                args.push(await transform(rawMessage.fields.consumerTag, 'tag'));
-                continue;
-              }
-              if (meta.source === 'action') {
-                args.push(await transform(msg.action, 'action'));
-                continue;
-              }
-              if (meta.source === 'topic') {
-                args.push(await transform(topic, 'topic'));
-                continue;
-              }
+            } catch (err) {
+              this.logger.warn(`Parameter resolution failed for action '${msg.action}' on topic ${cfgTopic.name}: ${err.message}`);
+              return { success: false, error: this.utils.error2Object(err, this.appConfig.environment !== 'production') };
             }
             try {
               const result = await this.executeFunction<Response>(method.service, method.method, args);
@@ -186,6 +204,7 @@ export class MetadataScannerService implements OnModuleInit {
           exchange: eName,
           routingKey: kName,
           errorBehavior: cfgTopic.errorBehavior,
+          retry: cfgTopic.retry,
         });
       } catch (error) {
         this.logger.error(`Error subscribing [${topic}] to ${eName}:${qName}:${kName}`);

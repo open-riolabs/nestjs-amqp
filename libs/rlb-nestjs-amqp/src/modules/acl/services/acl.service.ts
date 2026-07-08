@@ -1,26 +1,54 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { UnauthorizedError } from '../../../common';
 import { BrokerAction, BrokerParam } from '../../broker';
 import { IAclRoleService } from '../../proxy/services/acl.service';
 import { AclResourceContext, grantMatchesResource } from '../auth-match';
 import { AclCacheService } from '../cache/acl-cache.service';
-import { ACL_ACTIONS, ACL_TOPIC } from '../const';
-import { AclResourceGroup } from '../models';
+import { AclModuleOptions } from '../config/acl.config';
+import { ACL_ACTIONS, ACL_TOPIC, RLB_ACL_OPTIONS } from '../const';
+import { AclResourceGroup, AclRole } from '../models';
 import { AclGrantRepository } from '../repository/acl-grant.repository';
 import { AclRoleRepository } from '../repository/acl-role.repository';
 
 @Injectable()
 export class AclService implements IAclRoleService {
   private readonly logger = new Logger(AclService.name);
+  /** Short-lived memo of the whole roles collection, so a cache-miss check does not re-scan it every
+   *  time. Bounded staleness matches the decision cache; role mutations clear it (invalidateRolesCache). */
+  private rolesCache?: { data: AclRole[]; exp: number; };
+  private readonly rolesTtlMs: number;
 
   constructor(
     private readonly grants: AclGrantRepository,
     private readonly roles: AclRoleRepository,
     private readonly cache: AclCacheService,
-  ) { }
+    @Inject(RLB_ACL_OPTIONS) options: AclModuleOptions,
+  ) {
+    this.rolesTtlMs = options?.cache?.ramTtlMs ?? 30_000;
+  }
 
   private toList(value: string | string[]): string[] {
     return Array.isArray(value) ? value : (value ? [value] : []);
+  }
+
+  /**
+   * The roles collection, memoized for `rolesTtlMs`. `checkAction` needs "which roles include this
+   * action", which has no targeted query (portable, no array-contains filter), so it would otherwise
+   * scan the whole collection on every cache miss. Cleared by role/action mutations
+   * (invalidateRolesCache) locally and — when configured — across instances via the invalidation
+   * broadcast, so a role change is never masked for longer than the TTL.
+   */
+  private async listRolesCached(): Promise<AclRole[]> {
+    const now = Date.now();
+    if (this.rolesCache && this.rolesCache.exp > now) return this.rolesCache.data;
+    const data = (await this.roles.list()) || [];
+    this.rolesCache = { data, exp: now + this.rolesTtlMs };
+    return data;
+  }
+
+  /** Drop the memoized roles list; the next resolution reloads from the DB. */
+  invalidateRolesCache(): void {
+    this.rolesCache = undefined;
   }
 
   /**
@@ -38,7 +66,7 @@ export class AclService implements IAclRoleService {
     if (cached !== null) return cached;
     // Resolve the requested action(s) to the role names that include any of them. JS-side
     // resolution keeps this portable across consumer repos (no array-contains filter needed).
-    const allRoles = await this.roles.list();
+    const allRoles = await this.listRolesCached();
     const roleNames = new Set(
       (allRoles || []).filter((r) => (r.actions || []).some((a) => actions.includes(a))).map((r) => r.name),
     );
@@ -74,6 +102,10 @@ export class AclService implements IAclRoleService {
     try {
       if (!userId) throw new UnauthorizedError('User ID is required');
       const acls = await this.grants.filter({ userId });
+      // Resolve role → actions ONCE from the memoized roles list instead of one
+      // getActionsByNames() query per grant (the previous N+1).
+      const actionsByRole = new Map<string, string[]>();
+      for (const r of await this.listRolesCached()) actionsByRole.set(r.name, r.actions || []);
       const grouped: Record<string, AclResourceGroup> = {};
       for (const item of acls || []) {
         const companyKey = item.companyId ?? '';
@@ -86,7 +118,7 @@ export class AclService implements IAclRoleService {
           grouped[companyKey].resources.push(resource);
         }
         const roleNames = Array.isArray(item.roles) ? item.roles : [item.roles];
-        const actions = await this.roles.getActionsByNames(roleNames);
+        const actions = roleNames.flatMap((rn) => actionsByRole.get(rn) || []);
         resource.actions.push(...actions);
         resource.actions = Array.from(new Set(resource.actions));
       }

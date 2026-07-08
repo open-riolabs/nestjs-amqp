@@ -3,6 +3,7 @@ export * from './const';
 export * from './gateway-admin.module';
 export * from './health';
 export * from './models';
+export * from './scheduler-lock';
 export * from './repository/auth-provider.repository';
 export * from './repository/http-metric.repository';
 export * from './repository/http-path.repository';

@@ -64,4 +64,15 @@ describe('AclCacheService', () => {
     await svc.set('u', 'a', true);
     expect(await svc.get('u', 'a')).toBeNull();
   });
+
+  it('bounds the RAM cache to maxRamEntries, evicting the oldest first', async () => {
+    const svc = new AclCacheService({ cache: { ramTtlMs: 60_000, maxRamEntries: 3 } });
+    await svc.set('u', 'a', true);
+    await svc.set('u', 'b', true);
+    await svc.set('u', 'c', true);
+    await svc.set('u', 'd', true); // over cap → evicts the oldest ('a')
+    expect(await svc.get('u', 'a')).toBeNull(); // evicted
+    expect(await svc.get('u', 'd')).toBe(true); // most recent kept
+    expect(await svc.get('u', 'c')).toBe(true);
+  });
 });

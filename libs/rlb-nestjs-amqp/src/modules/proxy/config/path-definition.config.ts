@@ -79,6 +79,14 @@ export interface WebSocketGatewayOptions {
   allowedOrigins?: string[];
   /** Max size (bytes) of an inbound client message; larger ones are dropped (default 16384). */
   maxMessageBytes?: number;
+  /**
+   * Outbound backpressure cap (bytes, default 1 MiB): when a client's ws send buffer
+   * (`bufferedAmount`) exceeds this, further event messages for that client are DROPPED
+   * (a slow-but-pong-responsive client would otherwise grow gateway memory without bound).
+   * Delivery resumes as soon as the client drains below the cap. Size it to
+   * expected message size × tolerable burst.
+   */
+  maxBufferedBytes?: number;
 }
 
 export interface GatewayConfigLoader {
@@ -113,4 +121,30 @@ export interface GatewayConfig {
    * e.g. { topic: 'rlb-gateway-admin', action: 'gw-metrics-track' }. Omit to disable.
    */
   metrics?: GatewayConfigSource;
+  /**
+   * Multipart upload limits. Uploads are buffered in gateway RAM (memoryStorage) and then
+   * re-encoded into the AMQP message (~2-3x the file size per request), so these caps bound
+   * gateway memory AND the resulting AMQP frame size (mind the broker's max_message_size).
+   * Requests exceeding a limit are rejected with 413. Defaults: 25 MB/file, 10 files.
+   */
+  upload?: {
+    /** Max size of a single uploaded file, in MB (default 25). */
+    maxFileSizeMb?: number;
+    /** Max number of files per request (default 10). */
+    maxFiles?: number;
+  };
+  /**
+   * Max number of HTTP requests processed concurrently by this instance. When the number of
+   * in-flight requests reaches this cap, further requests are rejected immediately with 503
+   * (Retry-After: 1) instead of piling up unbounded in-flight RPCs (which amplify memory and the
+   * RPC correlation cost). Omit/0 ⇒ no cap (default). Size it to the instance's real capacity.
+   */
+  maxConcurrentRequests?: number;
+  /**
+   * Max size of a NON-multipart request body (JSON/urlencoded/text/raw), e.g. '5mb' or a number of
+   * bytes. Multipart uploads are bounded separately by `upload`. Enforcement is applied by the app's
+   * body parser (see the gateway bootstrap, which reads this value); requests over the limit get 413.
+   * Omit to keep the framework default (~100kb).
+   */
+  maxBodyBytes?: number | string;
 }

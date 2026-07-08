@@ -1,5 +1,6 @@
 import { AmqpConnectionManagerOptions } from "amqp-connection-manager";
 import { ConsumeMessage, Options } from "amqplib";
+import { RetryPolicyConfig } from "../amqp/retry-policy";
 import { MessageDeserializer, MessageErrorHandler, MessageHandlerErrorBehavior, MessageSerializer, RabbitMQChannels, RabbitMQHandlers, RabbitMQUriConfig } from "../types";
 import { RabbitMQExchangeBindingConfig, RabbitMQExchangeConfig } from "./rabbitmq-exchange.config";
 import { RabbitMQQueueConfig } from "./rabbitmq-queue.config";
@@ -41,8 +42,17 @@ export interface RabbitMQConfig {
   queues?: RabbitMQQueueConfig[];
   defaultRpcTimeout?: number;
   defaultExchangeType?: string;
+  /** Custom error handler for RPC consumers. Overrides `retry`; prefer `retry` for new configs. */
   defaultRpcErrorHandler?: MessageErrorHandler;
+  /** Legacy ACK/NACK/REQUEUE behavior for subscribe consumers. Overrides the built-in retry default; prefer `retry`. */
   defaultSubscribeErrorBehavior?: MessageHandlerErrorBehavior;
+  /**
+   * Default retry policy for every consumer (overridable per topic via `topics[].retry` and per
+   * subscription via handler options). When neither this nor a legacy error behavior is
+   * configured, a safe built-in default applies: 5 attempts, no delay, then drop with an error
+   * log — replacing the old implicit infinite nack-requeue (poison-message hot loop).
+   */
+  retry?: RetryPolicyConfig;
   connectionInitOptions?: ConnectionInitOptions;
   connectionManagerOptions?: AmqpConnectionManagerOptions;
   registerHandlers?: boolean;

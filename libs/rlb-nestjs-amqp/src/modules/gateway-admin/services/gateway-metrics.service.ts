@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BrokerAction, BrokerParam } from '../../broker';
-import { GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS } from '../const';
+import { GATEWAY_ADMIN_TOPIC, GATEWAY_METRICS_TOPIC, GW_ADMIN_ACTIONS } from '../const';
 import { HttpMetric, HttpMetricPoint, HttpMetricRollup, MetricSeriesBucket, MetricSummary, TrackCallInput } from '../models';
 import { HttpMetricRepository } from '../repository/http-metric.repository';
 import { buildSeries, buildSummary, toPrometheus } from '../util/metrics';
@@ -12,7 +12,12 @@ export class GatewayMetricsService {
   constructor(private readonly repo: HttpMetricRepository) { }
 
   /** Fire-and-forget per-call event: the gateway publishes one of these per request. Updates the
-   *  rolling counters AND appends a raw data point so the backend can build time-series. */
+   *  rolling counters AND appends a raw data point so the backend can build time-series.
+   *  Also bound to the OPTIONAL dedicated metrics topic: declaring `rlb-gateway-metrics`
+   *  (+ its own queue) in the broker config and pointing `gateway.metrics.topic` at it moves
+   *  this high-volume traffic off the admin queue, so a slow metrics DB can no longer starve
+   *  `gw-health` / `gw-reload` / admin RPCs. Never throws (fail-soft by design). */
+  @BrokerAction(GATEWAY_METRICS_TOPIC, GW_ADMIN_ACTIONS.metricsTrack, 'event', { optional: true })
   @BrokerAction(GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS.metricsTrack, 'event')
   async track(@BrokerParam('body-full') input: TrackCallInput): Promise<void> {
     try {

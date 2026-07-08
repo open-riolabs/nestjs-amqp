@@ -52,11 +52,12 @@ const mkRes = () => {
   return res;
 };
 
-/** Registers the path against a fake router and returns the express handler. */
+/** Registers the path against a fake router and returns the express handler (the last
+ *  argument passed to the route method, whatever middlewares precede it). */
 const handlerFor = (svc: HttpHandlerService, path: PathDefinition) => {
   let handler: any;
   const router: any = {};
-  router[path.method.toLowerCase()] = (_p: string, _mw: any, h: any) => { handler = h; };
+  router[path.method.toLowerCase()] = (_p: string, ...handlers: any[]) => { handler = handlers[handlers.length - 1]; };
   svc.registerPath(path, router);
   return handler;
 };
@@ -107,6 +108,17 @@ describe('HttpHandlerService — auth/auth gate', () => {
     const res = mkRes();
     await h(mkReq(), res);
     expect(res.statusCode).toBe(403);
+    expect(broker.requestData).not.toHaveBeenCalled();
+  });
+
+  it('auth+actions, ACL store errors: 503 (fail-closed), never hangs, broker never called', async () => {
+    const { svc, broker, auth } = mkService();
+    auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
+    auth.checkActions.mockRejectedValue(new Error('mongo down')); // ACL backend outage
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['admin'] }));
+    const res = mkRes();
+    await h(mkReq(), res); // must resolve (answer sent), not reject/hang
+    expect(res.statusCode).toBe(503);
     expect(broker.requestData).not.toHaveBeenCalled();
   });
 

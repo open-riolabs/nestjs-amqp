@@ -9,22 +9,23 @@ import { defaultAssertQueueErrorHandler } from '..';
 import { RabbitMQQueueConfig } from '../config/rabbitmq-queue.config';
 import { ConnectionInitOptions, RabbitMQAlternateExchangeConfig, RabbitMQChannelConfig, RabbitMQConfig } from '../config/rabbitmq.config';
 import { CorrelationMessage } from '../models/correlation-message.model';
-import { ChannelNotAvailableError, ConnectionNotAvailableError, NullMessageError, RpcTimeoutError, } from '../models/errors.model';
+import { ChannelNotAvailableError, ConnectionNotAvailableError, MessageDeserializationError, NullMessageError, RpcTimeoutError, } from '../models/errors.model';
 import { Nack } from '../models/nack.model';
 import { MessageHandlerOptions, RequestOptions } from '../models/rabbitmq-handler.model';
 import { SubscriptionResult } from '../models/subscription-result.model';
 import { ConsumeOptions, Consumer, ConsumerHandler, ConsumerTag, DIRECT_REPLY_QUEUE, MessageDeserializer, MessageHandlerErrorBehavior, RpcSubscriberHandler, SubscriberHandler } from '../types';
 import { getHandlerForLegacyBehavior } from './errorBehaviors';
+import { createRetryErrorHandler, DEFAULT_RETRY_POLICY } from './retry-policy';
 import { converUriConfigObjectsToUris, matchesRoutingKey, merge, validateRabbitMqUris } from './utils';
 
 const defaultConfig = {
   name: 'default',
   prefetchCount: 10,
   defaultExchangeType: 'topic',
-  defaultRpcErrorHandler: getHandlerForLegacyBehavior(
-    MessageHandlerErrorBehavior.REQUEUE,
-  ),
-  defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.REQUEUE,
+  // NOTE: defaultRpcErrorHandler / defaultSubscribeErrorBehavior deliberately have NO
+  // built-in default anymore. Their absence means "the user configured nothing" and the
+  // bounded retry policy applies (see resolveErrorHandler) — the old implicit REQUEUE
+  // default hot-looped poison messages forever. Explicitly configured values still win.
   exchanges: [],
   exchangeBindings: [],
   queues: [],
@@ -81,10 +82,10 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
       replyQueues: config.replyQueues || {},
     };
 
-    let name = config?.connectionManagerOptions?.connectionOptions?.clientProperties?.connection_name;
-    if (name) {
-      name += '-' + process.pid;
-    }
+    // NOTE: the per-instance uniquification of `connection_name` happens in
+    // BrokerModule.withInstanceUniqueConnectionName, on the shared config object,
+    // BEFORE it is injected here — so connection, broadcast queues and WS queues
+    // all derive their names from the same already-unique value.
     const cred = config.connectionManagerOptions.connectionOptions.credentials as {
       mechanism: string; username: string; password: string; response: () => Buffer;
     };
@@ -267,6 +268,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     channel: ConfirmChannel,
   ): Promise<ConsumerTag> {
     const queue = await this.setupQueue(rpcOptions, channel);
+    const errorHandler = this.resolveErrorHandler(rpcOptions, queue, 'rpc');
 
     const { consumerTag }: { consumerTag: ConsumerTag; } = await channel.consume(
       queue,
@@ -287,7 +289,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
             return;
           }
 
-          const result = this.deserializeMessage<T>(msg, rpcOptions);
+          const result = this.tryDeserializeMessage<T>(msg, rpcOptions);
           const response = await handler(result.message, msg, result.headers);
 
           if (response instanceof Nack) {
@@ -310,15 +312,13 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
           if (msg == null) {
             return;
           } else {
-            const errorHandler =
-              rpcOptions.errorHandler ||
-              this.config.defaultRpcErrorHandler ||
-              getHandlerForLegacyBehavior(
-                rpcOptions.errorBehavior ||
-                this.config.defaultSubscribeErrorBehavior,
-              );
-
-            await errorHandler(channel, msg, e);
+            try {
+              await errorHandler(channel, msg, e);
+            } catch (handlerError) {
+              // See setupSubscriberChannel: a throwing error handler must not become an
+              // unhandled rejection (process crash); redelivery covers the message.
+              this.logger.error(`Error handler failed for queue '${queue}': ${(handlerError as Error)?.message}`);
+            }
           }
         }
       }),
@@ -592,6 +592,15 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
       return;
     }
 
+    // A reply with no correlationId cannot be matched to any pending request; dropping it here
+    // avoids a `.toString()` on undefined throwing inside this noAck consume callback (which,
+    // being noAck, has already lost the message) and taking down the reply pump.
+    const correlationId = msg.properties?.correlationId;
+    if (correlationId == null) {
+      this.logger.warn('Received a direct-reply message with no correlationId; dropping it.');
+      return;
+    }
+
     // Check that the Buffer has content, before trying to parse it
     const message =
       msg.content.length > 0
@@ -599,7 +608,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
         : undefined;
 
     const correlationMessage: CorrelationMessage = {
-      correlationId: msg.properties.correlationId.toString(),
+      correlationId: correlationId.toString(),
       requestId: msg.properties?.headers?.['X-Request-ID']?.toString(),
       message: message,
     };
@@ -608,10 +617,16 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
   }
   ////
 
+  /** Once true (graceful drain), no consumer may be (re)created for the process lifetime. */
+  private consumersCanceled = false;
+
   private async consumerFactory(
     msgOptions: MessageHandlerOptions,
     setupFunction: (channel: ConfirmChannel, msgOptions: MessageHandlerOptions,) => Promise<string>
   ): Promise<SubscriptionResult> {
+    if (this.consumersCanceled) {
+      throw new Error(`Consumers were canceled (graceful drain): refusing to subscribe to queue '${msgOptions.queue}'`);
+    }
     return new Promise((res) => {
       // Use globally configured consumer tag.
       // See https://github.com/golevelup/nestjs/issues/904
@@ -631,6 +646,12 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
 
       this.selectManagedChannel(msgOptions?.queueOptions?.channel).addSetup(
         async (channel: ConfirmChannel) => {
+          // Setup functions re-run on EVERY reconnect: after a graceful drain the
+          // consumer must NOT resurrect (messages would be consumed by an instance
+          // whose handlers are already unregistered — and silently lost).
+          if (this.consumersCanceled) {
+            return;
+          }
           const consumerTag = await setupFunction(
             channel,
             // Override global configuration by merging the global/default
@@ -658,6 +679,70 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     };
   }
 
+  /** Wait-queues already asserted in this process (re-asserted on reconnect via addSetup). */
+  private readonly assertedRetryWaitQueues = new Set<string>();
+
+  /**
+   * TTL wait-queue for delayed retries: a copy parked here for `delayMs` is dead-lettered
+   * back to the work queue through the default exchange. `expires` self-cleans the queue
+   * when a policy changes or the instance goes away (safe: messages leave after
+   * `delayMs` < `expires`).
+   */
+  private async assertRetryWaitQueue(waitQueue: string, delayMs: number, targetQueue: string): Promise<void> {
+    if (this.assertedRetryWaitQueues.has(waitQueue)) return;
+    this.assertedRetryWaitQueues.add(waitQueue);
+    await this._managedChannel.addSetup((channel: ConfirmChannel) =>
+      channel.assertQueue(waitQueue, {
+        durable: true,
+        messageTtl: delayMs,
+        deadLetterExchange: '',
+        deadLetterRoutingKey: targetQueue,
+        expires: delayMs + 60_000,
+      }),
+    );
+  }
+
+  /**
+   * Error-handler resolution for a consumer, most specific first:
+   * subscription `errorHandler` > subscription `retry` > subscription legacy `errorBehavior` >
+   * connection `retry` > configured `defaultRpcErrorHandler` (rpc only) > configured
+   * `defaultSubscribeErrorBehavior` > built-in bounded retry (5 attempts, no delay, drop).
+   * The old implicit infinite-REQUEUE default is gone: it hot-looped poison messages forever.
+   * Legacy behaviors are case-normalized ('ack' → ACK) — YAML configs use lowercase.
+   */
+  private resolveErrorHandler(options: MessageHandlerOptions, queue: string, kind: 'rpc' | 'subscribe') {
+    const legacy = (behavior: MessageHandlerErrorBehavior) =>
+      getHandlerForLegacyBehavior(String(behavior).toUpperCase() as MessageHandlerErrorBehavior);
+    const retry = (policy: typeof options.retry) =>
+      createRetryErrorHandler(queue, policy, {
+        publish: this.publish.bind(this),
+        assertRetryWaitQueue: this.assertRetryWaitQueue.bind(this),
+        logger: {
+          warn: (m: string) => this.logger.warn(m),
+          error: (m: string) => this.logger.error(m),
+        },
+      });
+    if (options.errorHandler) return options.errorHandler;
+    if (options.retry) return retry(options.retry);
+    if (options.errorBehavior) return legacy(options.errorBehavior);
+    if (this.config.retry) return retry(this.config.retry);
+    if (kind === 'rpc' && this.config.defaultRpcErrorHandler) return this.config.defaultRpcErrorHandler;
+    if (this.config.defaultSubscribeErrorBehavior) return legacy(this.config.defaultSubscribeErrorBehavior);
+    return retry(DEFAULT_RETRY_POLICY);
+  }
+
+  /** Deserialization failures get a typed, NON-retriable error (see retry policy). */
+  private tryDeserializeMessage<T>(
+    msg: ConsumeMessage,
+    options: { allowNonJsonMessages?: boolean; deserializer?: MessageDeserializer },
+  ) {
+    try {
+      return this.deserializeMessage<T>(msg, options);
+    } catch (e) {
+      throw new MessageDeserializationError(e);
+    }
+  }
+
   private async setupSubscriberChannel<T>(
     handler: SubscriberHandler<T>,
     msgOptions: MessageHandlerOptions,
@@ -666,6 +751,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     consumeOptions?: ConsumeOptions,
   ): Promise<ConsumerTag> {
     const queue = await this.setupQueue(msgOptions, channel);
+    const errorHandler = this.resolveErrorHandler(msgOptions, queue, 'subscribe');
 
     const { consumerTag }: { consumerTag: ConsumerTag; } = await channel.consume(
       queue,
@@ -675,7 +761,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
             throw new NullMessageError();
           }
 
-          const result = this.deserializeMessage<T>(msg, msgOptions);
+          const result = this.tryDeserializeMessage<T>(msg, msgOptions);
           const response = await handler(result.message, msg, result.headers);
 
           if (response instanceof Nack) {
@@ -698,14 +784,14 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
           if (msg === null) {
             return;
           } else {
-            const errorHandler =
-              msgOptions.errorHandler ||
-              getHandlerForLegacyBehavior(
-                msgOptions.errorBehavior ||
-                this.config.defaultSubscribeErrorBehavior,
-              );
-
-            await errorHandler(channel, msg, e);
+            try {
+              await errorHandler(channel, msg, e);
+            } catch (handlerError) {
+              // An error handler that throws (e.g. nack on a channel that died mid-flight)
+              // would otherwise become an unhandled rejection and crash the process; the
+              // unacked message is redelivered on reconnect anyway.
+              this.logger.error(`Error handler failed for queue '${queue}': ${(handlerError as Error)?.message}`);
+            }
           }
         }
       }),
@@ -875,16 +961,29 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     if (!consumer) {
       return;
     }
-    const wrapper = this.selectManagedChannel(consumer.msgOptions?.queueOptions?.channel);
     try {
-      await wrapper.cancel(consumerTag);
+      // basic.cancel MUST go through the raw channel that created the consumer:
+      // ChannelWrapper.cancel() only knows consumers created via wrapper.consume()
+      // (never used here), so it silently cancelled NOTHING and the instance kept
+      // consuming — losing messages during graceful shutdown once the handler
+      // registry was cleared. A stale entry from before a reconnect fails the
+      // cancel on its dead channel: logged and dropped (the consumer it refers
+      // to no longer exists anyway).
+      await consumer.channel.cancel(consumerTag);
     } catch (err) {
       this.logger.warn?.(`Failed to cancel consumer ${consumerTag}: ${(err as Error)?.message}`);
     }
     delete this._consumers[consumerTag];
   }
 
+  /**
+   * Cancels every live consumer AND prevents their resurrection: the consume
+   * setup functions re-run on every reconnect, so without the `consumersCanceled`
+   * latch a reconnect after a graceful drain would silently resubscribe
+   * everything. The latch is process-final, like BrokerService's `detached`.
+   */
   public async cancelAllConsumers(): Promise<void> {
+    this.consumersCanceled = true;
     const tags = Object.keys(this._consumers);
     await Promise.all(tags.map((tag) => this.cancelConsumer(tag)));
   }
@@ -893,7 +992,8 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
     const managedChannels = Object.values(this._managedChannels);
 
     // First cancel all consumers so they stop getting new messages
-    await Promise.all(managedChannels.map((channel) => channel.cancelAll()));
+    // (via basic.cancel on the owning channels — see cancelConsumer).
+    await this.cancelAllConsumers();
 
     // Wait for all the outstanding messages to be processed
     if (this.outstandingMessageProcessing.size) {

@@ -6,6 +6,8 @@ export const ACL_TOPIC = 'rlb-acl';
 export const RLB_ACL_OPTIONS = 'RLB_ACL_OPTIONS';
 /** Optional L2 cache store provider (consumer-supplied). Injected with @Optional(). */
 export const RLB_ACL_CACHE_STORE = 'RLB_ACL_CACHE_STORE';
+/** Optional cross-instance cache-invalidation config (AclModuleOptions.invalidation). @Optional(). */
+export const RLB_ACL_INVALIDATION = 'RLB_ACL_INVALIDATION';
 
 /** Default action a caller must hold (on the target company/resource) to grant or revoke.
  *  Override per-deployment via `AclModuleOptions.roleManagementAction`. */

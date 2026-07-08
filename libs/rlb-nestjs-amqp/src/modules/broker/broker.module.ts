@@ -1,4 +1,5 @@
 import { ConfigurableModuleBuilder, DynamicModule, Global, Module, Provider, Type } from '@nestjs/common';
+import { hostname } from 'os';
 import { AmqpConnection } from '@open-rlb/nestjs-amqp/amqp-lib';
 import { RabbitMQConfig } from '../../amqp-lib/config/rabbitmq.config';
 import { BrokerTopic } from './config/topics.config';
@@ -56,6 +57,38 @@ export class BrokerModule {
     } as RabbitMQConfig;
   }
 
+  /**
+   * Broadcast queues (`${topic}-${connection_name}`) and the reload/auth-reload signaling
+   * derive PER-INSTANCE queue names from `connection_name`. Two instances sharing the same
+   * name silently share one queue, turning broadcasts into competing consumers (each instance
+   * sees ~1/N of the signals). The configured name is therefore treated as a LOGICAL name and
+   * a per-instance suffix is appended here, once, where the config object is built — so the
+   * AMQP connection, the broadcast queue naming (BrokerService) and the WS queue naming all
+   * see the same unique value. Suffix = `<hostname>-<pid>`: hostname is unique per
+   * container/pod (under Docker/K8s pid is always 1, so pid alone would NOT disambiguate);
+   * pid covers multiple processes on the same bare-metal host.
+   */
+  private static withInstanceUniqueConnectionName(options: RabbitMQConfig): RabbitMQConfig {
+    const cmo: any = options.connectionManagerOptions || {};
+    const co: any = cmo.connectionOptions || {};
+    const cp: any = co.clientProperties || {};
+    if (!cp.connection_name) return options; // no logical name configured: nothing to uniquify
+    return {
+      ...options,
+      connectionManagerOptions: {
+        ...cmo,
+        connectionOptions: {
+          ...co,
+          clientProperties: { ...cp, connection_name: `${cp.connection_name}-${hostname()}-${process.pid}` },
+        },
+      },
+    } as RabbitMQConfig;
+  }
+
+  private static buildOptions(options: RabbitMQConfig): RabbitMQConfig {
+    return BrokerModule.withInstanceUniqueConnectionName(BrokerModule.withServiceNameConnection(options));
+  }
+
   static forRoot(
     options: RabbitMQConfig,
     topics: BrokerTopic[],
@@ -70,7 +103,7 @@ export class BrokerModule {
       throw new Error('At least one topic is required');
     }
 
-    const opts = BrokerModule.withServiceNameConnection(options);
+    const opts = BrokerModule.buildOptions(options);
     const amqpOptionsProvider: Provider = { provide: RLB_AMQP_BROKER_OPTIONS, useValue: opts };
     const topicOptionsProvider: Provider = { provide: RLB_AMQP_TOPIC_CONNECTION, useValue: topics };
     const appOptionsProvider: Provider = { provide: RLB_AMQP_APP_OPTIONS, useValue: appOptions };
@@ -110,7 +143,7 @@ export class BrokerModule {
       provide: RLB_AMQP_BROKER_OPTIONS,
       useFactory: async (...args: any[]) => {
         const result = await asyncOptions.useFactory(...args);
-        return BrokerModule.withServiceNameConnection(result.options);
+        return BrokerModule.buildOptions(result.options);
       },
       inject: asyncOptions.inject || [],
     };
