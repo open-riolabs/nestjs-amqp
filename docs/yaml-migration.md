@@ -90,7 +90,7 @@ per-route auth model:
   ```ts
   @BrokerAction('booking', 'get-booking')
   @BrokerHTTP('GET', '/bookings/:id', 'params')
-  @BrokerAuth('transfeero-dev-jwks', true)
+  @BrokerAuth('riolabs-dev-jwks', true)
   async getBooking(...) { ... }
   ```
 
@@ -99,9 +99,9 @@ per-route auth model:
 
   ```ts
   @BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
-  @BrokerAuth('transfeero-dev-jwks', true, undefined, 'get-booking')
+  @BrokerAuth('riolabs-dev-jwks', true, undefined, 'get-booking')
   @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
-  @BrokerAuth('transfeero-admin-jwks', undefined, undefined, 'admin-get-booking')
+  @BrokerAuth('riolabs-admin-jwks', undefined, undefined, 'admin-get-booking')
   ```
 
 It also adds `BrokerHTTP` / `BrokerAuth` to the existing `@open-rlb/nestjs-amqp` import.

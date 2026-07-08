@@ -8,16 +8,16 @@
  *
  *     @BrokerAction('booking', 'get-booking')
  *     @BrokerHTTP('GET', '/bookings/:id', 'params')          // single route → no name needed
- *     @BrokerAuth('transfeero-dev-jwks', true)
+ *     @BrokerAuth('riolabs-dev-jwks', true)
  *     async getBooking(...) { ... }
  *
  * When a method ends up with MULTIPLE routes, each @BrokerHTTP gets a `name` and the paired
  * @BrokerAuth references it via `httpName` (auth stays decoupled, paired per route):
  *
  *     @BrokerHTTP('GET', '/bookings/:id',       'params', { name: 'get-booking' })
- *     @BrokerAuth('transfeero-dev-jwks', true, undefined, 'get-booking')
+ *     @BrokerAuth('riolabs-dev-jwks', true, undefined, 'get-booking')
  *     @BrokerHTTP('GET', '/admin/bookings/:id', 'params', { name: 'admin-get-booking' })
- *     @BrokerAuth('transfeero-admin-jwks', undefined, undefined, 'admin-get-booking')
+ *     @BrokerAuth('riolabs-admin-jwks', undefined, undefined, 'admin-get-booking')
  *
  * It adds `BrokerHTTP`/`BrokerAuth` to the `@open-rlb/nestjs-amqp` import. Methods whose
  * (topic, action) is not in the YAML are left untouched. Idempotent: a route whose path is already
