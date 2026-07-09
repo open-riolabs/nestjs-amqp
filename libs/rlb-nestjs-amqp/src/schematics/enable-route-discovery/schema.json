@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpEnableRouteDiscovery",
+  "title": "Enable publisher-side route auto-discovery in config.yaml",
+  "type": "object",
+  "properties": {
+    "serviceName": {
+      "type": "string",
+      "description": "Logical service name published for auto-discovery (kebab/snake-normalized).",
+      "x-prompt": "Service name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "exchange": {
+      "type": "string",
+      "default": "rlb-route-discovery",
+      "description": "Discovery fanout exchange."
+    },
+    "queue": {
+      "type": "string",
+      "default": "rlb-route-sync",
+      "description": "Queue the gateway syncs from."
+    },
+    "publishOnBoot": {
+      "type": "boolean",
+      "default": true,
+      "description": "Publish the route manifest on boot."
+    },
+    "declareExchange": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also declare the discovery exchange in broker.exchanges."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update broker.routeDiscovery if it already exists."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

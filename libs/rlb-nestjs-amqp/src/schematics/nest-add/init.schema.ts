@@ -85,4 +85,7 @@ export interface InitOptions {
    * Copy the Claude skill files into .claude/skills. Defaults to true.
    */
   skills?: boolean;
+
+  /** Path to config.yaml (default: auto-detected, typically config/config.yaml). */
+  config?: string;
 }

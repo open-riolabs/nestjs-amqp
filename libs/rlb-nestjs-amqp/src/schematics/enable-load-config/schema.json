@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpEnableLoadConfig",
+  "title": "Add gateway.loadConfig (pull DB-managed routes/events on (re)load)",
+  "type": "object",
+  "properties": {
+    "pathsTopic": {
+      "type": "string",
+      "default": "rlb-gateway-admin",
+      "description": "Topic the gateway pulls DB-managed paths from."
+    },
+    "pathsAction": {
+      "type": "string",
+      "default": "gw-path-export",
+      "description": "Action for the paths export."
+    },
+    "eventsTopic": {
+      "type": "string",
+      "description": "Topic the gateway pulls DB-managed events from (optional; requires eventsAction)."
+    },
+    "eventsAction": {
+      "type": "string",
+      "description": "Action for the events export (optional; requires eventsTopic)."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entries if they already exist."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

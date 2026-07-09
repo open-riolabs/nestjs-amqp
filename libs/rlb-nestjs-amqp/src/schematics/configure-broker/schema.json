@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpConfigureBroker",
+  "title": "Set broker connection scalars in config.yaml",
+  "type": "object",
+  "properties": {
+    "uri": {
+      "type": "string",
+      "description": "broker.uri (the AMQP connection string).",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "prefetchCount": {
+      "type": "number",
+      "description": "broker.prefetchCount (channel prefetch)."
+    },
+    "defaultRpcTimeout": {
+      "type": "number",
+      "description": "broker.defaultRpcTimeout (ms)."
+    },
+    "heartbeatIntervalInSeconds": {
+      "type": "number",
+      "description": "connectionManagerOptions.heartbeatIntervalInSeconds."
+    },
+    "reconnectTimeInSeconds": {
+      "type": "number",
+      "description": "connectionManagerOptions.reconnectTimeInSeconds."
+    },
+    "mechanism": {
+      "type": "string",
+      "enum": ["PLAIN", "EXTERNAL", "AMQPLAIN"],
+      "description": "SASL mechanism used in connectionOptions.credentials."
+    },
+    "username": {
+      "type": "string",
+      "description": "connectionOptions.credentials.username."
+    },
+    "password": {
+      "type": "string",
+      "description": "connectionOptions.credentials.password."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

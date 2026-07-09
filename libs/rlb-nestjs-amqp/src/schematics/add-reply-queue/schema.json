@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddReplyQueue",
+  "title": "Map an exchange to an RPC reply queue via broker.replyQueues",
+  "type": "object",
+  "properties": {
+    "exchange": {
+      "type": "string",
+      "description": "Exchange whose RPC replies route to `queue` (the map key).",
+      "x-prompt": "Exchange?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "queue": {
+      "type": "string",
+      "description": "The reply queue name (the map value)."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Overwrite an existing mapping for this exchange."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

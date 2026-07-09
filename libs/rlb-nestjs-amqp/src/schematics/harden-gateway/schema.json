@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpHardenGateway",
+  "title": "Add gateway hardening limits (config.yaml + optional main.ts body-parser patch)",
+  "type": "object",
+  "properties": {
+    "maxConcurrentRequests": {
+      "type": "number",
+      "description": "gateway.maxConcurrentRequests — global in-flight request cap."
+    },
+    "maxBodyBytes": {
+      "type": ["string", "number"],
+      "description": "gateway.maxBodyBytes — non-multipart body limit (e.g. '5mb'). Also drives the main.ts patch."
+    },
+    "uploadMaxFileSizeMb": {
+      "type": "number",
+      "description": "gateway.upload.maxFileSizeMb — per-file multipart limit."
+    },
+    "uploadMaxFiles": {
+      "type": "number",
+      "description": "gateway.upload.maxFiles — max files per multipart request."
+    },
+    "wsMaxBufferedBytes": {
+      "type": "number",
+      "description": "gateway.ws.maxBufferedBytes — per-socket outbound backpressure cap."
+    },
+    "wsMaxMessageBytes": {
+      "type": "number",
+      "description": "gateway.ws.maxMessageBytes — inbound WS frame limit."
+    },
+    "allowedOrigins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "gateway.ws.allowedOrigins — CORS allow-list for the WS upgrade."
+    },
+    "patchMain": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also patch main.ts to re-register the body parsers with maxBodyBytes."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

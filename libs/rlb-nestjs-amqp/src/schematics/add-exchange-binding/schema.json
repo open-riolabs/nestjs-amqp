@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddExchangeBinding",
+  "title": "Bind two exchanges via broker.exchangeBindings[]",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Source exchange.",
+      "x-prompt": "Source exchange?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "destination": {
+      "type": "string",
+      "description": "Destination exchange."
+    },
+    "pattern": {
+      "type": "string",
+      "description": "Binding pattern / routing key."
+    },
+    "args": {
+      "type": "object",
+      "description": "Optional binding arguments."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

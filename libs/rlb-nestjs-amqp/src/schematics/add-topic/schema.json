@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddTopic",
+  "title": "Add a broker topic to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Topic name (the key).",
+      "x-prompt": "Topic name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["rpc", "handle", "broadcast", "event"],
+      "default": "rpc",
+      "description": "Topic mode."
+    },
+    "queue": {
+      "type": "string",
+      "description": "Queue the topic consumes (required for rpc/handle)."
+    },
+    "exchange": {
+      "type": "string",
+      "default": "rlb",
+      "description": "Exchange the topic uses."
+    },
+    "routingKey": {
+      "type": "string",
+      "description": "routingKey (required — and defaulted — when the exchange is a topic)."
+    },
+    "errorBehavior": {
+      "type": "string",
+      "enum": ["ack", "nack", "requeue"],
+      "description": "errorBehavior."
+    },
+    "retryMaxAttempts": { "type": "number", "description": "retry.maxAttempts." },
+    "retryDelayMs": { "type": "number", "description": "retry.delayMs." },
+    "retryOnExhausted": {
+      "type": "string",
+      "enum": ["dead-letter", "drop"],
+      "description": "retry.onExhausted."
+    },
+    "mandatory": { "type": "boolean", "description": "options.mandatory." },
+    "persistent": { "type": "boolean", "description": "options.persistent." },
+    "toObservable": { "type": "boolean", "description": "toObservable." },
+    "createDeps": {
+      "type": "boolean",
+      "default": true,
+      "description": "Create the queue/exchange dependencies when missing."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddWsEvent",
+  "title": "Add a WebSocket/webhook event (gateway.events[]) to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Event name (the key).",
+      "x-prompt": "Event name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "type": {
+      "type": "string",
+      "enum": ["ws", "http"],
+      "default": "ws",
+      "description": "ws (push to subscribed clients) | http (webhook POST)."
+    },
+    "exchange": { "type": "string", "description": "Source exchange the gateway binds to (ws)." },
+    "routingKey": { "type": "string", "description": "routingKey bound on that exchange (ws)." },
+    "auth": { "type": "string", "description": "Auth-provider name used to verify the subscribe token." },
+    "requireAuth": {
+      "type": "boolean",
+      "description": "Set false to make auth optional (anonymous may subscribe)."
+    },
+    "actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions the subscriber must hold (OR-semantics). Requires auth."
+    },
+    "scopeClaim": {
+      "type": "string",
+      "description": "Claim used to scope delivery per-user; requires payloadKey."
+    },
+    "payloadKey": {
+      "type": "string",
+      "description": "Payload field compared against scopeClaim — only matching messages are forwarded."
+    },
+    "url": { "type": "string", "description": "Webhook URL to POST to (http)." },
+    "httpMethod": { "type": "string", "description": "HTTP method for the webhook (http) — written as method." },
+    "timeout": { "type": "number", "description": "Webhook request timeout in ms (http)." },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

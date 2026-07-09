@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddMetricsTopic",
+  "title": "Isolate gateway metrics on a dedicated bounded topic/queue",
+  "type": "object",
+  "properties": {
+    "topic": {
+      "type": "string",
+      "default": "rlb-gateway-metrics",
+      "description": "Metrics topic name.",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "queue": {
+      "type": "string",
+      "description": "Queue backing the topic (default: the topic value)."
+    },
+    "exchange": {
+      "type": "string",
+      "default": "rlb",
+      "description": "Exchange the queue binds to."
+    },
+    "messageTtl": {
+      "type": "number",
+      "default": 3600000,
+      "description": "Queue options.messageTtl (ms)."
+    },
+    "maxLength": {
+      "type": "number",
+      "default": 500000,
+      "description": "Queue options.maxLength."
+    },
+    "action": {
+      "type": "string",
+      "default": "gw-metrics-track",
+      "description": "Action the gateway emits metrics with."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entries if they already exist (default: leave them untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

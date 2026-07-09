@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddAuthProvider",
+  "title": "Add an auth-providers[] entry to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Provider name (the key gateway paths/events reference via auth).",
+      "x-prompt": "Auth-provider name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "type": {
+      "type": "string",
+      "enum": ["jwt", "jwks", "basic", "str-compare", "none"],
+      "default": "jwks",
+      "description": "Verification strategy."
+    },
+    "headerPrefix": {
+      "type": "string",
+      "default": "X-GTW-AUTH-",
+      "description": "Prefix for the identity headers forwarded downstream."
+    },
+    "uidClaim": {
+      "type": "string",
+      "description": "Claim whose value becomes the authenticated userId (drives the ACL/action gate)."
+    },
+    "jwtMap": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Claim->header maps as src:dest (jwt/jwks)."
+    },
+    "algorithms": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Allowed signature algorithms (jwt/jwks) — REQUIRED to verify."
+    },
+    "issuer": { "type": "string", "description": "Expected token issuer (jwt/jwks)." },
+    "jwksUri": { "type": "string", "description": "JWKS endpoint to fetch signing keys from (jwks)." },
+    "secret": { "type": "string", "description": "HMAC/shared secret (jwt symmetric, or str-compare)." },
+    "audience": { "type": "string", "description": "Expected token audience (jwt/jwks)." },
+    "clientId": { "type": "string", "description": "Client id (basic)." },
+    "clientSecret": { "type": "string", "description": "Client secret / password (basic)." },
+    "httpsAllowUnauthorized": {
+      "type": "boolean",
+      "description": "Accept self-signed TLS when fetching the JWKS (jwks) — DEV ONLY."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

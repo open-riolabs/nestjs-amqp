@@ -5,6 +5,86 @@
       "description": "Add RabbitMQ support to a NestJS project",
       "factory": "./nest-add/index#main",
       "schema": "./nest-add/schema.json"
+    },
+    "add-exchange": {
+      "description": "Add a broker exchange to config.yaml (optionally with a bound queue)",
+      "factory": "./add-exchange/index#main",
+      "schema": "./add-exchange/schema.json"
+    },
+    "add-queue": {
+      "description": "Add a broker queue to config.yaml (creates the exchange if missing; growth bounds)",
+      "factory": "./add-queue/index#main",
+      "schema": "./add-queue/schema.json"
+    },
+    "add-topic": {
+      "description": "Add a broker topic to config.yaml (creates queue/exchange if missing)",
+      "factory": "./add-topic/index#main",
+      "schema": "./add-topic/schema.json"
+    },
+    "add-exchange-binding": {
+      "description": "Bind two exchanges via broker.exchangeBindings[]",
+      "factory": "./add-exchange-binding/index#main",
+      "schema": "./add-exchange-binding/schema.json"
+    },
+    "add-reply-queue": {
+      "description": "Map an exchange to an RPC reply queue via broker.replyQueues",
+      "factory": "./add-reply-queue/index#main",
+      "schema": "./add-reply-queue/schema.json"
+    },
+    "enable-retry": {
+      "description": "Configure a bounded retry policy (broker.retry or topics[].retry) + declare the dead-letter exchange",
+      "factory": "./enable-retry/index#main",
+      "schema": "./enable-retry/schema.json"
+    },
+    "enable-route-discovery": {
+      "description": "Enable publisher-side route auto-discovery (broker.routeDiscovery + fanout exchange)",
+      "factory": "./enable-route-discovery/index#main",
+      "schema": "./enable-route-discovery/schema.json"
+    },
+    "set-connection-name": {
+      "description": "Set the logical AMQP connection_name (the lib auto-suffixes -hostname-pid per instance)",
+      "factory": "./set-connection-name/index#main",
+      "schema": "./set-connection-name/schema.json"
+    },
+    "configure-broker": {
+      "description": "Set broker connection scalars (uri, prefetchCount, defaultRpcTimeout, init/manager options, credentials)",
+      "factory": "./configure-broker/index#main",
+      "schema": "./configure-broker/schema.json"
+    },
+    "add-auth-provider": {
+      "description": "Add an auth-providers[] entry (jwt | jwks | basic | str-compare | none)",
+      "factory": "./add-auth-provider/index#main",
+      "schema": "./add-auth-provider/schema.json"
+    },
+    "add-gateway": {
+      "description": "Promote a config to a gateway: remove publisher route-discovery, add rlb-acl/admin/control infra + gateway section",
+      "factory": "./add-gateway/index#main",
+      "schema": "./add-gateway/schema.json"
+    },
+    "add-route": {
+      "description": "Add an HTTP route (gateway.paths[]) forwarding to a topic/action",
+      "factory": "./add-route/index#main",
+      "schema": "./add-route/schema.json"
+    },
+    "add-ws-event": {
+      "description": "Add a WebSocket/webhook event (gateway.events[])",
+      "factory": "./add-ws-event/index#main",
+      "schema": "./add-ws-event/schema.json"
+    },
+    "add-metrics-topic": {
+      "description": "Isolate gw-metrics-track on a dedicated bounded topic/queue and point gateway.metrics at it",
+      "factory": "./add-metrics-topic/index#main",
+      "schema": "./add-metrics-topic/schema.json"
+    },
+    "enable-load-config": {
+      "description": "Add gateway.loadConfig (pull DB-managed routes/events, merged with YAML, on (re)load)",
+      "factory": "./enable-load-config/index#main",
+      "schema": "./enable-load-config/schema.json"
+    },
+    "harden-gateway": {
+      "description": "Add gateway hardening limits (maxConcurrentRequests, maxBodyBytes + main.ts body parser, upload, ws.maxBufferedBytes)",
+      "factory": "./harden-gateway/index#main",
+      "schema": "./harden-gateway/schema.json"
     }
   }
 }

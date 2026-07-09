@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpEnableRetry",
+  "title": "Configure a bounded retry policy in config.yaml",
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "enum": ["broker", "topic"],
+      "default": "broker",
+      "description": "Broker-wide default (broker.retry) or a single topic (topics[].retry).",
+      "x-prompt": "Retry scope?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "topic": {
+      "type": "string",
+      "description": "Topic name (required when scope=topic)."
+    },
+    "maxAttempts": {
+      "type": "number",
+      "default": 5,
+      "description": "Bounded attempt count before dead-lettering/dropping."
+    },
+    "delayMs": {
+      "type": "number",
+      "default": 0,
+      "description": "Delay between attempts (ms)."
+    },
+    "onExhausted": {
+      "type": "string",
+      "enum": ["dead-letter", "drop"],
+      "description": "What to do once attempts are exhausted (default: dead-letter when a DLX is set, else drop)."
+    },
+    "deadLetterExchange": {
+      "type": "string",
+      "description": "Dead-letter exchange to route exhausted messages to."
+    },
+    "deadLetterRoutingKey": {
+      "type": "string",
+      "description": "Routing key used when dead-lettering (omitted when unset)."
+    },
+    "declareDlx": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also declare the DLX in broker.exchanges."
+    },
+    "dlxType": {
+      "type": "string",
+      "enum": ["direct", "topic", "fanout", "headers"],
+      "default": "topic",
+      "description": "Type of the declared DLX."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the retry block if it already exists."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddGateway",
+  "title": "Promote a microservice config to a gateway (config.yaml only)",
+  "type": "object",
+  "properties": {
+    "exchange": {
+      "type": "string",
+      "default": "rlb",
+      "description": "Main AMQP exchange backing the acl/admin queues."
+    },
+    "aclQueue": {
+      "type": "string",
+      "default": "rlb-acl",
+      "description": "Queue backing the fixed rlb-acl topic."
+    },
+    "adminQueue": {
+      "type": "string",
+      "default": "rlb-gateway-admin",
+      "description": "Queue backing the fixed rlb-gateway-admin topic."
+    },
+    "controlTopic": {
+      "type": "string",
+      "default": "rlb-gateway-control",
+      "description": "Broadcast control/reload topic name."
+    },
+    "routeExchange": {
+      "type": "string",
+      "default": "rlb-route-discovery",
+      "description": "Route-discovery fanout exchange (consumer side)."
+    },
+    "routeQueue": {
+      "type": "string",
+      "default": "rlb-route-sync",
+      "description": "Route-sync durable queue (consumer side)."
+    },
+    "acl": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include ACL infra (rlb-acl topic/queue)."
+    },
+    "admin": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include gateway-admin infra (rlb-gateway-admin topic/queue + control topic)."
+    },
+    "routeReception": {
+      "type": "boolean",
+      "default": true,
+      "description": "Consume routes auto-published by microservices (route-sync infra)."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update entries that already exist (default: leave them untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

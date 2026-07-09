@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddRoute",
+  "title": "Add an HTTP route (gateway.paths[]) to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Route name (the key).",
+      "x-prompt": "Route name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      "default": "GET",
+      "description": "HTTP method."
+    },
+    "path": {
+      "type": "string",
+      "description": "URL path (e.g. /orders/:id).",
+      "x-prompt": "URL path?"
+    },
+    "dataSource": {
+      "type": "string",
+      "enum": ["body", "query", "params", "body-query", "query-body"],
+      "description": "Where to read the payload from (default: query for GET, body otherwise)."
+    },
+    "topic": {
+      "type": "string",
+      "description": "Broker topic the request forwards to.",
+      "x-prompt": "Topic?"
+    },
+    "action": {
+      "type": "string",
+      "description": "Broker action invoked on that topic.",
+      "x-prompt": "Action?"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["rpc", "event"],
+      "default": "rpc",
+      "description": "rpc (wait reply) | event (fire-and-forget)."
+    },
+    "timeout": { "type": "number", "description": "RPC reply timeout in ms." },
+    "auth": { "type": "string", "description": "Auth-provider name that must verify the caller." },
+    "allowAnonymous": {
+      "type": "boolean",
+      "description": "Allow anonymous callers even when auth is set."
+    },
+    "actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions the caller must hold (OR-semantics) — gated via the ACL. Requires auth."
+    },
+    "successStatusCode": { "type": "number", "description": "HTTP status returned on success." },
+    "binary": { "type": "boolean", "description": "Return the reply as a raw binary buffer." },
+    "redirect": { "type": "number", "description": "Respond with this redirect status instead of a body." },
+    "parseRaw": {
+      "type": "boolean",
+      "description": "Forward the raw (unparsed) request body — needs rawBody:true at bootstrap."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

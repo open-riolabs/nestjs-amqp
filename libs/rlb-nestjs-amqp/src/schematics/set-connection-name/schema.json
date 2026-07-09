@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpSetConnectionName",
+  "title": "Set the logical AMQP connection_name in config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The logical connection name (trimmed; the library appends -hostname-pid per instance).",
+      "x-prompt": "Logical connection name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the value if it already exists."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

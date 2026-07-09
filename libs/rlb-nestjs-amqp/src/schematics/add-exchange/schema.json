@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddExchange",
+  "title": "Add a broker exchange to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Exchange name (the key).",
+      "x-prompt": "Exchange name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "type": {
+      "type": "string",
+      "enum": ["direct", "topic", "fanout", "headers"],
+      "default": "direct",
+      "description": "Exchange type."
+    },
+    "createIfNotExists": {
+      "type": "boolean",
+      "default": true,
+      "description": "Emit createExchangeIfNotExists (false => the exchange must pre-exist)."
+    },
+    "durable": { "type": "boolean", "default": true, "description": "options.durable" },
+    "autoDelete": { "type": "boolean", "default": false, "description": "options.autoDelete" },
+    "internal": { "type": "boolean", "default": false, "description": "options.internal" },
+    "withQueue": {
+      "type": "boolean",
+      "description": "Also create a queue bound to this exchange."
+    },
+    "queueName": {
+      "type": "string",
+      "description": "Name of the bound queue (default: the exchange name)."
+    },
+    "routingKey": {
+      "type": "string",
+      "description": "routingKey for the bound queue (required when type=topic; default: the queue name)."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}

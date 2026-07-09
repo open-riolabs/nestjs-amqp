@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SchematicsRlbAmqpAddQueue",
+  "title": "Add a broker queue to config.yaml",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Queue name (the key).",
+      "x-prompt": "Queue name?",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "exchange": {
+      "type": "string",
+      "default": "rlb",
+      "description": "Exchange the queue binds to."
+    },
+    "routingKey": {
+      "type": "string",
+      "description": "routingKey (required — defaulted to the queue name — when the exchange is a topic)."
+    },
+    "createIfNotExists": {
+      "type": "boolean",
+      "default": true,
+      "description": "Emit createQueueIfNotExists (false => the queue must pre-exist)."
+    },
+    "durable": { "type": "boolean", "default": true, "description": "options.durable" },
+    "exclusive": { "type": "boolean", "default": false, "description": "options.exclusive" },
+    "autoDelete": { "type": "boolean", "default": false, "description": "options.autoDelete" },
+    "messageTtl": { "type": "number", "description": "options.messageTtl (ms)." },
+    "maxLength": { "type": "number", "description": "options.maxLength." },
+    "expires": { "type": "number", "description": "options.expires (ms) — unused-queue TTL." },
+    "createExchange": {
+      "type": "boolean",
+      "description": "Create the exchange when it is missing (default: false interactive, true when passed)."
+    },
+    "exchangeType": {
+      "type": "string",
+      "enum": ["direct", "topic", "fanout", "headers"],
+      "default": "direct",
+      "description": "Type of the exchange created via createExchange."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Update the entry if it already exists (default: leave it untouched)."
+    },
+    "config": {
+      "type": "string",
+      "description": "Path to config.yaml (default: auto-detected)."
+    }
+  },
+  "required": []
+}
