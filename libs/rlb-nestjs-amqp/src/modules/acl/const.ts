@@ -27,6 +27,11 @@ export const ACL_ACTIONS = {
   listResourcesByUser: 'acl-list-resources-by-user',
   grant: 'acl-grant',
   revoke: 'acl-revoke',
+  /** Trusted service-to-service variants: same write as grant/revoke but WITHOUT the caller
+   *  authorization check. AMQP-only (never exposed over HTTP) — for internal bootstrap flows
+   *  (e.g. self-registration granting the creator the first owner role on a brand-new company). */
+  adminGrant: 'acl-admin-grant',
+  adminRevoke: 'acl-admin-revoke',
   grantSearch: 'acl-grant-search',
   invalidate: 'acl-invalidate',
   // Actions & roles are keyed by `name` (no separate id). PUT upserts by name; there is no POST.

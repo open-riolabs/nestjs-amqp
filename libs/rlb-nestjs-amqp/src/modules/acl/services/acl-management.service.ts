@@ -80,12 +80,56 @@ export class AclManagementService {
     @BrokerParam('body', 'friendlyName') friendlyName?: string,
     @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
   ): Promise<AclGrant> {
+    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'grant');
+    return this.applyGrant(userId, roles, resourceId, companyId, friendlyName);
+  }
+
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.revoke, 'rpc')
+  async revoke(
+    @BrokerParam('body', 'userId') userId: string,
+    @BrokerParam('body', 'roles') roles: string[],
+    @BrokerParam('body', 'resourceId') resourceId?: string,
+    @BrokerParam('body', 'companyId') companyId?: string,
+    @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
+  ): Promise<AclGrant | null> {
+    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'revoke');
+    return this.applyRevoke(userId, roles, resourceId, companyId);
+  }
+
+  // Admin (trusted service-to-service) variants: identical write to grant/revoke but WITHOUT the
+  // caller-authorization check. AMQP-only (no @BrokerHTTP → never reachable through the gateway):
+  // an internal service — e.g. self-registration bootstrapping the creator's first owner role on a
+  // brand-new company — is trusted to act without holding role-management/role-system itself.
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.adminGrant, 'rpc')
+  async adminGrant(
+    @BrokerParam('body', 'userId') userId: string,
+    @BrokerParam('body', 'roles') roles: string[],
+    @BrokerParam('body', 'resourceId') resourceId?: string,
+    @BrokerParam('body', 'companyId') companyId?: string,
+    @BrokerParam('body', 'friendlyName') friendlyName?: string,
+  ): Promise<AclGrant> {
+    return this.applyGrant(userId, roles, resourceId, companyId, friendlyName);
+  }
+
+  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.adminRevoke, 'rpc')
+  async adminRevoke(
+    @BrokerParam('body', 'userId') userId: string,
+    @BrokerParam('body', 'roles') roles: string[],
+    @BrokerParam('body', 'resourceId') resourceId?: string,
+    @BrokerParam('body', 'companyId') companyId?: string,
+  ): Promise<AclGrant | null> {
+    return this.applyRevoke(userId, roles, resourceId, companyId);
+  }
+
+  /**
+   * Grant write logic shared by {@link grant} (gated) and {@link adminGrant} (trusted, ungated):
+   * validates the roles exist, then creates or MERGES into the single (userId, companyId, resourceId)
+   * record. Idempotent — re-granting the same roles never produces a duplicate doc.
+   */
+  private async applyGrant(userId: string, roles: string[], resourceId?: string, companyId?: string, friendlyName?: string): Promise<AclGrant> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
-    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'grant');
     await this.assertRolesExist(roles);
-    // ONE grant per (userId, companyId, resourceId): create it if absent, otherwise MERGE the roles
-    // into the existing one. Idempotent — re-granting the same roles never produces a duplicate doc.
     const existing = await this.findGrant(userId, companyId, resourceId);
     let result: AclGrant;
     if (existing) {
@@ -102,21 +146,16 @@ export class AclManagementService {
     return result;
   }
 
-  @BrokerAction(ACL_TOPIC, ACL_ACTIONS.revoke, 'rpc')
-  async revoke(
-    @BrokerParam('body', 'userId') userId: string,
-    @BrokerParam('body', 'roles') roles: string[],
-    @BrokerParam('body', 'resourceId') resourceId?: string,
-    @BrokerParam('body', 'companyId') companyId?: string,
-    @BrokerParam('header', 'X-GTW-AUTH-USERID') currentUser?: string,
-  ): Promise<AclGrant | null> {
+  /**
+   * Revoke write logic shared by {@link revoke} (gated) and {@link adminRevoke} (trusted, ungated):
+   * removes the given roles from the (userId, companyId, resourceId) grant; keeps the record while any
+   * role remains, deletes it once empty. Returns null when there is no such grant.
+   */
+  private async applyRevoke(userId: string, roles: string[], resourceId?: string, companyId?: string): Promise<AclGrant | null> {
     if (!userId) throw new BadRequestError('userId is required');
     if (!roles?.length) throw new BadRequestError('roles are required');
-    await this.assertCanManage(currentUser ?? '', companyId, resourceId, 'revoke');
     const existing = await this.findGrant(userId, companyId, resourceId);
     if (!existing) return null;
-    // Remove the given roles from the (userId, companyId, resourceId) grant; keep the record while
-    // any role remains, delete it once empty.
     const remaining = (existing.roles || []).filter((r) => !roles.includes(r));
     const result = remaining.length
       ? await this.grants.updateById(existing._id!, { roles: remaining })
