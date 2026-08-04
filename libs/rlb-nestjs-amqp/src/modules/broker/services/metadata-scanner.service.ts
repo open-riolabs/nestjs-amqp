@@ -203,6 +203,7 @@ export class MetadataScannerService implements OnModuleInit {
           queue: qName,
           exchange: eName,
           routingKey: kName,
+          topic: cfgTopic.name,
           errorBehavior: cfgTopic.errorBehavior,
           retry: cfgTopic.retry,
         });

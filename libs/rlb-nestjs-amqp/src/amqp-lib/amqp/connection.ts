@@ -721,7 +721,7 @@ export class AmqpConnection implements OnApplicationShutdown, OnModuleInit {
           warn: (m: string) => this.logger.warn(m),
           error: (m: string) => this.logger.error(m),
         },
-      });
+      }, options.topic);
     if (options.errorHandler) return options.errorHandler;
     if (options.retry) return retry(options.retry);
     if (options.errorBehavior) return legacy(options.errorBehavior);

@@ -3,6 +3,8 @@ import { ConsumeMessage } from "amqplib";
 import { randomUUID } from "crypto";
 import { isObservable, lastValueFrom, map, Observable, Subject } from "rxjs";
 import { AmqpConnection, Nack } from "../../../amqp-lib";
+import { matchesRoutingKey } from "../../../amqp-lib/amqp/utils";
+import { MessageHandlerErrorBehavior } from "../../../amqp-lib/types";
 import { BrokerConfig } from "../config/broker.config";
 import { BrokerTopic } from "../config/topics.config";
 import { RLB_AMQP_BROKER_OPTIONS, RLB_AMQP_TOPIC_CONNECTION } from "../const";
@@ -40,19 +42,7 @@ export class BrokerService implements OnModuleInit {
   onModuleInit() {
     this.logger.log('Initializing broker service');
 
-    // The retry dead-letter exchange is NOT auto-asserted (a wrong assert would 406 the
-    // channel): it must be declared in broker.exchanges. Surface a misconfiguration at
-    // boot instead of at the first dead-letter attempt.
-    const dlExchanges = new Set<string>();
-    if (this.brokerConfig.retry?.deadLetter?.exchange) dlExchanges.add(this.brokerConfig.retry.deadLetter.exchange);
-    for (const t of this.topicConfigurations || []) {
-      if (t.retry?.deadLetter?.exchange) dlExchanges.add(t.retry.deadLetter.exchange);
-    }
-    for (const ex of dlExchanges) {
-      if (!this.brokerConfig.exchanges?.some(e => e.name === ex)) {
-        this.logger.warn(`Retry dead-letter exchange '${ex}' is not declared in broker.exchanges; dead-lettering will fail at runtime (messages fall back to nack-requeue) until the exchange exists.`);
-      }
-    }
+    this.validateFailurePaths();
 
     for (const topic of this.topicConfigurations || []) {
       if (topic.mode === 'rpc') {
@@ -104,6 +94,98 @@ export class BrokerService implements OnModuleInit {
       }
       else {
         this.logger.warn(`Topic ${topic.name} has invalid mode ${topic.mode}. Valid modes are 'rpc', 'event', 'broadcast' and 'handle'`);
+      }
+    }
+  }
+
+  /**
+   * Boot-time audit of the failure paths. Every problem reported here turns a single failing
+   * message into an endless loop, and none of them is visible until it happens in production:
+   *
+   * - `errorBehavior: requeue` nack-requeues forever (no attempt counter, no dead-letter) and,
+   *   being MORE specific than `broker.retry`, silently disables the bounded policy for its topic.
+   * - a `deadLetter.exchange` whose routing leads back to the consuming queue re-injects every
+   *   exhausted message into the queue it just left.
+   * - a queue-level `deadLetterExchange` bound back to the same queue recycles everything the
+   *   broker rejects on its own (TTL expiry, `maxLength` eviction, consumer nack).
+   *
+   * Warnings only, never a boot failure: bindings also live broker-side, outside this config.
+   */
+  private validateFailurePaths() {
+    const asArray = (k?: string | string[]) => (k == null ? [] : Array.isArray(k) ? k : [k]);
+    const exchangeType = (name?: string) =>
+      this.brokerConfig.exchanges?.find(e => e.name === name)?.type
+      ?? this.brokerConfig.defaultExchangeType
+      ?? 'direct';
+
+    /** Would a message published to `exchange`/`routingKey` be delivered to `target`? */
+    const reaches = (exchange: string, routingKey: string, target: { exchange?: string; bindingKeys: string[]; }) => {
+      if (!target.exchange || target.exchange !== exchange) return false;
+      const type = exchangeType(exchange);
+      if (type === 'fanout') return true;
+      if (type === 'topic') return target.bindingKeys.some(k => matchesRoutingKey(routingKey, k));
+      return target.bindingKeys.includes(routingKey);
+    };
+
+    // The consuming side of every topic: where its queue is bound, and the routing key its
+    // messages actually carry (`publishMessage` prefers the topic's key over the queue's).
+    const consumers = (this.topicConfigurations || []).map(topic => {
+      const queue = this.brokerConfig.queues?.find(q => q.name === topic.queue);
+      const bindingKeys = asArray(queue?.routingKey ?? topic.routingKey);
+      return {
+        topic: topic.name,
+        label: `topic '${topic.name}'${queue?.name ? ` (queue '${queue.name}')` : ''}`,
+        exchange: queue?.exchange ?? topic.exchange,
+        bindingKeys,
+        originKey: topic.routingKey ?? bindingKeys[0],
+      };
+    });
+
+    const declaredExchanges = new Set((this.brokerConfig.exchanges || []).map(e => e.name));
+    const reportedMissing = new Set<string>();
+
+    for (const topic of this.topicConfigurations || []) {
+      // Same precedence as AmqpConnection.resolveErrorHandler: topic retry > topic
+      // errorBehavior > broker retry > built-in default (5 attempts, drop).
+      const legacy = String(topic.errorBehavior ?? '').toUpperCase();
+      if (!topic.retry && legacy === MessageHandlerErrorBehavior.REQUEUE) {
+        this.logger.warn(`Topic '${topic.name}' uses errorBehavior: requeue — a failing message is nack-requeued forever (no attempt counter) and hot-loops the consumer${this.brokerConfig.retry ? ', overriding broker.retry for this topic' : ''}. Replace it with 'retry' (maxAttempts / delayMs / onExhausted).`);
+      }
+      const policy = topic.retry ?? (legacy ? undefined : this.brokerConfig.retry);
+      const dlExchange = policy?.deadLetter?.exchange;
+      if (!dlExchange) continue;
+
+      // The DL exchange is NOT auto-asserted (a wrong assert would 406 the channel): it must
+      // be declared. Surfaced at boot instead of at the first dead-letter attempt.
+      if (!declaredExchanges.has(dlExchange) && !reportedMissing.has(dlExchange)) {
+        reportedMissing.add(dlExchange);
+        this.logger.warn(`Retry dead-letter exchange '${dlExchange}' is not declared in broker.exchanges; dead-lettering will fail at runtime (messages fall back to nack-requeue) until the exchange exists.`);
+      }
+
+      const self = consumers.find(c => c.topic === topic.name);
+      // Unset `deadLetter.routingKey` means the message keeps its ORIGINAL key — which is
+      // exactly what makes a shared exchange close the loop.
+      const dlRoutingKey = policy.deadLetter.routingKey ?? self?.originKey;
+      if (dlRoutingKey == null) continue;
+
+      for (const target of consumers) {
+        if (!reaches(dlExchange, dlRoutingKey, target)) continue;
+        if (target.topic === topic.name) {
+          this.logger.error(`Topic '${topic.name}': retry.deadLetter routes back to its own queue ('${dlExchange}' with routingKey '${dlRoutingKey}' reaches ${target.label}) — every exhausted message re-enters the queue it just left. Point deadLetter.exchange at a DEDICATED exchange, or set deadLetter.routingKey to a key that queue is not bound to.`);
+        } else {
+          this.logger.warn(`Topic '${topic.name}': retry.deadLetter ('${dlExchange}' / '${dlRoutingKey}') reaches ${target.label}, a live work queue — dead-lettered messages will be consumed as normal traffic there instead of being parked for inspection.`);
+        }
+      }
+    }
+
+    for (const q of this.brokerConfig.queues || []) {
+      const dlx = q.options?.deadLetterExchange;
+      if (!dlx) continue;
+      const bindingKeys = asArray(q.routingKey);
+      const dlRoutingKey = q.options.deadLetterRoutingKey ?? bindingKeys[0];
+      if (dlRoutingKey == null) continue;
+      if (reaches(dlx, dlRoutingKey, { exchange: q.exchange, bindingKeys })) {
+        this.logger.error(`Queue '${q.name}': its deadLetterExchange ('${dlx}' with routingKey '${dlRoutingKey}') is bound back to the queue itself — anything the broker dead-letters (messageTtl expiry, maxLength eviction, consumer nack) comes straight back and cycles forever. Use a separate exchange for dead letters.`);
       }
     }
   }
@@ -195,6 +277,7 @@ export class BrokerService implements OnModuleInit {
           queue: qName,
           exchange: eName,
           routingKey: rKey,
+          topic: topic.name,
           retry: topic.retry,
           // Broadcast queues are PER-INSTANCE (named `${topic}-${connection_name}`, which is
           // uniquified per instance). They must die with their consumer: a durable leftover
@@ -261,6 +344,7 @@ export class BrokerService implements OnModuleInit {
         queue: qName,
         exchange: eName,
         routingKey: rKey,
+        topic: topic?.name ?? _topic,
         retry: topic?.retry,
       });
       this.rpcsPool.set(_topic, {

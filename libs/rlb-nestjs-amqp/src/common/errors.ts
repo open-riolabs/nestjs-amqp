@@ -19,5 +19,6 @@ export class UnauthorizedError extends BrokerHttpError { }
 export class ForbiddenError extends BrokerHttpError { }
 export class NotFoundError extends BrokerHttpError { }
 export class ConflictError extends BrokerHttpError { }
+export class ServerError extends BrokerHttpError { }
 // Name kept intentionally (matches the gateway switch which uses this exact spelling).
 export class InvalidParamsErrror extends BrokerHttpError { }

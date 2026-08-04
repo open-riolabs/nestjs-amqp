@@ -21,6 +21,7 @@ const ERROR_STATUS: Record<string, number> = {
   ConflictError: 409,
   // Upstream microservice didn't reply within the RPC timeout: a load/availability condition,
   // not a gateway bug — 504 lets callers and load balancers tell the two apart (it was 500).
+  ServerError: 500,
   RpcTimeoutError: 504,
   // The microservice's retry policy exhausted every attempt and replied with the failure:
   // the upstream handler is broken/failing, not the gateway.
@@ -431,7 +432,7 @@ export class HttpHandlerService implements OnModuleInit {
     const code = (error && typeof error === 'object' && error.name) ? String(error.name) : 'Error';
     const statusCode = statusCodeOverride ?? ERROR_STATUS[code] ?? 500;
     const message = typeof error === 'string' ? error : (error?.message ?? 'Internal server error');
-    const body: { statusCode: number; code: string; message: string; details?: unknown } = { statusCode, code, message };
+    const body: { statusCode: number; code: string; message: string; details?: unknown; } = { statusCode, code, message };
     // A structured error payload (e.g. a ConflictError's conflicting routes) takes precedence; else
     // expose the stack for debugging (non-prod only).
     if (error?.details !== undefined) body.details = error.details;

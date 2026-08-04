@@ -72,6 +72,45 @@ const errorToPlain = (error: any): { name: string; message: string } => ({
 });
 
 /**
+ * Best-effort `action` from the message envelope (`{ action, payload }`) — for logs only.
+ * The connection-level error handler runs outside the deserialization path, so it never
+ * sees the decoded message; content that is not a JSON envelope (raw payloads, or the very
+ * deserialization failure that brought us here) simply yields no action.
+ */
+function readAction(msg: ConsumeMessage): string | undefined {
+  try {
+    const parsed = JSON.parse(msg.content.toString());
+    return typeof parsed?.action === 'string' ? parsed.action : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What failed, in application terms: `topic 'x' action 'y' (queue 'q')`, degrading to the
+ * queue name alone when the subscription carries no topic and the envelope no action.
+ */
+function describeSource(msg: ConsumeMessage, queue: string, topic?: string): string {
+  const action = readAction(msg);
+  const parts: string[] = [];
+  if (topic) parts.push(`topic '${topic}'`);
+  if (action) parts.push(`action '${action}'`);
+  return parts.length ? `${parts.join(' ')} (queue '${queue}')` : `queue '${queue}'`;
+}
+
+/**
+ * Attempts already made on this message, from the counter stamped on retry copies.
+ * A missing or malformed header counts as a first delivery: without this, a garbage
+ * value made `attempts` NaN, which compares false against every bound — the message
+ * skipped straight to dead-letter carrying `x-retry-count: NaN`, and a cycling copy
+ * could never be recognized as exhausted.
+ */
+function readAttempts(msg: ConsumeMessage): number {
+  const raw = Number(msg.properties.headers?.[RETRY_COUNT_HEADER]);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+/**
  * Builds the MessageErrorHandler enforcing `policy` for messages of `queue`.
  *
  * Behavior on the Nth failure of a message:
@@ -82,6 +121,10 @@ const errorToPlain = (error: any): { name: string; message: string } => ({
  *   become valid — retrying is pointless) → if the message carries `replyTo`,
  *   an error reply is sent so a waiting RPC caller fails fast; then the copy
  *   is dead-lettered (or dropped) and the original is acked.
+ * - ALREADY exhausted on arrival (`x-retry-count` >= maxAttempts, i.e. a copy that
+ *   was dead-lettered and routed back here) → acked and dropped, no reply and no
+ *   re-publish: re-running the exhausted path would re-feed the routing cycle
+ *   forever.
  * - any re-publish failure → single nack-requeue, so the message survives on
  *   the broker rather than being lost (at-least-once is preserved).
  *
@@ -92,33 +135,54 @@ export function createRetryErrorHandler(
   queue: string,
   policy: RetryPolicyConfig,
   ctx: RetryPolicyContext,
+  topic?: string,
 ): MessageErrorHandler {
   const maxAttempts = Math.max(1, policy.maxAttempts ?? DEFAULT_RETRY_POLICY.maxAttempts);
   const delayMs = policy.delayMs ?? DEFAULT_RETRY_POLICY.delayMs;
   const onExhausted = policy.onExhausted ?? (policy.deadLetter ? 'dead-letter' : 'drop');
 
   return async (channel: Channel, msg: ConsumeMessage, error: any): Promise<void> => {
+    // Resolved once per failure, before the try: the catch path logs it too.
+    const source = describeSource(msg, queue, topic);
     try {
-      const attempts = Number(msg.properties.headers?.[RETRY_COUNT_HEADER] ?? 0) + 1;
+      const priorAttempts = readAttempts(msg);
+      const attempts = priorAttempts + 1;
       const retriable = !(error instanceof MessageDeserializationError);
+
+      // The message already carries a FULL attempt count, so it went through the whole
+      // exhaustion path once and came back — which only happens through a routing cycle
+      // (a `deadLetter.exchange` bound back to this queue: the default dead-letter
+      // routing key is the message's ORIGINAL one, so reusing the work exchange closes
+      // the loop; or a queue-level `deadLetterExchange` that recycles). Dead-lettering
+      // it again feeds the same cycle forever: `attempts` keeps growing but
+      // `attempts < maxAttempts` is already false, so no further branch ever stops it.
+      // Drop it here instead — a waiting RPC caller was already answered when the
+      // message first exhausted.
+      if (priorAttempts >= maxAttempts) {
+        ctx.logger.error(
+          `[RETRY][LOOP] ${source}: re-delivered after already exhausting ${priorAttempts}/${maxAttempts} attempts (${error?.message}); dropped without re-publishing to break the loop — check that the dead-letter routing does not lead back to '${queue}' (or that maxAttempts was not lowered while messages were in flight)`,
+        );
+        channel.ack(msg);
+        return;
+      }
 
       if (retriable && attempts < maxAttempts) {
         await scheduleRetry(msg, attempts);
-        ctx.logger.warn(`[RETRY] queue '${queue}' attempt ${attempts}/${maxAttempts} failed (${error?.message}); retrying${delayMs > 0 ? ` in ${delayMs}ms` : ''}`);
+        ctx.logger.warn(`[RETRY] ${source}: attempt ${attempts}/${maxAttempts} failed (${error?.message}); retrying${delayMs > 0 ? ` in ${delayMs}ms` : ''}`);
       } else {
-        await replyErrorToRpcCaller(msg, error, attempts);
-        await exhaust(msg, error, attempts, retriable);
+        await replyErrorToRpcCaller(msg, error, attempts, source);
+        await exhaust(msg, error, attempts, retriable, source);
       }
       channel.ack(msg);
     } catch (republishError) {
       // The message could not be handed anywhere safe (broker publish failed):
       // keep it on the broker with a single requeue instead of losing it.
-      ctx.logger.error(`[RETRY] queue '${queue}': could not re-publish/dead-letter message (${(republishError as Error)?.message}); falling back to nack-requeue`);
+      ctx.logger.error(`[RETRY] ${source}: could not re-publish/dead-letter message (${(republishError as Error)?.message}); falling back to nack-requeue`);
       try {
         channel.nack(msg, false, true);
       } catch (nackError) {
         // Channel died in the meantime: the unacked message is redelivered on reconnect anyway.
-        ctx.logger.error(`[RETRY] queue '${queue}': nack failed (${(nackError as Error)?.message}); message will be redelivered on reconnect`);
+        ctx.logger.error(`[RETRY] ${source}: nack failed (${(nackError as Error)?.message}); message will be redelivered on reconnect`);
       }
     }
   };
@@ -151,7 +215,7 @@ export function createRetryErrorHandler(
   }
 
   /** A waiting RPC caller must fail fast, not burn its full timeout. */
-  async function replyErrorToRpcCaller(msg: ConsumeMessage, error: any, attempts: number): Promise<void> {
+  async function replyErrorToRpcCaller(msg: ConsumeMessage, error: any, attempts: number, source: string): Promise<void> {
     const { replyTo, correlationId, headers } = msg.properties;
     if (!replyTo || !correlationId) return;
     const cause = errorToPlain(error);
@@ -167,11 +231,11 @@ export function createRetryErrorHandler(
         // X-Request-ID) matches.
       }, { correlationId, headers });
     } catch (replyError) {
-      ctx.logger.warn(`[RETRY] queue '${queue}': could not send error reply to '${replyTo}' (${(replyError as Error)?.message})`);
+      ctx.logger.warn(`[RETRY] ${source}: could not send error reply to '${replyTo}' (${(replyError as Error)?.message})`);
     }
   }
 
-  async function exhaust(msg: ConsumeMessage, error: any, attempts: number, retriable: boolean): Promise<void> {
+  async function exhaust(msg: ConsumeMessage, error: any, attempts: number, retriable: boolean, source: string): Promise<void> {
     const reason = retriable ? `exhausted after ${attempts}/${maxAttempts} attempts` : 'not retriable (deserialization failed)';
     if (onExhausted === 'dead-letter' && policy.deadLetter?.exchange) {
       const routingKey = policy.deadLetter.routingKey ?? msg.fields.routingKey;
@@ -179,9 +243,9 @@ export function createRetryErrorHandler(
         [RETRY_ERROR_HEADER]: errorToPlain(error).message,
         [RETRY_ORIGIN_QUEUE_HEADER]: queue,
       }));
-      ctx.logger.error(`[RETRY] queue '${queue}': message ${reason} (${error?.message}); dead-lettered to '${policy.deadLetter.exchange}/${routingKey}'`);
+      ctx.logger.error(`[RETRY][EXHAUSTED] ${source}: message ${reason} (${error?.message}); dead-lettered to '${policy.deadLetter.exchange}/${routingKey}'`);
     } else {
-      ctx.logger.error(`[RETRY] queue '${queue}': message ${reason} (${error?.message}); dropped`);
+      ctx.logger.error(`[RETRY][EXHAUSTED] ${source}: message ${reason} (${error?.message}); dropped`);
     }
   }
 }

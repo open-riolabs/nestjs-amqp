@@ -29,6 +29,12 @@ export interface MessageHandlerOptions {
   exchange?: string;
   routingKey?: string | string[];
   queue?: string;
+  /**
+   * High-level topic this subscription serves. Diagnostics only: the connection-level
+   * failure logs identify the message by topic (and the action read off its envelope)
+   * instead of by queue name alone, which is meaningless in application terms.
+   */
+  topic?: string;
   queueOptions?: QueueOptions;
   /**
    * @deprecated()

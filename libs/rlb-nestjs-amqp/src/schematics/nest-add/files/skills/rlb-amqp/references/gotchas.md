@@ -64,11 +64,27 @@ Handler failures follow a BOUNDED retry policy (`broker.retry` / `topics[].retry
 `maxAttempts`, `delayMs`, `onExhausted: dead-letter|drop`; built-in default 5 attempts → drop) —
 the old infinite nack-requeue default is gone. Exhausted RPC messages reply `RetryExhaustedError`
 (gateway → 502); deserialization/pipe-validation failures skip retries. `deadLetter.exchange`
-must be declared in `broker.exchanges`. Explicit legacy `errorBehavior` still wins over defaults.
+must be declared in `broker.exchanges` AND have a queue bound to it — with no binding the broker
+discards the copy and `dead-letter` silently behaves like `drop`. Explicit legacy `errorBehavior`
+still wins over defaults. Greppable failure logs, named by topic + envelope action (falling back
+to the queue name): `[RETRY]` per attempt, `[RETRY][EXHAUSTED]` when attempts run out,
+`[RETRY][LOOP]` when a message returns already exhausted.
+
+⚠️ **Queue loops.** `BrokerService` audits these at boot (warn/error, never blocks):
+(a) `errorBehavior: requeue` nack-requeues forever with no attempt counter AND, being more
+specific, disables `broker.retry` for its topic — never use it; (b) a `deadLetter.exchange`
+reachable from the consuming queue re-injects every exhausted message: the DL copy keeps the
+message's ORIGINAL routing key unless `deadLetter.routingKey` says otherwise, so reusing the work
+exchange closes the loop (a copy that comes back already exhausted is now dropped, not
+re-dead-lettered); (c) a queue-level `deadLetterExchange` bound back to its own queue recycles
+every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: an explicit
+`Nack(true)` from a handler, and a poison message that crashes the process before the ack.
 13. **Wrong `replyQueues` key → silent timeout.** `requestData` resolves `replyTo` from
     `broker.replyQueues[exchange]`; absent → RabbitMQ direct-reply-to. Wrong exchange key → no
     reply routed back → the call just times out.
-14. **Handler exceptions don't crash the consumer.** Returned as `{success:false,error}`;
+14. **Handler exceptions don't crash the consumer.** Returned as `{success:false,error}`; on the
+    RPC path that error IS the reply and the message is ACKED — the retry policy never sees it
+    (only `handle`/`broadcast` handlers rethrow into it, and `toObservable` topics ack blindly);
     `requestData` re-throws on the caller side. Gateway HTTP status derives from `error.name` —
     give errors a meaningful `name` (`BadRequestError`, `NotFoundError`, `ConflictError`,
     `ForbiddenError`, `UnauthorizedError`); anything unrecognized → 500.

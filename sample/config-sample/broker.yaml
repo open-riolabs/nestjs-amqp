@@ -181,8 +181,13 @@ broker:
         durable: true
         autoDelete: false
         internal: false
-    # Dead-letter exchange used by broker.retry above. Bind an inspection queue
-    # to it (e.g. `rlb-dead-letters`) to audit/replay exhausted messages.
+    # Dead-letter exchange used by broker.retry above. Keep it DEDICATED: if a work
+    # queue is (or becomes) bound to it, exhausted messages route straight back into
+    # the queue they just left and loop forever — the dead-letter copy keeps the
+    # message's ORIGINAL routing key unless `deadLetter.routingKey` says otherwise.
+    # The `rlb-dead-letters` queue below is bound to it: without a binding the broker
+    # discards every dead-lettered message and `onExhausted: dead-letter` silently
+    # degrades to `drop`.
     - name: rlb-dlx
       type: topic
       createExchangeIfNotExists: true
@@ -231,6 +236,21 @@ broker:
       createQueueIfNotExists: true
       options:
         durable: true
+    # Inspection queue for exhausted messages (broker.retry.deadLetter above).
+    # `#` catches every original routing key. NO topic consumes it: dead letters are
+    # audited/replayed from the management UI. Bounded on purpose — it is a parking
+    # lot, and an unbounded one eventually trips the broker's disk alarm.
+    # ⚠️ Do NOT give this queue a deadLetterExchange pointing back at `rlb-dlx`:
+    # messageTtl expiry would re-enqueue everything here in a permanent cycle.
+    - name: rlb-dead-letters
+      exchange: rlb-dlx
+      routingKey: '#'
+      createQueueIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
+        # maxLength: 50000
 
   # ---------------------------------------------------------------------------
   # replyQueues — OPTIONAL. `{ [exchangeName]: replyQueueName }`. By default RPC
@@ -254,8 +274,14 @@ broker:
 #   queue         queue name (rpc / handle).
 #   exchange      exchange name.
 #   routingKey    routing key (broadcast / topic exchanges).
-#   errorBehavior per-topic override of defaultSubscribeErrorBehavior
-#                 (decorator path). Default: REQUEUE.
+#   errorBehavior LEGACY per-topic override of defaultSubscribeErrorBehavior
+#                 (decorator path): ack | nack | requeue. NO default — when unset,
+#                 `retry` applies (topic-level, then broker-level, then the built-in
+#                 5 attempts → drop). Prefer `retry`; `requeue` in particular
+#                 nack-requeues forever with no attempt counter (poison-message hot
+#                 loop) AND overrides broker.retry for the topic that declares it.
+#   retry         per-topic retry policy, same shape as broker.retry. Wins over
+#                 errorBehavior and over broker.retry.
 #   mandatory     publish with AMQP `mandatory` (unroutable => returned).
 #                 Default: false. Applies to event/broadcast and the rpc request.
 #   persistent    publish with delivery-mode 2 (survives broker restart IF the

@@ -8,8 +8,22 @@ auth-providers: []
 broker:
   name: "rabbitmq"
   uri: "amqp://localhost:5672/"
-  defaultSubscribeErrorBehavior: "ack"
-  defaultPublishErrorBehavior: "reject"
+
+  # Bounded retry on handler failure. Being the least specific setting, it applies to every
+  # topic that declares neither `retry` nor `errorBehavior`.
+  # ⚠️ NEVER use `errorBehavior: requeue` (here as defaultSubscribeErrorBehavior, or on a
+  # topic): it nack-requeues forever with no attempt counter and hot-loops the consumer —
+  # and being MORE specific than this block, it silently disables it.
+  # ⚠️ `deadLetter.exchange` must be a DEDICATED exchange: with no explicit routingKey the
+  # dead-lettered copy keeps the message's ORIGINAL key, so reusing a work exchange routes
+  # it straight back into the queue it just left (endless loop). Boot-time validation in
+  # BrokerService reports both mistakes.
+  retry:
+    maxAttempts: 5             # total attempts, first delivery included
+    delayMs: 5000              # 0 burns every attempt within the same millisecond of an outage
+    onExhausted: dead-letter   # dead-letter | drop
+    deadLetter:
+      exchange: gtw.dlx        # NOT gtw.rpc / gtw.events / gtw.broadcast
   connectionManagerOptions:
     heartbeatIntervalInSeconds: 60
     reconnectTimeInSeconds: 60
@@ -48,6 +62,15 @@ broker:
         durable: true
         autoDelete: false
         internal: false
+    # Dead-letter exchange for broker.retry. Dedicated on purpose: no work queue is bound
+    # to it, so an exhausted message can never be routed back to its own queue.
+    - name: gtw.dlx
+      type: "topic"
+      createExchangeIfNotExists: true
+      options:
+        durable: true
+        autoDelete: false
+        internal: false
 
   queues:
     # RPC queue: bound to gtw.rpc with the action routing key.
@@ -65,6 +88,17 @@ broker:
       createQueueIfNotExists: true
       exchange: gtw.events
       routingKey: gtw.events.demo
+      options:
+        durable: true
+        autoDelete: false
+        exclusive: false
+    # Inspection queue for exhausted messages. Without a binding on gtw.dlx the broker
+    # discards them and `onExhausted: dead-letter` behaves exactly like `drop`.
+    # NO topic consumes this queue: read/replay it from the management UI.
+    - name: gtw.dead-letters
+      createQueueIfNotExists: true
+      exchange: gtw.dlx
+      routingKey: '#'
       options:
         durable: true
         autoDelete: false

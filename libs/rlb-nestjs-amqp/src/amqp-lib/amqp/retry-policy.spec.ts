@@ -125,6 +125,92 @@ describe('createRetryErrorHandler', () => {
     expect(channel.ack).toHaveBeenCalled();
   });
 
+  it('logs the topic and the envelope action on every retry attempt', async () => {
+    const ctx = mkCtx();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 3 }, ctx, 'orders');
+    const msg = mkMsg();
+    msg.content = Buffer.from(JSON.stringify({ action: 'create-order', payload: { id: 1 } }));
+
+    await handler(mkChannel(), msg, new Error('db down'));
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(`[RETRY] topic 'orders' action 'create-order' (queue 'q'): attempt 1/3 failed`),
+    );
+  });
+
+  it('marks the exhaustion log distinctly and names topic + action', async () => {
+    const ctx = mkCtx();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 2, deadLetter: { exchange: 'dlx' } }, ctx, 'orders');
+    const msg = mkMsg({ headers: { [RETRY_COUNT_HEADER]: 1 } });
+    msg.content = Buffer.from(JSON.stringify({ action: 'create-order', payload: {} }));
+
+    await handler(mkChannel(), msg, new Error('db down'));
+
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`[RETRY][EXHAUSTED] topic 'orders' action 'create-order' (queue 'q')`),
+    );
+  });
+
+  it('falls back to the queue name when the subscription has no topic and the body no action', async () => {
+    const ctx = mkCtx();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 3 }, ctx);
+
+    await handler(mkChannel(), mkMsg(), new Error('boom'));
+
+    expect(ctx.logger.warn).toHaveBeenCalledWith(expect.stringContaining(`[RETRY] queue 'q': attempt 1/3 failed`));
+  });
+
+  it('a non-JSON body never breaks the logging path', async () => {
+    const ctx = mkCtx();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 3 }, ctx, 'raw-topic');
+    const msg = mkMsg();
+    msg.content = Buffer.from('not json at all');
+
+    await expect(handler(mkChannel(), msg, new Error('boom'))).resolves.toBeUndefined();
+    expect(ctx.logger.warn).toHaveBeenCalledWith(expect.stringContaining(`topic 'raw-topic' (queue 'q')`));
+  });
+
+  it('already exhausted on arrival (dead-letter routed back): drops without re-publishing, breaking the loop', async () => {
+    const ctx = mkCtx();
+    const channel = mkChannel();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 3, deadLetter: { exchange: 'dlx' } }, ctx);
+    // A copy dead-lettered at attempt 3 that came back: re-dead-lettering it would
+    // re-enter the same cycle forever (the counter grows but never stops it).
+    const msg = mkMsg({ replyTo: 'reply-q', correlationId: 'c1', headers: { [RETRY_COUNT_HEADER]: 3 } });
+
+    await handler(channel, msg, new Error('still failing'));
+
+    expect(ctx.publish).not.toHaveBeenCalled(); // no dead-letter copy, no error reply
+    expect(channel.ack).toHaveBeenCalledWith(msg);
+    expect(channel.nack).not.toHaveBeenCalled();
+    expect(ctx.logger.error).toHaveBeenCalledWith(expect.stringContaining('dropped without re-publishing'));
+  });
+
+  it('counter beyond maxAttempts is still recognized as exhausted (loop already running)', async () => {
+    const ctx = mkCtx();
+    const channel = mkChannel();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 2, deadLetter: { exchange: 'dlx' } }, ctx);
+
+    await handler(channel, mkMsg({ headers: { [RETRY_COUNT_HEADER]: 17 } }), new Error('still failing'));
+
+    expect(ctx.publish).not.toHaveBeenCalled();
+    expect(channel.ack).toHaveBeenCalled();
+  });
+
+  it('malformed x-retry-count counts as a first delivery instead of yielding NaN attempts', async () => {
+    const ctx = mkCtx();
+    const channel = mkChannel();
+    const handler = createRetryErrorHandler('q', { maxAttempts: 3 }, ctx);
+
+    await handler(channel, mkMsg({ headers: { [RETRY_COUNT_HEADER]: 'nope' } }), new Error('boom'));
+
+    expect(ctx.publish).toHaveBeenCalledTimes(1);
+    const [exchange, routingKey, , props] = ctx.publish.mock.calls[0];
+    expect(exchange).toBe('');
+    expect(routingKey).toBe('q'); // retried, not dead-lettered with x-retry-count: NaN
+    expect(props.headers[RETRY_COUNT_HEADER]).toBe(1);
+  });
+
   it('republish failure: falls back to a single nack-requeue and never throws', async () => {
     const ctx = mkCtx();
     ctx.publish.mockRejectedValue(new Error('broker gone'));
