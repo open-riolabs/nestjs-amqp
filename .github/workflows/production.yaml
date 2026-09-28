@@ -71,8 +71,6 @@ jobs:
         run: tar -xzf node_modules.tar.gz
       - name: Build
         run: |
-          npm link husky
-          npm link @nestjs/cli
           npm run build
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
