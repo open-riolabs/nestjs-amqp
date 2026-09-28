@@ -100,8 +100,29 @@ export interface GatewayConfigSource {
   tags?: string[];
 }
 
+/**
+ * Names of the fields the gateway ACL reads a request's (companyId, resourceId) from (see
+ * GatewayConfig.aclContext). Each key is the CANONICAL field; its value is the field name the
+ * requests actually carry. An omitted key keeps the canonical name.
+ */
+export interface AclContextConfig {
+  /** Field carrying the company id (default `companyId`). */
+  companyId?: string;
+  /** Field carrying the resource id (default `resourceId`). */
+  resourceId?: string;
+}
+
 export interface GatewayConfig {
   headerPrefix?: string;
+  /**
+   * Renames, for EVERY route (YAML, DB and auto-discovered alike), the fields the ACL check reads
+   * the request's (companyId, resourceId) from — e.g. `{ resourceId: 'entityId' }` when the API
+   * calls its resource `entityId`. They are read from the payload forwarded to the microservice,
+   * which is NOT rewritten (the handler keeps reading its own field name). Grants and the ACL RPCs
+   * (`acl-grant`, `acl-check-action`, …) keep the canonical names. A malformed value stops the
+   * gateway at boot. Omit to read `companyId` / `resourceId`.
+   */
+  aclContext?: AclContextConfig;
   loadConfig?: GatewayConfigLoader;
   paths: PathDefinition[];
   events: WebSocketEvent[];

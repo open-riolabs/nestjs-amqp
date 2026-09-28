@@ -123,6 +123,14 @@ gateway:
   # governs the auth-claim headers.
   headerPrefix: "X-FWD-"
 
+  # Optional: rename, for EVERY route, the payload fields the ACL reads the
+  # request's (companyId, resourceId) from. An omitted key keeps the canonical
+  # name. The forwarded payload is NOT rewritten, and grants / ACL RPCs keep
+  # companyId/resourceId. A malformed value stops the gateway at boot.
+  # aclContext:
+  #   companyId: tenantId
+  #   resourceId: entityId
+
   # ===========================================================================
   # paths:  PathDefinition[]   — HTTP routes
   # ===========================================================================

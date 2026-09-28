@@ -190,6 +190,9 @@ gateway:
   mode: gateway
   headerPrefix: "X-FWD-"             # prefix for FORWARDED request headers (forwardHeaders);
                                      #   separate from a provider's headerPrefix (auth claims)
+  aclContext:                        # optional: rename, for EVERY route, the payload fields the ACL
+    companyId: tenantId              #   reads (companyId, resourceId) from; omitted key = canonical.
+    resourceId: entityId             #   Payload not rewritten; grants keep the canonical names.
 
   reloadTopic: rlb-gateway-control   # broadcast control topic; action 'gw-reload' rebuilds routes
   metrics:                           # per-call broker sink (omit to disable)
@@ -263,6 +266,8 @@ Auth gate (per request): `allowAnonymous:true` → gate skipped; `auth` no `acti
 The gateway reads the canonical `companyId`/`resourceId` from the payload it forwards (merged per
 `dataSource`, route params win) and matches them exactly for the action check. An id sent in a
 source the route does not forward (e.g. the query of a `dataSource: body` route) is ignored.
+`gateway.aclContext` renames those two fields for every route (one name per field, validated at
+boot: unknown key / empty value / both on the same field → the gateway does not start).
 
 ### gateway.events[]  (WebSocketEvent — WS / webhook)
 

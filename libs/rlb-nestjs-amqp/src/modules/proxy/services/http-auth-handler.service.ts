@@ -3,6 +3,7 @@ import { Request } from 'express';
 import { ProcessedAuthData } from '..';
 import { AclResourceContext } from '../../acl/auth-match';
 import { HandlerAuthConfig } from '../../broker/config/handler-auth.config';
+import { AclContextFields, DEFAULT_ACL_CONTEXT_FIELDS } from '../config/acl-context';
 import { PathDefinition } from '../config/path-definition.config';
 import { AuthProviderRegistry } from './auth-provider-registry.service';
 import { IAclRoleService, RLB_GTW_ACL_ROLE_SERVICE } from './acl.service';
@@ -169,16 +170,17 @@ export class HttpAuthHandlerService {
     return out;
   }
 
-  /** The (companyId, resourceId) the request targets — the canonical fields, read from the PAYLOAD the
-   *  gateway forwards to the microservice (merged per `dataSource`, route params always winning — see
-   *  HttpHandlerService.buildPayload), where @BrokerParam('body', 'companyId'/'resourceId') reads them
-   *  back. Never read them from the raw request with a precedence of its own: a caller could then get
+  /** The (companyId, resourceId) the request targets, read from the PAYLOAD the gateway forwards to
+   *  the microservice (merged per `dataSource`, route params always winning — see
+   *  HttpHandlerService.buildPayload), where the handler reads the same fields back via @BrokerParam.
+   *  `fields` names them: the canonical `companyId`/`resourceId` unless `gateway.aclContext` renames
+   *  them. Never read them from the raw request with a precedence of its own: a caller could then get
    *  an id it holds authorized (e.g. in the query) while the microservice acts on another one (e.g.
    *  in the body, the only source a `dataSource: body` route forwards). */
-  extractResourceContext(payload: { [key: string]: any; }): AclResourceContext {
+  extractResourceContext(payload: { [key: string]: any; }, fields: AclContextFields = DEFAULT_ACL_CONTEXT_FIELDS): AclResourceContext {
     return {
-      companyId: payload?.companyId,
-      resourceId: payload?.resourceId,
+      companyId: payload?.[fields.companyId],
+      resourceId: payload?.[fields.resourceId],
     };
   }
 

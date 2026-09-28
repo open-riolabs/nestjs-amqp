@@ -184,6 +184,26 @@ source the route does not forward (e.g. the query of a `dataSource: body` route)
 Normalization treats `undefined`, `null` and `''` as *absent* (they compare equal), so a missing
 field simply means "resource-less" rather than failing.
 
+#### Renaming the ACL fields — `gateway.aclContext`
+
+By default those fields are named `companyId` and `resourceId`. If your API calls them differently,
+rename them once, for **every** route (YAML, DB and auto-discovered alike):
+
+```yaml
+gateway:
+  aclContext:
+    companyId: tenantId     # optional; an omitted key keeps the canonical name
+    resourceId: entityId
+```
+
+- Only what the gateway reads changes: the forwarded payload is **not** rewritten (the handler keeps
+  reading `@BrokerParam('body', 'entityId')`), and grants plus the ACL RPCs (`acl-grant`,
+  `acl-check-action`, …) keep `companyId` / `resourceId`.
+- One name per field, no alias list. Every route with `actions` must carry the ids under these
+  names; a route that uses another name is evaluated as if that id were absent.
+- Validated at boot: an unknown key (e.g. `resourceID`), an empty or non-string value, or both keys
+  on the same field stop the gateway. When set, the effective names are logged at startup.
+
 There is no separate resource-scoped ACL action: the single `acl-check-action` primitive does both
 the gateway gate and any in-service check. See [./acl.md](./acl.md).
 

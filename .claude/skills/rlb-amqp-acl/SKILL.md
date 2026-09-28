@@ -138,7 +138,9 @@ ProxyModule.forRoot({
 
 Same process → `useExisting`. Separate services → gateway RPCs `acl-check-action` on
 `rlb-acl` instead. A route's `actions` are ACTION NAMES; the caller is authorized if it
-holds **≥1** of them on the request's `(companyId, resourceId)`.
+holds **≥1** of them on the request's `(companyId, resourceId)`. The gateway reads those two from
+the forwarded payload; if requests name them differently, `gateway.aclContext` renames them for
+every route (e.g. `{ resourceId: entityId }`) — grants and the ACL RPCs keep `companyId`/`resourceId`.
 
 ## YAML — topic + queue (names fixed, transport yours)
 

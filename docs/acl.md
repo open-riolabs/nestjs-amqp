@@ -107,7 +107,9 @@ For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from t
 forwards** to the microservice (merged per the route's `dataSource`, route params always winning),
 so the ACL authorizes exactly the ids the microservice receives, and matches them exactly. An id
 sent in a source the route does not forward (e.g. the query of a `dataSource: body` route) is
-ignored.
+ignored. If your requests name those fields differently, rename them for every route with
+`gateway.aclContext` (grants keep `companyId` / `resourceId`) — see the "Resource scoping" section
+of [the gateway docs](./gateway.md).
 
 The exact-match rule (no wildcard) applies throughout: the caller's grant must match the
 extracted `(companyId, resourceId)` exactly, the sole carve-out being both ids absent on the

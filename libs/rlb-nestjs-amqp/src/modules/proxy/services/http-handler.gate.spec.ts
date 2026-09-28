@@ -17,7 +17,7 @@ import { HttpHandlerService } from './http-handler.service';
 // so these tests pin the gate's wiring: allowAnonymous short-circuit, 401/403 enforcement,
 // and the anti-spoofing header precedence (auth-derived claims win over forwardHeaders).
 
-const mkService = () => {
+const mkService = (gatewayOver: any = {}) => {
   const broker = {
     requestData: jest.fn().mockResolvedValue({ ok: true }),
     publishMessage: jest.fn().mockResolvedValue(true),
@@ -29,7 +29,7 @@ const mkService = () => {
     findProvider: jest.fn().mockReturnValue({ name: 'p' }),
   };
   const utils = { error2Object: (e: any) => ({ name: e?.name, message: e?.message }) };
-  const gatewayConfig: any = { headerPrefix: 'X-GTW-AUTH-', paths: [], events: [] };
+  const gatewayConfig: any = { headerPrefix: 'X-GTW-AUTH-', paths: [], events: [], ...gatewayOver };
   const svc = new HttpHandlerService(
     {} as any, broker as any, utils as any, auth as any,
     { reload: jest.fn() } as any, // AuthProviderRegistry (unused by registerPath/handler tests)
@@ -152,8 +152,8 @@ describe('HttpHandlerService — auth/auth gate', () => {
 // microservice acts on another one (e.g. in the body). These tests use the REAL
 // extractResourceContext so the whole gate → forward path is exercised.
 describe('HttpHandlerService — ACL resource context = forwarded payload', () => {
-  const withRealContext = () => {
-    const ctx = mkService();
+  const withRealContext = (gatewayOver: any = {}) => {
+    const ctx = mkService(gatewayOver);
     ctx.auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
     ctx.auth.extractResourceContext.mockImplementation(HttpAuthHandlerService.prototype.extractResourceContext);
     return ctx;
@@ -200,5 +200,38 @@ describe('HttpHandlerService — ACL resource context = forwarded payload', () =
     await h(mkReq({ body: { companyId: 'MINE' } }), res);
     expect(res.statusCode).toBe(200);
     expect(broker.requestData.mock.calls[0][2].companyId).toBe('MINE');
+  });
+
+  describe('gateway.aclContext (global field rename)', () => {
+    const aclContext = { companyId: 'tenantId', resourceId: 'entityId' };
+
+    it('reads the renamed fields; the canonical ones are ignored and the payload is not rewritten', async () => {
+      const { svc, broker, auth } = withRealContext({ aclContext });
+      const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'body' }));
+      const body = { tenantId: 't1', entityId: 'e1', companyId: 'c-canonical', resourceId: 'r-canonical' };
+      await h(mkReq({ body }), mkRes());
+      expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 't1', resourceId: 'e1' });
+      expect(broker.requestData.mock.calls[0][2]).toEqual(body);
+    });
+
+    it('a renamed path param still wins over the same field in the body', async () => {
+      const { svc, broker, auth } = withRealContext({ aclContext });
+      const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'body' }));
+      await h(mkReq({ params: { entityId: 'e-params' }, body: { tenantId: 't1', entityId: 'e-body' } }), mkRes());
+      expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 't1', resourceId: 'e-params' });
+      expect(broker.requestData.mock.calls[0][2].entityId).toBe('e-params');
+    });
+
+    it('renaming only resourceId keeps reading the canonical companyId', async () => {
+      const { svc, auth } = withRealContext({ aclContext: { resourceId: 'entityId' } });
+      const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'body' }));
+      await h(mkReq({ body: { companyId: 'c1', entityId: 'e1', resourceId: 'r-canonical' } }), mkRes());
+      expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 'c1', resourceId: 'e1' });
+    });
+
+    it('a malformed aclContext stops the gateway at construction', () => {
+      expect(() => mkService({ aclContext: { resourceID: 'entityId' } })).toThrow(/unknown key 'resourceID'/);
+      expect(() => mkService({ aclContext: { resourceId: '' } })).toThrow(/non-empty string/);
+    });
   });
 });

@@ -1004,6 +1004,23 @@
         "headerPrefix": {
           "type": "string"
         },
+        "aclContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "markdownDescription": "Renames, for every route, the payload fields the ACL reads the request's `(companyId, resourceId)` from. Each value is the field name your requests carry; an omitted key keeps the canonical name. The forwarded payload is not rewritten, and grants / ACL RPCs keep `companyId` / `resourceId`. A malformed value stops the gateway at boot.",
+          "properties": {
+            "companyId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Field carrying the company id (default: companyId)."
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Field carrying the resource id (default: resourceId)."
+            }
+          }
+        },
         "loadConfig": {
           "$ref": "#/definitions/gatewayConfigLoader"
         },
@@ -1139,12 +1156,21 @@
           "type": "boolean",
           "description": "If true, allows access to this path even without authentication. If auth is also specified, it will attempt to authenticate but won't reject if authentication fails."
         },
-        "roles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1
+        "actions": {
+          "description": "ACL action names (OR): the caller passes holding at least ONE of them on the request's (companyId, resourceId). Requires auth. Omitted or empty = no authorization check.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
         },
         "timeout": {
           "type": "integer",
@@ -1200,8 +1226,21 @@
         {
           "if": {
             "required": [
-              "roles"
-            ]
+              "actions"
+            ],
+            "properties": {
+              "actions": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                ]
+              }
+            }
           },
           "then": {
             "required": [
@@ -1238,11 +1277,21 @@
         "auth": {
           "type": "string"
         },
-        "roles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "actions": {
+          "description": "ACL action names (OR) the subscriber must hold, checked resource-agnostically (WS events carry no resource).",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
         },
         "url": {
           "type": "string",

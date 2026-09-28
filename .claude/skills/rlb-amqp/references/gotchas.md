@@ -126,7 +126,9 @@ every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: a
     holds one of `actions` on that pair. It reads the canonical `companyId`/`resourceId` from the
     payload it FORWARDS (merged per `dataSource`, route params win), so the ACL checks exactly the
     ids the microservice receives (an id in a source the route does not forward, e.g. the query of
-    a `dataSource: body` route, is ignored), and matches them exactly. WS events gate by `actions`
+    a `dataSource: body` route, is ignored), and matches them exactly. `gateway.aclContext`
+    (e.g. `{ resourceId: entityId }`) renames those two fields for EVERY route; the payload is not
+    rewritten and grants / ACL RPCs keep `companyId`/`resourceId`. WS events gate by `actions`
     **resource-agnostically**.
 23b. **`@BrokerAuth`'s 3rd param is now `actions` (was `roles`).** Signature:
     `@BrokerAuth(authName, allowAnonymous?, actions?, httpName?)`. Pass action names there for an

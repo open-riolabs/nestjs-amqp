@@ -21,8 +21,9 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
   `body` | `query` | `params` | `body-query` (body wins) | `query-body` (query wins).
 - **auth**: an `auth-provider` name (validates the request, maps claims to `X-GTW-AUTH-*`
   headers). `allowAnonymous: true` skips the gate. `actions: [...]` adds an ACL action check
-  scoped to the request's `(companyId, resourceId)` (canonical fields read from the forwarded
-  payload, i.e. per `dataSource` with route params winning).
+  scoped to the request's `(companyId, resourceId)` (read from the forwarded payload, i.e. per
+  `dataSource` with route params winning; the field names can be renamed for every route via
+  `gateway.aclContext`).
 - Extras: `timeout` (rpc), `successStatusCode`, `binary`, `redirect`, `parseRaw`, static
   `headers`, `forwardHeaders`.
 
@@ -77,7 +78,8 @@ For every request the gateway runs `processAuthData` (best-effort), then:
    on success the `X-GTW-AUTH-*` headers are forwarded downstream.
 3. **`auth` + `actions`** → authn + action auth. After a valid token the gateway reads the
    user id from the provider's `uidClaim`, extracts `(companyId, resourceId)` from the payload it
-   forwards (canonical fields, merged per `dataSource`, route params winning), and calls
+   forwards (merged per `dataSource`, route params winning; field names per `gateway.aclContext`,
+   default `companyId`/`resourceId`), and calls
    `IAclRoleService.checkAction(userId, { companyId, resourceId }, actions)` in-process. Passes
    if the caller holds at least one of `actions` on that pair, else `403`. The check is
    **exact-match on `(companyId, resourceId)` — there is no wildcard**, and `companyId` is

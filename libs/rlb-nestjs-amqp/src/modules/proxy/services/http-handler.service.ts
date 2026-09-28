@@ -5,6 +5,7 @@ import { NextFunction, Request, Response, Router } from "express";
 import { BrokerService } from "../../broker";
 import { GW_AUTH_RELOAD_ACTION, GW_RELOAD_ACTION, RLB_AMQP_APP_OPTIONS, RLB_AMQP_GATEWAY_OPTIONS } from "../../broker/const";
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
+import { AclContextFields, resolveAclContextFields } from "../config/acl-context";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
 import { AuthProviderRegistry } from "./auth-provider-registry.service";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
@@ -48,6 +49,8 @@ export class HttpHandlerService implements OnModuleInit {
   private readonly multer: multer.Multer;
   /** Single multipart parser instance, invoked manually AFTER the auth gate (see registerPath). */
   private readonly multipartParser: ReturnType<multer.Multer['any']>;
+  /** Payload fields the ACL reads (companyId, resourceId) from — canonical unless gateway.aclContext renames them. */
+  private readonly aclContextFields: AclContextFields;
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
@@ -60,6 +63,12 @@ export class HttpHandlerService implements OnModuleInit {
     @Optional() @Inject(RLB_GTW_METRICS_HOOK) private readonly metricsHook?: GatewayMetricsHook,
   ) {
     this.logger = new Logger(HttpHandlerService.name);
+    // Throws on a malformed gateway.aclContext, so the gateway does not start: that setting decides
+    // which payload fields the ACL authorizes, and a typo must not silently fall back to the defaults.
+    this.aclContextFields = resolveAclContextFields(this.gatewayConfig.aclContext);
+    if (this.gatewayConfig.aclContext) {
+      this.logger.log(`[gateway] ACL context fields: companyId ← '${this.aclContextFields.companyId}', resourceId ← '${this.aclContextFields.resourceId}'`);
+    }
     // memoryStorage buffers whole files in gateway RAM (they must be re-encoded into the AMQP
     // message anyway), so unbounded uploads are an OOM vector: the limits below are mandatory.
     this.multer = multer({
@@ -265,8 +274,9 @@ export class HttpHandlerService implements OnModuleInit {
 
       if (path.allowAnonymous !== true) {
         // (2) Authorization — action-based ACL (no-op when `auth` or `actions` is absent). The
-        // (companyId, resourceId) come from the forwarded payload and need an exact grant match.
-        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(data);
+        // (companyId, resourceId) come from the forwarded payload (field names per
+        // gateway.aclContext) and need an exact grant match.
+        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(data, this.aclContextFields);
         let allowed: boolean;
         try {
           allowed = await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx);

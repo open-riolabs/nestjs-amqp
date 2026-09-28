@@ -175,4 +175,10 @@ describe('HttpAuthHandlerService — extractResourceContext', () => {
   it('returns an object with undefined ids when none are present (exact-match still applies)', () => {
     expect(svc().extractResourceContext({})).toEqual({ companyId: undefined, resourceId: undefined });
   });
+
+  it('reads the fields renamed by gateway.aclContext and ignores the canonical ones', () => {
+    const payload = { tenantId: 't1', entityId: 'e1', companyId: 'c-canonical', resourceId: 'r-canonical' };
+    expect(svc().extractResourceContext(payload, { companyId: 'tenantId', resourceId: 'entityId' }))
+      .toEqual({ companyId: 't1', resourceId: 'e1' });
+  });
 });
