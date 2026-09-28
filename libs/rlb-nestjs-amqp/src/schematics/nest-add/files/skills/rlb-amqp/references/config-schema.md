@@ -260,8 +260,9 @@ Auth gate (per request): `allowAnonymous:true` → gate skipped; `auth` no `acti
 `checkAction(userId, { companyId, resourceId }, actions)` (403 if the caller holds none of
 `actions` on that pair). `actions` without `auth` fails closed (every request 403).
 
-The gateway reads the canonical `companyId`/`resourceId` from the request (precedence
-params → query → body) and matches them exactly for the action check.
+The gateway reads the canonical `companyId`/`resourceId` from the payload it forwards (merged per
+`dataSource`, route params win) and matches them exactly for the action check. An id sent in a
+source the route does not forward (e.g. the query of a `dataSource: body` route) is ignored.
 
 ### gateway.events[]  (WebSocketEvent — WS / webhook)
 

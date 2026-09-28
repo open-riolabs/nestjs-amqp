@@ -7,7 +7,9 @@ jest.mock('jwks-rsa', () => ({
   },
 }));
 
+import type { BrokerHttpDataSource } from '../../broker/decorators/broker-action.decorator';
 import { PathDefinition } from '../config/path-definition.config';
+import { HttpAuthHandlerService } from './http-auth-handler.service';
 import { HttpHandlerService } from './http-handler.service';
 
 // End-to-end test of the gateway auth/auth gate as orchestrated by HttpHandlerService.
@@ -142,5 +144,61 @@ describe('HttpHandlerService — auth/auth gate', () => {
     await h(mkReq({ headers: { 'x-evil': 'attacker' } }), mkRes());
     const forwardedHeaders = broker.requestData.mock.calls[0][3];
     expect(forwardedHeaders['X-GTW-AUTH-USERID']).toBe('real-user');
+  });
+});
+
+// The ACL resource context must come from the SAME payload the microservice receives, whatever the
+// dataSource: otherwise a caller could get an id it holds authorized (e.g. in the query) while the
+// microservice acts on another one (e.g. in the body). These tests use the REAL
+// extractResourceContext so the whole gate → forward path is exercised.
+describe('HttpHandlerService — ACL resource context = forwarded payload', () => {
+  const withRealContext = () => {
+    const ctx = mkService();
+    ctx.auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
+    ctx.auth.extractResourceContext.mockImplementation(HttpAuthHandlerService.prototype.extractResourceContext);
+    return ctx;
+  };
+  // Every source carries a different value, so the test shows which one wins.
+  const conflictingReq = () => mkReq({
+    params: { resourceId: 'r-params' },
+    query: { companyId: 'c-query', resourceId: 'r-query' },
+    body: { companyId: 'c-body', resourceId: 'r-body' },
+  });
+
+  it.each<[BrokerHttpDataSource, string | undefined]>([
+    ['body', 'c-body'],
+    ['query', 'c-query'],
+    ['params', undefined],
+    ['body-query', 'c-body'],
+    ['query-body', 'c-query'],
+  ])("dataSource '%s': the ACL checks exactly the ids that are forwarded (companyId=%s, params win)", async (dataSource, companyId) => {
+    const { svc, broker, auth } = withRealContext();
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource }));
+    await h(conflictingReq(), mkRes());
+    const forwarded = broker.requestData.mock.calls[0][2];
+    const checkedCtx = auth.checkActions.mock.calls[0][2];
+    expect(checkedCtx).toEqual({ companyId, resourceId: 'r-params' });
+    expect({ companyId: forwarded.companyId, resourceId: forwarded.resourceId }).toEqual(checkedCtx);
+  });
+
+  it('a query id the caller holds cannot authorize a different body id (dataSource body): 403', async () => {
+    const { svc, broker, auth } = withRealContext();
+    // The caller holds the action on company MINE only.
+    auth.checkActions.mockImplementation(async (_claims: any, _path: any, ctx: any) => ctx?.companyId === 'MINE');
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'body' }));
+    const res = mkRes();
+    await h(mkReq({ query: { companyId: 'MINE' }, body: { companyId: 'VICTIM' } }), res);
+    expect(res.statusCode).toBe(403);
+    expect(broker.requestData).not.toHaveBeenCalled();
+  });
+
+  it('the id the caller holds, sent where the route reads it, is still authorized and forwarded', async () => {
+    const { svc, broker, auth } = withRealContext();
+    auth.checkActions.mockImplementation(async (_claims: any, _path: any, ctx: any) => ctx?.companyId === 'MINE');
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'body' }));
+    const res = mkRes();
+    await h(mkReq({ body: { companyId: 'MINE' } }), res);
+    expect(res.statusCode).toBe(200);
+    expect(broker.requestData.mock.calls[0][2].companyId).toBe('MINE');
   });
 });

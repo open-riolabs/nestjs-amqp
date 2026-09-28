@@ -177,10 +177,12 @@ The action check is **resource-aware**: the caller must hold the action on the *
 authorizes **only** a request that also carries no company/resource (both ids absent on the request
 **and** the grant). `companyId` is part of the decision, not grouping metadata.
 
-The gateway always reads the canonical `companyId` / `resourceId` from the request, precedence
-**params → query → body**, and matches them exactly. Normalization treats `undefined`, `null` and
-`''` as *absent* (they compare equal), so a missing canonical field simply means "resource-less"
-rather than failing.
+The gateway always reads `companyId` / `resourceId` from the **payload it forwards** to the
+microservice — merged per the route's `dataSource`, route params always winning — so the ACL
+authorizes exactly the ids the microservice receives, and matches them exactly. An id sent in a
+source the route does not forward (e.g. the query of a `dataSource: body` route) is ignored.
+Normalization treats `undefined`, `null` and `''` as *absent* (they compare equal), so a missing
+field simply means "resource-less" rather than failing.
 
 There is no separate resource-scoped ACL action: the single `acl-check-action` primitive does both
 the gateway gate and any in-service check. See [./acl.md](./acl.md).

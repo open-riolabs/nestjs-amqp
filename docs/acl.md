@@ -103,8 +103,11 @@ provider and authorizes via `checkAction`:
   events carry no HTTP resource): a subscriber passes if any grant includes one of the
   actions.
 
-For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from the request,
-precedence **params → query → body**, and matches them exactly.
+For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from the **payload it
+forwards** to the microservice (merged per the route's `dataSource`, route params always winning),
+so the ACL authorizes exactly the ids the microservice receives, and matches them exactly. An id
+sent in a source the route does not forward (e.g. the query of a `dataSource: body` route) is
+ignored.
 
 The exact-match rule (no wildcard) applies throughout: the caller's grant must match the
 extracted `(companyId, resourceId)` exactly, the sole carve-out being both ids absent on the

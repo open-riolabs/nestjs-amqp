@@ -202,7 +202,8 @@ provider must extract the userId (`uidClaim` + `headerPrefix`). WS events check 
 **The gateway gate verifies `(companyId, resourceId)` EXACTLY — no wildcard.** A grant
 authorizes only when its `(companyId, resourceId)` equal the request's (`undefined`/`null`/`''`
 all = absent and compare equal). The gateway reads the canonical `companyId`/`resourceId` from
-the request (precedence params → query → body) and matches them exactly. Holding the
+the payload it forwards to the microservice (merged per `dataSource`, route params winning) and
+matches them exactly; an id in a source the route does not forward is ignored. Holding the
 action on company A / resource X does **not** authorize a request targeting company B or
 resource Y.
 

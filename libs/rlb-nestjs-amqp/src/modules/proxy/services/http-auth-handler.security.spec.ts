@@ -159,16 +159,20 @@ describe('HttpAuthHandlerService — action-based ACL (checkActionsForClaims, WS
 
 describe('HttpAuthHandlerService — extractResourceContext', () => {
   const svc = () => makeWithAcl({ checkAction: jest.fn() });
-  const rq = (over: any = {}) => ({ params: {}, query: {}, body: {}, ...over } as any);
 
-  it('reads canonical companyId/resourceId with precedence params → query → body', () => {
-    const ctx = svc().extractResourceContext(
-      rq({ params: { resourceId: 'rP' }, query: { companyId: 'cQ', resourceId: 'rQ' }, body: { companyId: 'cB' } }),
-    );
-    expect(ctx).toEqual({ companyId: 'cQ', resourceId: 'rP' });
+  // The argument is the payload forwarded to the microservice (already merged per dataSource by
+  // HttpHandlerService.buildPayload), NOT the raw request — see the gate spec for the wiring.
+  it('reads the canonical companyId/resourceId from the forwarded payload', () => {
+    expect(svc().extractResourceContext({ companyId: 'c1', resourceId: 'r1', other: 'x' }))
+      .toEqual({ companyId: 'c1', resourceId: 'r1' });
+  });
+
+  it('does not look into nested request-shaped sources (params/query/body)', () => {
+    const ctx = svc().extractResourceContext({ query: { companyId: 'cQ' }, body: { resourceId: 'rB' } });
+    expect(ctx).toEqual({ companyId: undefined, resourceId: undefined });
   });
 
   it('returns an object with undefined ids when none are present (exact-match still applies)', () => {
-    expect(svc().extractResourceContext(rq())).toEqual({ companyId: undefined, resourceId: undefined });
+    expect(svc().extractResourceContext({})).toEqual({ companyId: undefined, resourceId: undefined });
   });
 });

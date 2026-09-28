@@ -169,13 +169,16 @@ export class HttpAuthHandlerService {
     return out;
   }
 
-  /** The (companyId, resourceId) the request targets — the canonical fields, read params-first then
-   *  query then body, mirroring how the gateway forwards them to the microservice (where
-   *  @BrokerParam('body', 'companyId'/'resourceId') reads them back). */
-  extractResourceContext(req: Request): AclResourceContext {
+  /** The (companyId, resourceId) the request targets — the canonical fields, read from the PAYLOAD the
+   *  gateway forwards to the microservice (merged per `dataSource`, route params always winning — see
+   *  HttpHandlerService.buildPayload), where @BrokerParam('body', 'companyId'/'resourceId') reads them
+   *  back. Never read them from the raw request with a precedence of its own: a caller could then get
+   *  an id it holds authorized (e.g. in the query) while the microservice acts on another one (e.g.
+   *  in the body, the only source a `dataSource: body` route forwards). */
+  extractResourceContext(payload: { [key: string]: any; }): AclResourceContext {
     return {
-      companyId: (req.params as any)?.companyId ?? (req.query as any)?.companyId ?? (req.body as any)?.companyId,
-      resourceId: (req.params as any)?.resourceId ?? (req.query as any)?.resourceId ?? (req.body as any)?.resourceId,
+      companyId: payload?.companyId,
+      resourceId: payload?.resourceId,
     };
   }
 

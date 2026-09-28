@@ -74,8 +74,8 @@ export class HttpHandlerService implements OnModuleInit {
 
   /**
    * Runs the multipart parser on demand. Called AFTER authentication (so an anonymous client
-   * cannot make the gateway buffer arbitrary payloads) but BEFORE the ACL check (whose
-   * resource context may read multipart form fields from req.body). No-op for
+   * cannot make the gateway buffer arbitrary payloads) but BEFORE the payload is built (so
+   * multipart form fields in req.body reach it, and with it the ACL resource context). No-op for
    * non-multipart requests. Rejects with the underlying MulterError on limit violations.
    */
   private parseMultipart(req: Request, res: Response): Promise<void> {
@@ -248,7 +248,7 @@ export class HttpHandlerService implements OnModuleInit {
 
       // Multipart parsing runs only for requests that passed authentication (an anonymous
       // client must not be able to make the gateway buffer arbitrary uploads in RAM), and
-      // BEFORE the ACL check so its resource context can read multipart form fields.
+      // BEFORE the payload is built so multipart form fields are part of it.
       try {
         await this.parseMultipart(req, res);
       } catch (error) {
@@ -259,10 +259,14 @@ export class HttpHandlerService implements OnModuleInit {
         return;
       }
 
+      // The payload forwarded to the microservice. Built BEFORE the ACL check because the check
+      // must authorize exactly the (companyId, resourceId) the microservice will receive.
+      const data = this.buildPayload(req, path);
+
       if (path.allowAnonymous !== true) {
         // (2) Authorization — action-based ACL (no-op when `auth` or `actions` is absent). The
-        // gateway extracts the request's (companyId, resourceId) and requires an exact grant match.
-        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(req);
+        // (companyId, resourceId) come from the forwarded payload and need an exact grant match.
+        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(data);
         let allowed: boolean;
         try {
           allowed = await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx);
@@ -290,27 +294,12 @@ export class HttpHandlerService implements OnModuleInit {
       const { success: _authSuccess, ...authHeaders } = authData || {};
       const httpHeaders = this.httpHeaders(req, path);
 
-      let data = req[path.dataSource] || req.body || {};
-      if (path.dataSource === 'body') {
-        data = { ...req.params, ...(req.body || {}) };
-      } else if (path.dataSource === 'query') {
-        data = { ...req.params, ...(req.query || {}) };
-      } else if (path.dataSource === 'params') {
-        data = req.params || {};
-      } else if (path.dataSource === 'body-query') {
-        data = { ...req.params, ...(req.query || {}), ...(req.body || {}) };
-      } else if (path.dataSource === 'query-body') {
-        data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
-      } else {
-        data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
-      }
       if (path.parseRaw) {
         Object.assign(data, { $raw: (req as any).rawBody });
       }
       if (req.files) {
         Object.assign(data, { $files: req.files });
       }
-      Object.assign(data, req.params);
       if (data['$files']) {
         for (const file of data['$files']) {
           const o: Buffer = file.buffer;
@@ -377,6 +366,30 @@ export class HttpHandlerService implements OnModuleInit {
         this.sendError(res, error);
       }
     });
+  }
+
+  /**
+   * The payload forwarded to the microservice, merged per the route's `dataSource` (the LAST-named
+   * source wins on key conflicts). Route params are applied last, so they win over any same-named
+   * body/query field. This is also the ONLY source of the ACL resource context, so what gets
+   * authorized is exactly what gets forwarded. `$raw`/`$files` are attached after the ACL check.
+   */
+  private buildPayload(req: Request, path: PathDefinition): { [key: string]: any; } {
+    let data: { [key: string]: any; };
+    if (path.dataSource === 'body') {
+      data = { ...req.params, ...(req.body || {}) };
+    } else if (path.dataSource === 'query') {
+      data = { ...req.params, ...(req.query || {}) };
+    } else if (path.dataSource === 'params') {
+      data = req.params || {};
+    } else if (path.dataSource === 'body-query') {
+      data = { ...req.params, ...(req.query || {}), ...(req.body || {}) };
+    } else if (path.dataSource === 'query-body') {
+      data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
+    } else {
+      data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
+    }
+    return Object.assign(data, req.params);
   }
 
   /**
