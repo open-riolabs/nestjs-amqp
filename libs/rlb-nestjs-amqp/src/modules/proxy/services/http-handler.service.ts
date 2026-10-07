@@ -268,15 +268,15 @@ export class HttpHandlerService implements OnModuleInit {
         return;
       }
 
-      // The payload forwarded to the microservice. Built BEFORE the ACL check because the check
-      // must authorize exactly the (companyId, resourceId) the microservice will receive.
+      // The payload forwarded to the microservice. Built BEFORE the ACL check because, on a field
+      // it carries, the check must authorize exactly the value the microservice will receive.
       const data = this.buildPayload(req, path);
 
       if (path.allowAnonymous !== true) {
         // (2) Authorization — action-based ACL (no-op when `auth` or `actions` is absent). The
-        // (companyId, resourceId) come from the forwarded payload (field names per
-        // gateway.aclContext) and need an exact grant match.
-        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(data, this.aclContextFields);
+        // (companyId, resourceId) come from every HTTP source, the forwarded payload winning (see
+        // aclView; field names per gateway.aclContext), and need an exact grant match.
+        const resourceCtx = this.httpAuthHandlerService.extractResourceContext(this.aclView(req, data), this.aclContextFields);
         let allowed: boolean;
         try {
           allowed = await this.httpAuthHandlerService.checkActions(authData, path, resourceCtx);
@@ -381,8 +381,8 @@ export class HttpHandlerService implements OnModuleInit {
   /**
    * The payload forwarded to the microservice, merged per the route's `dataSource` (the LAST-named
    * source wins on key conflicts). Route params are applied last, so they win over any same-named
-   * body/query field. This is also the ONLY source of the ACL resource context, so what gets
-   * authorized is exactly what gets forwarded. `$raw`/`$files` are attached after the ACL check.
+   * body/query field. It wins in the ACL resource context too (see aclView), so a forwarded id is
+   * exactly the one authorized. `$raw`/`$files` are attached after the ACL check.
    */
   private buildPayload(req: Request, path: PathDefinition): { [key: string]: any; } {
     let data: { [key: string]: any; };
@@ -400,6 +400,20 @@ export class HttpHandlerService implements OnModuleInit {
       data = { ...req.params, ...(req.body || {}), ...(req.query || {}) };
     }
     return Object.assign(data, req.params);
+  }
+
+  /**
+   * What the ACL reads the resource context from: EVERY HTTP source (params, query, body), whatever
+   * the route's `dataSource` forwards — e.g. a `dataSource: params` route still sees an id sent in
+   * the query. On a same-named field the forwarded payload wins (route params first, then the
+   * `dataSource` order), then the query, then the body. The payload must win: a caller could
+   * otherwise get an id it holds authorized (e.g. in the query) while the microservice acts on
+   * another one (e.g. in the body of a `dataSource: body` route). The forwarded payload is not changed.
+   */
+  private aclView(req: Request, data: { [key: string]: any; }): { [key: string]: any; } {
+    // Only key/value sources: spreading a raw/text body (Buffer, string) would copy one key per byte.
+    const fields = (v: unknown) => (v && typeof v === 'object' && !Buffer.isBuffer(v) && !Array.isArray(v) ? v : {});
+    return { ...fields(req.body), ...fields(req.query), ...data };
   }
 
   /**

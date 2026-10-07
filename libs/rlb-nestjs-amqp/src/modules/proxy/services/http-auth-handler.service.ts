@@ -170,17 +170,17 @@ export class HttpAuthHandlerService {
     return out;
   }
 
-  /** The (companyId, resourceId) the request targets, read from the PAYLOAD the gateway forwards to
-   *  the microservice (merged per `dataSource`, route params always winning — see
-   *  HttpHandlerService.buildPayload), where the handler reads the same fields back via @BrokerParam.
-   *  `fields` names them: the canonical `companyId`/`resourceId` unless `gateway.aclContext` renames
-   *  them. Never read them from the raw request with a precedence of its own: a caller could then get
-   *  an id it holds authorized (e.g. in the query) while the microservice acts on another one (e.g.
-   *  in the body, the only source a `dataSource: body` route forwards). */
-  extractResourceContext(payload: { [key: string]: any; }, fields: AclContextFields = DEFAULT_ACL_CONTEXT_FIELDS): AclResourceContext {
+  /** The (companyId, resourceId) the request targets, read from `view`: every HTTP source merged with
+   *  the forwarded payload winning (see HttpHandlerService.aclView), so an id is seen whatever the
+   *  route's `dataSource` and a forwarded id is exactly the one authorized. `fields` names them: the
+   *  canonical `companyId`/`resourceId` unless `gateway.aclContext` renames them. Never read them
+   *  from the raw request with a precedence of its own: a caller could then get an id it holds
+   *  authorized (e.g. in the query) while the microservice acts on another one (e.g. in the body, the
+   *  only source a `dataSource: body` route forwards). */
+  extractResourceContext(view: { [key: string]: any; }, fields: AclContextFields = DEFAULT_ACL_CONTEXT_FIELDS): AclResourceContext {
     return {
-      companyId: payload?.[fields.companyId],
-      resourceId: payload?.[fields.resourceId],
+      companyId: view?.[fields.companyId],
+      resourceId: view?.[fields.resourceId],
     };
   }
 

@@ -177,10 +177,24 @@ The action check is **resource-aware**: the caller must hold the action on the *
 authorizes **only** a request that also carries no company/resource (both ids absent on the request
 **and** the grant). `companyId` is part of the decision, not grouping metadata.
 
-The gateway always reads `companyId` / `resourceId` from the **payload it forwards** to the
-microservice — merged per the route's `dataSource`, route params always winning — so the ACL
-authorizes exactly the ids the microservice receives, and matches them exactly. An id sent in a
-source the route does not forward (e.g. the query of a `dataSource: body` route) is ignored.
+The gateway reads `companyId` / `resourceId` from **every HTTP source** — route params, query and
+body — whatever the route's `dataSource`, and matches them exactly. On a same-named field the
+**forwarded payload wins**, then the query, then the body:
+
+| `dataSource` | precedence for the ACL (left wins) |
+|---|---|
+| `body` | params → body → query |
+| `query` | params → query → body |
+| `params` | params → query → body |
+| `body-query` | params → body → query |
+| `query-body` / default | params → query → body |
+
+So an id the microservice receives is always the one authorized: a caller cannot get an id it
+holds authorized in the query while a `dataSource: body` route forwards another one in the body.
+The forwarded payload is **not** changed: an id read from a source the route does not forward (e.g.
+the query of a `dataSource: params` route) is authorized but not sent to the microservice, which
+must not assume it receives it. Because the match is exact, an id sent in any source is part of the
+check: a resource-less grant does not cover a request that carries one.
 Normalization treats `undefined`, `null` and `''` as *absent* (they compare equal), so a missing
 field simply means "resource-less" rather than failing.
 

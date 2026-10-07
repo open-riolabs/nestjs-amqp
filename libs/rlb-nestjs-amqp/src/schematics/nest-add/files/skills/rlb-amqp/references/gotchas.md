@@ -123,10 +123,12 @@ every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: a
 23a. **Gateway gating is ACTION-based, not role-based.** `gateway.paths[].actions` /
     `events[].actions` name ACTIONS (was `roles`). The gateway resolves `userId` from the auth
     provider, extracts `(companyId, resourceId)` from the request, and authorizes if the caller
-    holds one of `actions` on that pair. It reads the canonical `companyId`/`resourceId` from the
-    payload it FORWARDS (merged per `dataSource`, route params win), so the ACL checks exactly the
-    ids the microservice receives (an id in a source the route does not forward, e.g. the query of
-    a `dataSource: body` route, is ignored), and matches them exactly. `gateway.aclContext`
+    holds one of `actions` on that pair. It reads the canonical `companyId`/`resourceId` from
+    EVERY source (params, query, body) whatever the `dataSource`, and matches them exactly. On a
+    same-named field the forwarded payload wins (route params first), then query, then body, so a
+    forwarded id is always the one authorized. An id from a source the route does not forward is
+    checked (a resource-less grant no longer covers that request) but NOT sent to the
+    microservice. `gateway.aclContext`
     (e.g. `{ resourceId: entityId }`) renames those two fields for EVERY route; the payload is not
     rewritten and grants / ACL RPCs keep `companyId`/`resourceId`. WS events gate by `actions`
     **resource-agnostically**.

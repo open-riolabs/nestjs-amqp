@@ -103,11 +103,13 @@ provider and authorizes via `checkAction`:
   events carry no HTTP resource): a subscriber passes if any grant includes one of the
   actions.
 
-For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from the **payload it
-forwards** to the microservice (merged per the route's `dataSource`, route params always winning),
-so the ACL authorizes exactly the ids the microservice receives, and matches them exactly. An id
-sent in a source the route does not forward (e.g. the query of a `dataSource: body` route) is
-ignored. If your requests name those fields differently, rename them for every route with
+For HTTP paths the gateway reads the canonical `companyId` / `resourceId` from **every HTTP
+source** (route params, query, body), whatever the route's `dataSource`, and matches them exactly.
+On a same-named field the **forwarded payload wins** (route params first, then the `dataSource`
+order), then the query, then the body, so an id the microservice receives is always the one
+authorized. The forwarded payload is not changed: an id read from a source the route does not
+forward (e.g. the query of a `dataSource: params` route) is authorized but not sent to the
+microservice. If your requests name those fields differently, rename them for every route with
 `gateway.aclContext` (grants keep `companyId` / `resourceId`) — see the "Resource scoping" section
 of [the gateway docs](./gateway.md).
 

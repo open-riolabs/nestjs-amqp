@@ -160,9 +160,9 @@ describe('HttpAuthHandlerService — action-based ACL (checkActionsForClaims, WS
 describe('HttpAuthHandlerService — extractResourceContext', () => {
   const svc = () => makeWithAcl({ checkAction: jest.fn() });
 
-  // The argument is the payload forwarded to the microservice (already merged per dataSource by
-  // HttpHandlerService.buildPayload), NOT the raw request — see the gate spec for the wiring.
-  it('reads the canonical companyId/resourceId from the forwarded payload', () => {
+  // The argument is the ACL view (every HTTP source flattened, the forwarded payload winning — see
+  // HttpHandlerService.aclView), NOT the raw request — see the gate spec for the wiring.
+  it('reads the canonical companyId/resourceId from the ACL view', () => {
     expect(svc().extractResourceContext({ companyId: 'c1', resourceId: 'r1', other: 'x' }))
       .toEqual({ companyId: 'c1', resourceId: 'r1' });
   });

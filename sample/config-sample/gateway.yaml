@@ -123,7 +123,7 @@ gateway:
   # governs the auth-claim headers.
   headerPrefix: "X-FWD-"
 
-  # Optional: rename, for EVERY route, the payload fields the ACL reads the
+  # Optional: rename, for EVERY route, the request fields the ACL reads the
   # request's (companyId, resourceId) from. An omitted key keeps the canonical
   # name. The forwarded payload is NOT rewritten, and grants / ACL RPCs keep
   # companyId/resourceId. A malformed value stops the gateway at boot.
@@ -147,8 +147,11 @@ gateway:
   #                                     (companyId, resourceId), else 403.
   #   Declaring `actions` WITHOUT `auth` fails closed (every request 403).
   #
-  #   The gateway reads the canonical companyId/resourceId from the payload it
-  #   forwards (merged per dataSource, route params win) and matches them exactly.
+  #   The gateway reads the canonical companyId/resourceId from EVERY source
+  #   (params, query, body), whatever the dataSource, and matches them exactly.
+  #   Same-named field: the forwarded payload wins (route params first), then
+  #   query, then body. The payload is not changed: an id from a source the
+  #   route does not forward is checked but not sent to the microservice.
   #
   # RESPONSE / STATUS MAPPING (rpc mode):
   #   * A DEFINED reply (including falsy false / 0 / "") -> 200 with body.
@@ -199,8 +202,8 @@ gateway:
                                   # the request's (companyId, resourceId)
       allowAnonymous: false       # explicit: do NOT skip the gate (default behavior)
 
-      # The gateway reads the canonical companyId/resourceId from the payload it
-      # forwards (merged per dataSource, route params win) and matches them exactly.
+      # The gateway reads the canonical companyId/resourceId from every source
+      # (params, query, body), the forwarded payload winning, and matches them exactly.
 
       timeout: 15000              # RPC timeout in ms (rpc mode only)
 

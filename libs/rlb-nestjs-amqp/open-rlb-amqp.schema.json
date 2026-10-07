@@ -1007,7 +1007,7 @@
         "aclContext": {
           "type": "object",
           "additionalProperties": false,
-          "markdownDescription": "Renames, for every route, the payload fields the ACL reads the request's `(companyId, resourceId)` from. Each value is the field name your requests carry; an omitted key keeps the canonical name. The forwarded payload is not rewritten, and grants / ACL RPCs keep `companyId` / `resourceId`. A malformed value stops the gateway at boot.",
+          "markdownDescription": "Renames, for every route, the request fields (params, query, body) the ACL reads the request's `(companyId, resourceId)` from. Each value is the field name your requests carry; an omitted key keeps the canonical name. The forwarded payload is not rewritten, and grants / ACL RPCs keep `companyId` / `resourceId`. A malformed value stops the gateway at boot.",
           "properties": {
             "companyId": {
               "type": "string",

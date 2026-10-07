@@ -117,8 +117,9 @@ export interface GatewayConfig {
   /**
    * Renames, for EVERY route (YAML, DB and auto-discovered alike), the fields the ACL check reads
    * the request's (companyId, resourceId) from — e.g. `{ resourceId: 'entityId' }` when the API
-   * calls its resource `entityId`. They are read from the payload forwarded to the microservice,
-   * which is NOT rewritten (the handler keeps reading its own field name). Grants and the ACL RPCs
+   * calls its resource `entityId`. They are read from every HTTP source (params, query, body), the
+   * payload forwarded to the microservice winning; that payload is NOT rewritten (the handler keeps
+   * reading its own field name). Grants and the ACL RPCs
    * (`acl-grant`, `acl-check-action`, …) keep the canonical names. A malformed value stops the
    * gateway at boot. Omit to read `companyId` / `resourceId`.
    */

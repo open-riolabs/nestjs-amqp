@@ -147,11 +147,11 @@ describe('HttpHandlerService — auth/auth gate', () => {
   });
 });
 
-// The ACL resource context must come from the SAME payload the microservice receives, whatever the
-// dataSource: otherwise a caller could get an id it holds authorized (e.g. in the query) while the
-// microservice acts on another one (e.g. in the body). These tests use the REAL
-// extractResourceContext so the whole gate → forward path is exercised.
-describe('HttpHandlerService — ACL resource context = forwarded payload', () => {
+// The ACL resource context is read from EVERY HTTP source (params, query, body), whatever the
+// dataSource, but on a same-named field the forwarded payload wins: otherwise a caller could get an id
+// it holds authorized (e.g. in the query) while the microservice acts on another one (e.g. in the
+// body). These tests use the REAL extractResourceContext so the whole gate → forward path is exercised.
+describe('HttpHandlerService — ACL resource context = every source, forwarded payload winning', () => {
   const withRealContext = (gatewayOver: any = {}) => {
     const ctx = mkService(gatewayOver);
     ctx.auth.processAuthData.mockResolvedValue({ success: true, 'X-GTW-AUTH-USERID': 'u1' });
@@ -165,20 +165,53 @@ describe('HttpHandlerService — ACL resource context = forwarded payload', () =
     body: { companyId: 'c-body', resourceId: 'r-body' },
   });
 
-  it.each<[BrokerHttpDataSource, string | undefined]>([
-    ['body', 'c-body'],
-    ['query', 'c-query'],
-    ['params', undefined],
-    ['body-query', 'c-body'],
-    ['query-body', 'c-query'],
-  ])("dataSource '%s': the ACL checks exactly the ids that are forwarded (companyId=%s, params win)", async (dataSource, companyId) => {
+  it.each<[BrokerHttpDataSource, string, string | undefined]>([
+    ['body', 'c-body', 'c-body'],
+    ['query', 'c-query', 'c-query'],
+    // Neither query nor body is forwarded: the ACL still sees them, the query winning over the body.
+    ['params', 'c-query', undefined],
+    ['body-query', 'c-body', 'c-body'],
+    ['query-body', 'c-query', 'c-query'],
+  ])("dataSource '%s': the ACL checks companyId=%s (forwarded: %s), params win", async (dataSource, checkedCompanyId, forwardedCompanyId) => {
     const { svc, broker, auth } = withRealContext();
     const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource }));
     await h(conflictingReq(), mkRes());
     const forwarded = broker.requestData.mock.calls[0][2];
-    const checkedCtx = auth.checkActions.mock.calls[0][2];
-    expect(checkedCtx).toEqual({ companyId, resourceId: 'r-params' });
-    expect({ companyId: forwarded.companyId, resourceId: forwarded.resourceId }).toEqual(checkedCtx);
+    expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: checkedCompanyId, resourceId: 'r-params' });
+    expect(forwarded.companyId).toBe(forwardedCompanyId);
+    expect(forwarded.resourceId).toBe('r-params');
+  });
+
+  it.each<[BrokerHttpDataSource, 'query' | 'body']>([
+    ['params', 'query'],
+    ['params', 'body'],
+    ['body', 'query'],
+    ['query', 'body'],
+  ])("dataSource '%s': an id sent only in the %s is seen by the ACL; the forwarded payload is unchanged", async (dataSource, source) => {
+    const { svc, broker, auth } = withRealContext();
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource }));
+    await h(mkReq({ params: { orderId: 'o1' }, [source]: { companyId: 'c1' } }), mkRes());
+    expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 'c1', resourceId: undefined });
+    expect(broker.requestData.mock.calls[0][2]).toEqual({ orderId: 'o1' });
+  });
+
+  it('a route param wins over the same-named query field (dataSource params)', async () => {
+    const { svc, broker, auth } = withRealContext();
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'params' }));
+    await h(mkReq({ params: { companyId: 'c-params' }, query: { companyId: 'c-query', resourceId: 'r-query' } }), mkRes());
+    expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 'c-params', resourceId: 'r-query' });
+    expect(broker.requestData.mock.calls[0][2]).toEqual({ companyId: 'c-params' });
+  });
+
+  it.each([
+    ['a Buffer', Buffer.from('{"companyId":"c-raw"}')],
+    ['a string', 'companyId=c-raw'],
+  ])('a raw body (%s) adds no fields to the ACL view', async (_label, body) => {
+    const { svc, auth } = withRealContext();
+    const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'params' }));
+    await h(mkReq({ body, query: { companyId: 'c1' } }), mkRes());
+    expect(Object.keys(auth.extractResourceContext.mock.calls[0][0])).toEqual(['companyId']);
+    expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 'c1', resourceId: undefined });
   });
 
   it('a query id the caller holds cannot authorize a different body id (dataSource body): 403', async () => {
@@ -220,6 +253,14 @@ describe('HttpHandlerService — ACL resource context = forwarded payload', () =
       await h(mkReq({ params: { entityId: 'e-params' }, body: { tenantId: 't1', entityId: 'e-body' } }), mkRes());
       expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 't1', resourceId: 'e-params' });
       expect(broker.requestData.mock.calls[0][2].entityId).toBe('e-params');
+    });
+
+    it('a renamed id sent only in the query of a dataSource: params route is seen', async () => {
+      const { svc, broker, auth } = withRealContext({ aclContext });
+      const h = handlerFor(svc, basePath({ auth: 'p', actions: ['orders.write'], dataSource: 'params' }));
+      await h(mkReq({ params: { entityId: 'e-params' }, query: { tenantId: 't1', companyId: 'c-canonical' } }), mkRes());
+      expect(auth.checkActions.mock.calls[0][2]).toEqual({ companyId: 't1', resourceId: 'e-params' });
+      expect(broker.requestData.mock.calls[0][2]).toEqual({ entityId: 'e-params' });
     });
 
     it('renaming only resourceId keeps reading the canonical companyId', async () => {
