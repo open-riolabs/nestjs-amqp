@@ -314,9 +314,13 @@ only (intentional override); cross-service collisions stay `warn` + journaled.
 burst? }` on `gw-path-create` / `gw-path-update` (`null` removes it) is the route's own
 per-caller limit: it wins over `gateway.rateLimit.routes`, inherits a missing value from
 `gateway.rateLimit.default`, needs no `gateway.rateLimit` block and takes effect at the next
-reload. Malformed → `400`, nothing written. Released with `releaseOverrides: ['rateLimit']` →
-the next sync writes `rateLimit: null`. The consumer's Mongo route schema must declare
-`rateLimit: Schema.Types.Mixed` (strict schemas drop unknown fields). Details:
+reload. Malformed or empty (`{}`, `{ enabled: true }`) → `400`, nothing written. Released with
+`releaseOverrides: ['rateLimit']` → the next sync writes `rateLimit: null`. The consumer's
+`HttpPathRepository` must store it WHOLE: Mongo schema `rateLimit: Schema.Types.Mixed` (strict
+schemas drop unknown fields) and an `updateById` that sets it apart from `flattenObject`
+(`$set: { ...flattenObject(rest), ...(rateLimit !== undefined ? { rateLimit } : {}) }`), else an
+old `enabled: false` merges into a new rate and a stored `null` makes the update fail. The API logs
+`rateLimit not stored as sent` when the repository gets it wrong. Details:
 `docs/gateway-admin.md` → "Per-route rate limit".
 
 ```ts

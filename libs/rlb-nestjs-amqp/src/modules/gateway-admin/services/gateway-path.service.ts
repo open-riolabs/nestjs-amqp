@@ -8,7 +8,7 @@ import { RouteSyncLogEntry } from '../models';
 import { HttpPathRepository, StoredHttpPath } from '../repository/http-path.repository';
 import { RouteSyncLogRepository } from '../repository/route-sync-log.repository';
 import { orderPaths } from '../util/path-order';
-import { diffRouteFields, renderChanges, routeKeyOf, USER_OVERRIDABLE_FIELDS } from '../util/route-manifest';
+import { diffRouteFields, renderChanges, routeKeyOf, stableStringify, USER_OVERRIDABLE_FIELDS } from '../util/route-manifest';
 
 @Injectable()
 export class GatewayPathService {
@@ -34,6 +34,7 @@ export class GatewayPathService {
     // A user-created route is owned by the user (source='user'); route auto-discovery never manages
     // it. `source` is forced here regardless of the payload.
     const created = await this.repo.insert({ ...model, routeKey, source: 'user', modified: false });
+    this.checkStoredRateLimit(model, created, routeKey);
     const actor = currentUser ?? 'unknown';
     await this.journal({ service: created.owner ?? 'manual', actor, level: 'info', event: 'created', routeKey, method: created.method, path: created.path, topic: created.topic, action: created.action });
     this.logger.log(`[gw-path] ${actor} created '${routeKey}'`);
@@ -81,6 +82,7 @@ export class GatewayPathService {
     const modified = changedHard.length > 0 ? true : !!existing?.modified;
 
     const updated = await this.repo.updateById(id, { ...model, modified, userOverrides });
+    this.checkStoredRateLimit(model, updated, updated?.routeKey ?? existing?.routeKey);
     const actor = currentUser ?? 'unknown';
     const rendered = renderChanges(changes);
     await this.journal({ service: updated?.owner ?? existing?.owner ?? 'manual', actor, level: 'info', event: 'updated', routeKey: updated?.routeKey ?? existing?.routeKey, method: updated?.method ?? existing?.method, path: updated?.path ?? existing?.path, changes, message: rendered });
@@ -100,6 +102,19 @@ export class GatewayPathService {
     } catch (e) {
       throw new BadRequestError((e as Error).message);
     }
+  }
+
+  /**
+   * The repository must store `rateLimit` exactly as sent. A strict schema without the field drops
+   * it, a flattened Mongo `$set` merges it field by field: either way another limit stays in force
+   * while the API answered 200, so log it as an error (the returned row shows what was stored).
+   */
+  private checkStoredRateLimit(sent: StoredHttpPath, stored: StoredHttpPath | undefined, routeKey?: string): void {
+    if (!sent || !('rateLimit' in sent) || !stored) return;
+    const want = stableStringify(sent.rateLimit ?? null);
+    const got = stableStringify(stored.rateLimit ?? null);
+    if (want === got) return;
+    this.logger.error(`[gw-path] '${routeKey}' rateLimit not stored as sent (sent ${want}, stored ${got}): the route schema must declare it (Mongoose: Schema.Types.Mixed) and updateById must replace it whole, not flatten it (see HttpPathRepository.updateById)`);
   }
 
   /**

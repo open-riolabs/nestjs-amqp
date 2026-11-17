@@ -115,8 +115,13 @@ every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: a
     `gateway.rateLimit.routes` match the route path **as declared** (`/bookings/:id`, not
     `/bookings/42`; trailing `/` ignored) and `method` when given; one matching no route logs
     `[RATE-LIMIT] rule '…' matches no route` at every reload — grep for it after adding one.
-    On a DB route, `rateLimit` is a SOFT override (no lock on auto-discovered routes) and a strict
-    Mongoose schema needs `rateLimit: Schema.Types.Mixed` or the value is dropped on save.
+    On a DB route, `rateLimit` is a SOFT override (no lock on auto-discovered routes). The route
+    repository must store it WHOLE: a strict Mongoose schema needs `rateLimit: Schema.Types.Mixed`
+    (else dropped on save), and `updateById` must not `flattenObject` it (dotted keys merge an old
+    `enabled: false` into a new rate and fail on a stored `null`) — use
+    `$set: { ...flattenObject(rest), ...(rateLimit !== undefined ? { rateLimit } : {}) }`. The
+    admin API logs `rateLimit not stored as sent` when it is wrong. An empty rule (`{}`,
+    `{ enabled: true }`) is a 400: `null` removes the rule.
 20b. **Caller = the mapped uid claim, else the IP.** The key is `${headerPrefix}${uidClaim}`
     (`USERID` when unset) from the route's provider — the same claim the ACL uses. A provider whose
     `jwtMap` does not emit it, a `str-compare` key or a failed token on an `allowAnonymous` route

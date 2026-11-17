@@ -36,7 +36,12 @@ export abstract class HttpPathRepository {
   abstract insert(model: StoredHttpPath): Promise<StoredHttpPath>;
   abstract findById(id: string): Promise<StoredHttpPath>;
   abstract findOne(filter: Record<string, any>): Promise<StoredHttpPath>;
-  /** @throws ConflictError if the update would collide with another row's `routeKey`. */
+  /**
+   * Partial update: only the keys present in `model` change. `rateLimit` is ONE value and must be
+   * replaced whole (`null` included): with Mongo, `$set: { ...flattenObject(rest), rateLimit }`
+   * — a plain `flattenObject(model)` merges it field by field and fails on a stored `null`.
+   * @throws ConflictError if the update would collide with another row's `routeKey`.
+   */
   abstract updateById(id: string, model: StoredHttpPath): Promise<StoredHttpPath>;
   abstract removeById(id: string): Promise<StoredHttpPath>;
   /** Enabled paths mapped to plain PathDefinition objects (no _id/enabled). */

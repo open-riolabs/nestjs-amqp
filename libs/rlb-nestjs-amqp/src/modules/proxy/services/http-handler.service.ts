@@ -235,12 +235,12 @@ export class HttpHandlerService implements OnModuleInit {
    */
   private checkRateLimitRules(paths: PathDefinition[]) {
     if (!this.rateLimit?.routeRules.length) return;
-    // 'METHOD path' / '* path' → whether EVERY route under that key has its own rateLimit.
+    // 'METHOD path' / '* path' → whether EVERY route under that key has its own (usable) rateLimit.
     const declared = new Map<string, boolean>();
     for (const p of paths) {
       if (!p?.path || !p?.method) continue;
       const path = normalizeRoutePath(p.path);
-      const own = p.rateLimit !== undefined && p.rateLimit !== null;
+      const own = p.rateLimit !== undefined && p.rateLimit !== null && this.ownRateLimitUsable(p);
       for (const key of [`${p.method.toUpperCase()} ${path}`, `* ${path}`]) {
         declared.set(key, (declared.get(key) ?? true) && own);
       }
@@ -249,6 +249,16 @@ export class HttpHandlerService implements OnModuleInit {
       const key = `${rule.method ?? '*'} ${rule.path}`;
       if (!declared.has(key)) this.logger.warn(`[RATE-LIMIT] rule '${key}' matches no route: check its path/method`);
       else if (declared.get(key)) this.logger.warn(`[RATE-LIMIT] rule '${key}' is not used: the route's own rateLimit wins over it`);
+    }
+  }
+
+  /** Whether the route's own `rateLimit` resolves (a broken one is ignored, see rateLimitRuleFor). */
+  private ownRateLimitUsable(path: PathDefinition): boolean {
+    try {
+      this.rateLimit?.ruleFor(path.method, path.path, path.rateLimit);
+      return true;
+    } catch {
+      return false;
     }
   }
 

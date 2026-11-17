@@ -279,6 +279,15 @@ describe('HttpHandlerService — gateway.rateLimit', () => {
       const messages = warn.mock.calls.map(([m]) => String(m));
       expect(messages.some((m) => m.includes("'GET /bookings/rides/list-available' is not used"))).toBe(true);
     });
+
+    it('does not call a routes entry unused when the route\'s own rule is broken (the entry applies)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const { svc } = mkService(LIMIT, [own({ requestsPerSecond: 1, burst: 1.5 })]);
+      (svc as any).server = { use: jest.fn() };
+      await svc.reload();
+      expect(warn.mock.calls.some(([m]) => String(m).includes('is not used'))).toBe(false);
+    });
   });
 
   it('a malformed gateway.rateLimit stops the gateway at construction', () => {

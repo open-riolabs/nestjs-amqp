@@ -40,7 +40,12 @@ export class MongoHttpPathRepository extends HttpPathRepository {
 
   async updateById(id: string, model: StoredHttpPath): Promise<StoredHttpPath> {
     try {
-      const data = await this.model.findOneAndUpdate({ _id: new Types.ObjectId(id) }, { $set: flattenObject(model) }, { new: true }).exec();
+      // `rateLimit` is ONE value: replace it whole. Flattened, it would be merged field by field
+      // (an old `enabled: false` would survive a new rate) and Mongo rejects a dotted $set on a
+      // stored `rateLimit: null`.
+      const { rateLimit, ...rest } = model;
+      const $set = { ...flattenObject(rest), ...(rateLimit !== undefined ? { rateLimit } : {}) };
+      const data = await this.model.findOneAndUpdate({ _id: new Types.ObjectId(id) }, { $set }, { new: true }).exec();
       return this.toModel(data)!;
     } catch (error) {
       // A concurrent update that would collide the routeKey trips the unique index too — surface it

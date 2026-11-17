@@ -399,8 +399,15 @@ auto-discovered routes as well. An entry that matches no route is not an error: 
 **A route's own `rateLimit` needs no `gateway.rateLimit` block**, but `enabled: false` in that block
 turns it off too. A broken own rule (written in the DB by hand, or without `requestsPerSecond` on a
 gateway with no `default`) does not stop the boot: it is logged as an error at every reload and
-ignored. The admin API answers 400 to malformed values. A strict Mongoose schema needs a
-`rateLimit: Schema.Types.Mixed` field, or the value is dropped on save.
+ignored. The admin API answers 400 to malformed values and to an empty rule (`{}`, `{ enabled: true }`):
+`null` removes it.
+
+**The route repository must store `rateLimit` whole.** A strict Mongoose schema needs a
+`rateLimit: Schema.Types.Mixed` field, or the value is dropped on save. And `updateById` must not
+`flattenObject` it: dotted keys merge an old `{ enabled: false }` into a new rate (the route stays
+unlimited) and fail on a stored `null`. Use
+`$set: { ...flattenObject(rest), ...(rateLimit !== undefined ? { rateLimit } : {}) }`. The admin API
+logs `rateLimit not stored as sent` when the repository gets it wrong.
 
 **Editing it does not lock an auto-discovered route.** `rateLimit` is a soft override field: the
 route keeps following its microservice for every other field. `releaseOverrides: ["rateLimit"]`

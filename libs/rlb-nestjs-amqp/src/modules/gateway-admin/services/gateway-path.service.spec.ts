@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { GatewayPathService } from './gateway-path.service';
 
 const mkRepo = (over: any = {}) => ({
@@ -79,6 +80,31 @@ describe('GatewayPathService — user CRUD audit (actor + changes)', () => {
     await new GatewayPathService(repo, logs).update({ id: 'g1', rateLimit: { requestsPerSecond: 1, burst: 5 } } as any, 'user-2');
     expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: false, userOverrides: ['rateLimit'], rateLimit: { requestsPerSecond: 1, burst: 5 } }));
     expect(logs.insert.mock.calls[0][0].changes).toEqual([{ field: 'rateLimit', added: [{ requestsPerSecond: 1, burst: 5 }], removed: [] }]);
+  });
+
+  it.each([
+    ['a flattened $set merged it', { enabled: false }, { enabled: false, requestsPerSecond: 5 }],
+    ['a strict schema dropped it', null, undefined],
+  ])('update: logs an error when the repository did not store rateLimit as sent (%s)', async (_label, before, stored) => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', rateLimit: before, routeKey: 'GET /x', source: 'user' };
+    const repo = mkRepo({
+      findById: jest.fn(async () => existing),
+      updateById: jest.fn(async (id: string, m: any) => ({ _id: id, ...m, rateLimit: stored })),
+    });
+    await new GatewayPathService(repo, mkLogs()).update({ id: 'g1', rateLimit: { requestsPerSecond: 5 } } as any, 'user-2');
+    expect(error.mock.calls.some(([m]) => String(m).includes('rateLimit not stored as sent'))).toBe(true);
+    error.mockRestore();
+  });
+
+  it('create/update: no error when the repository stores rateLimit as sent', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const repo = mkRepo({ findById: jest.fn(async () => ({ _id: 'g1', method: 'GET', path: '/x', routeKey: 'GET /x' })) });
+    const svc = new GatewayPathService(repo, mkLogs());
+    await svc.create({ name: 'n', method: 'GET', path: '/x', topic: 't', rateLimit: { burst: 2, requestsPerSecond: 1 } } as any, 'u');
+    await svc.update({ id: 'g1', rateLimit: null } as any, 'u');
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it('update: rateLimit null removes the own rule', async () => {

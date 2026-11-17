@@ -166,8 +166,9 @@ change needs no restart and no YAML edit:
 | `burst` | Bucket size (integer ≥ 1). Omit it: the default's burst when the rate is inherited, else the rate rounded up. |
 | `enabled` | `false` exempts the route. |
 
-- **Validation**: a malformed value (unknown key, negative rate, fractional burst, not an object)
-  is answered **400** and nothing is written. Whether a rule without `requestsPerSecond` can inherit
+- **Validation**: a malformed value (unknown key, negative rate, fractional burst, not an object,
+  or an empty rule — `{}` / `{ enabled: true }` alone: send `null` to remove it) is answered **400**
+  and nothing is written. Whether a rule without `requestsPerSecond` can inherit
   one depends on the gateway's `gateway.rateLimit.default`: when there is none, the gateway logs an
   error at reload and ignores the rule (the route stays up under the YAML rules).
 - **Precedence**: the route's `rateLimit` wins over a `gateway.rateLimit.routes` entry for the same
@@ -178,9 +179,24 @@ change needs no restart and no YAML edit:
   `allowAnonymous`, `timeout`, `redirect` and `successStatusCode`. Setting it does **not** lock the
   route (`modified` stays `false`): route auto-discovery keeps updating the other fields and
   preserves the user's limit (`userOverrides` contains `rateLimit`). `releaseOverrides: ["rateLimit"]`
-  hands it back: the next sync writes `rateLimit: null`.
-- **DB schema**: the consumer's route schema must store the field (Mongoose: `rateLimit:
-  Schema.Types.Mixed`), or a strict schema drops it on save.
+  hands it back: the next sync writes `rateLimit: null`. Set it through the API: a value written in
+  the DB by hand on an auto-discovered row, without `rateLimit` in `userOverrides`, is reset by the
+  next sync.
+- **Consumer repository** (`HttpPathRepository`), two requirements:
+  1. the route schema must store the field (Mongoose: `rateLimit: Schema.Types.Mixed`), or a
+     strict schema drops it on save;
+  2. `updateById` must replace `rateLimit` **whole**. The usual `$set: flattenObject(model)` splits
+     it into `rateLimit.requestsPerSecond`, … : an old `enabled: false` survives a new rate (the
+     route stays unlimited) and Mongo rejects the update when the stored value is `null` (500).
+     Write it apart:
+
+     ```ts
+     const { rateLimit, ...rest } = model;
+     const $set = { ...flattenObject(rest), ...(rateLimit !== undefined ? { rateLimit } : {}) };
+     ```
+
+  `gw-path-create` / `gw-path-update` compare what the repository returns with what was sent and
+  log `rateLimit not stored as sent` as an error when either requirement is missing.
 
 ---
 

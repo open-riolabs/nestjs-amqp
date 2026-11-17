@@ -118,7 +118,6 @@ describe('ruleFor — the route\'s own rateLimit field (YAML paths[], admin API,
   it('inherits from the default like a routes entry: rate and burst, but not the burst when it sets its own rate', () => {
     const rl = resolveRateLimitConfig({ default: { requestsPerSecond: 4, burst: 40 } });
     expect(rl.ruleFor('GET', '/a', { burst: 8 })).toEqual({ requestsPerSecond: 4, burst: 8, source: 'path' });
-    expect(rl.ruleFor('GET', '/a', {})).toEqual({ requestsPerSecond: 4, burst: 40, source: 'path' });
     expect(rl.ruleFor('GET', '/a', { requestsPerSecond: 1.5 })).toEqual({ requestsPerSecond: 1.5, burst: 2, source: 'path' });
   });
 
@@ -134,6 +133,12 @@ describe('ruleFor — the route\'s own rateLimit field (YAML paths[], admin API,
     expect(() => rl.ruleFor('GET', '/a', { requestsPerSecond: -1 })).toThrow(/requestsPerSecond/);
     expect(rl.ruleFor('GET', '/a', { enabled: false })).toBeNull(); // nothing to inherit: fine
   });
+
+  it('throws on an empty rule, which would put the default in place of a stricter routes entry', () => {
+    const rl = resolveRateLimitConfig({ default: { requestsPerSecond: 10 }, routes: [{ path: '/login', requestsPerSecond: 0.2 }] });
+    expect(() => rl.ruleFor('POST', '/login', {})).toThrow(/sets nothing/);
+    expect(() => rl.ruleFor('POST', '/login', { enabled: true })).toThrow(/sets nothing/);
+  });
 });
 
 describe('validateRouteRateLimit', () => {
@@ -142,13 +147,16 @@ describe('validateRouteRateLimit', () => {
     expect(validateRouteRateLimit(null)).toBeNull();
   });
 
-  it('accepts enabled, requestsPerSecond and burst, all optional', () => {
+  it('accepts enabled, requestsPerSecond and burst, each optional', () => {
     const rule = { enabled: true, requestsPerSecond: 0.5, burst: 3 };
     expect(validateRouteRateLimit(rule)).toBe(rule);
-    expect(validateRouteRateLimit({})).toEqual({});
+    expect(validateRouteRateLimit({ burst: 5 })).toEqual({ burst: 5 });
+    expect(validateRouteRateLimit({ enabled: false })).toEqual({ enabled: false });
   });
 
   it.each([
+    ['an empty rule', {}, /sets nothing/],
+    ['enabled: true alone', { enabled: true }, /sets nothing/],
     ['a non-object', 5, /must be an object/],
     ['a list', [{ requestsPerSecond: 1 }], /must be an object/],
     ['an unknown key (path belongs to rateLimit.routes only)', { path: '/a', requestsPerSecond: 1 }, /unknown key 'path'/],

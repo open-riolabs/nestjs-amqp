@@ -168,9 +168,10 @@ gateway:
   `routes[]` entry.
 - It needs no `gateway.rateLimit` block: without one, only the routes with their own rule are
   limited (caller IP from the socket, `maxKeys` 100000). `rateLimit.enabled: false` turns it off too.
-- A malformed own rule, or one without a rate on a gateway with no `default`, does **not** stop the
-  boot and does not drop the route: it is logged as an error at every reload and ignored (the
-  route keeps the `rateLimit.routes` / `default` rules). The admin API rejects malformed values with 400.
+- A malformed own rule — an empty one (`{}`, `{ enabled: true }` alone) included — or one without a
+  rate on a gateway with no `default`, does **not** stop the boot and does not drop the route: it is
+  logged as an error at every reload and ignored (the route keeps the `rateLimit.routes` /
+  `default` rules). The admin API rejects malformed and empty values with 400.
 - A `routes[]` entry whose routes all carry their own rule is unused: the gateway warns at reload.
 
 - **Caller** = the authenticated user id — the claim the ACL uses (`${headerPrefix}${uidClaim}` of the

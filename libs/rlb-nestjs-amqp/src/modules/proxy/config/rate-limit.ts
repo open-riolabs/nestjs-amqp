@@ -69,9 +69,11 @@ function checkRuleFields(where: string, r: Record<string, unknown>) {
 
 /**
  * Validates a route's own `rateLimit` field (YAML `paths[]`, admin API, DB row): an object with
- * `enabled`, `requestsPerSecond` and `burst`, all optional. Returns null when it is absent
- * (`undefined` / `null`). Whether a rule without a rate can inherit one is only known to the
- * gateway (it depends on `gateway.rateLimit.default`): see {@link ResolvedRateLimit.ruleFor}.
+ * `enabled`, `requestsPerSecond` and `burst`, each optional but not all absent — an empty rule
+ * (`{}`, `{ enabled: true }`) would silently put the default in place of a stricter
+ * `rateLimit.routes` entry. Returns null when it is absent (`undefined` / `null`). Whether a rule
+ * without a rate can inherit one is only known to the gateway (it depends on
+ * `gateway.rateLimit.default`): see {@link ResolvedRateLimit.ruleFor}.
  * @throws Error naming the offending field (`where` prefixes it).
  */
 export function validateRouteRateLimit(value: unknown, where = 'rateLimit'): RouteRateLimit | null {
@@ -79,6 +81,9 @@ export function validateRouteRateLimit(value: unknown, where = 'rateLimit'): Rou
   if (!isObject(value)) throw new Error(`${where} must be an object (or null to remove it)`);
   checkKeys(where, value, OWN_KEYS);
   checkRuleFields(where, value);
+  if (value.enabled !== false && value.requestsPerSecond === undefined && value.burst === undefined) {
+    throw new Error(`${where} sets nothing: give it requestsPerSecond, burst or enabled: false (null removes it)`);
+  }
   return value as RouteRateLimit;
 }
 
