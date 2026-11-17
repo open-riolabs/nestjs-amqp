@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp-add-route
-description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload or raw body. Generates the YAML path fragment and flags required bootstrap/ACL wiring.
+description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload, raw body or a per-caller rate limit (429). Generates the YAML path fragment (plus the gateway.rateLimit rule when the route needs one) and flags required bootstrap/ACL wiring.
 ---
 
 # Add an HTTP gateway route (gateway.paths[])
@@ -26,6 +26,9 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
   field names can be renamed for every route via `gateway.aclContext`).
 - Extras: `timeout` (rpc), `successStatusCode`, `binary`, `redirect`, `parseRaw`, static
   `headers`, `forwardHeaders`.
+- **rate limit**: will clients poll or retry this route (lists, counters, search-as-you-type)?
+  Then give it a rule in `gateway.rateLimit.routes` — see [Rate limit](#rate-limit-optional).
+  NOT a `PathDefinition` field.
 
 ## PathDefinition fields (all of them)
 
@@ -67,6 +70,31 @@ gateway:
       timeout: 7000                # rpc only
       successStatusCode: 201
 ```
+
+## Rate limit (optional)
+
+Requires `@open-rlb/nestjs-amqp` ≥ 3.3.0. Limits live in `gateway.rateLimit`, keyed on the
+route's **declared** path, so the same rule works for YAML, DB and `@BrokerHTTP` auto-discovered
+routes:
+
+```yaml
+gateway:
+  rateLimit:
+    routes:
+      - path: /resource/:id?          # EXACTLY the declared path (params as declared, not a real URL)
+        method: GET                   # optional; omit = every method on that path
+        requestsPerSecond: 1          # sustained rate per caller (fractions ok: 0.5 = one every 2 s)
+        burst: 5                      # back-to-back requests after idling (default: rate rounded up)
+```
+
+- **Caller** = the authenticated user (`${headerPrefix}${uidClaim}` of the route's provider,
+  `USERID` by default), else the client IP. On an anonymous route behind a proxy set
+  `rateLimit.ipHeader` (e.g. `cf-connecting-ip`), or all clients share the proxy's bucket.
+- Order: auth (`401`, no token spent) → **limit (`429` + `Retry-After`)** → upload → ACL → RPC.
+- Sizing: what a human or a sane poller needs on this route, e.g. `1`/`5` for a polled list.
+  Buckets are per gateway instance: with N instances behind a balancer divide by N.
+- A typo in a rule's `path` does not fail: the gateway logs `[RATE-LIMIT] rule '…' matches no
+  route` at every reload — check it after adding the rule. A malformed block stops the boot.
 
 ## The 3-case auth gate
 
@@ -111,9 +139,15 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 | `ForbiddenError` | `403` |
 | `NotFoundError` | `404` |
 | `ConflictError` | `409` |
+| `TooManyRequestsError` | `429` |
+| `RetryExhaustedError` | `502` |
+| `RpcTimeoutError` | `504` |
 | (any other) | `500` |
 
 **`event`** route: successful publish → `successStatusCode || 202`; publish failure → `503`.
+
+**Gate** responses: `401` (auth), `429` + `Retry-After` (`gateway.rateLimit`), `403` (actions),
+`503` (ACL store down, or `gateway.maxConcurrentRequests` reached).
 
 ## Required wiring to flag
 
@@ -131,6 +165,8 @@ For every request the gateway runs `processAuthData` (best-effort), then:
 
 - topic exists in `topics[]` and resolves.
 - route-param vs body/query key collisions are intentional (params always merge in).
+- with a rate-limit rule: the gateway boot log shows `[RATE-LIMIT] [METHOD] '<path>' limited to …`
+  and no `matches no route` warning.
 - `npm run build`, then optionally curl the route once the broker is up.
 
 Output the YAML fragment (with parent path), plus any bootstrap/ACL action the user still

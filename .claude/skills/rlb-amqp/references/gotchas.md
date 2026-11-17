@@ -87,7 +87,7 @@ every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: a
     (only `handle`/`broadcast` handlers rethrow into it, and `toObservable` topics ack blindly);
     `requestData` re-throws on the caller side. Gateway HTTP status derives from `error.name` —
     give errors a meaningful `name` (`BadRequestError`, `NotFoundError`, `ConflictError`,
-    `ForbiddenError`, `UnauthorizedError`); anything unrecognized → 500.
+    `ForbiddenError`, `UnauthorizedError`, `TooManyRequestsError` → 429); anything unrecognized → 500.
 15. **Default RPC timeout 10s** (`broker.defaultRpcTimeout`). Override per route (`paths[].timeout`)
     or per `requestData` call for slow RPCs.
 
@@ -103,6 +103,35 @@ every `messageTtl`/`maxLength`/nack eviction. Also outside the policy's reach: a
     re-encode carefully on the consumer (`Buffer.from(str, 'binary')`).
 20. **`/health` is a tiny liveness probe.** Action `gw-health` → `{ status: 'ok' }` (a real 200),
     NOT a metrics dump. Use `/admin/metrics*` (`gw-metrics-*`) for metrics.
+
+## Rate limit (`gateway.rateLimit`, ≥ 3.3.0)
+20a. **Rules are NOT a `paths[]` field.** They live in `gateway.rateLimit.routes`, matched on the
+    route path **as declared** (`/bookings/:id`, not `/bookings/42`; trailing `/` ignored) and on
+    `method` when given. That is what makes them work for DB and `@BrokerHTTP` auto-discovered
+    routes. A rule matching no route is NOT an error: it logs `[RATE-LIMIT] rule '…' matches no
+    route` at every reload — grep for it after adding one.
+20b. **Caller = the mapped uid claim, else the IP.** The key is `${headerPrefix}${uidClaim}`
+    (`USERID` when unset) from the route's provider — the same claim the ACL uses. A provider whose
+    `jwtMap` does not emit it, a `str-compare` key or a failed token on an `allowAnonymous` route
+    fall back to the client IP.
+20c. **Behind a proxy the IP is the proxy's.** Without `rateLimit.ipHeader` (`cf-connecting-ip`,
+    `x-real-ip`, `x-forwarded-for` → first entry) every anonymous caller shares ONE bucket per
+    route. Set it before enabling `rateLimit.default`, and only if ALL traffic comes through that
+    proxy: a client reaching the gateway directly can forge the header.
+20d. **Buckets are per process.** N gateway instances behind a round-robin balancer give a caller
+    up to N× the rate: divide the values by N (no shared store yet).
+20e. **Strict validation stops the boot** (like `aclContext`): unknown key, negative rate,
+    fractional/zero burst, a route without a rate and no `default`, the same route twice. Still
+    validated under `enabled: false`. A route that sets its own `requestsPerSecond` does NOT inherit
+    `default.burst` (burst = its rate rounded up unless set).
+20f. **Order in the gate:** `401` first (spends no token) → limit → upload/ACL/RPC. A rejected
+    request costs no ACL lookup and no broker message, but it still reaches the gateway: a client
+    that polls on a fixed timer without reading the reply keeps the HTTP traffic.
+20g. **`Retry-After` is invisible to browser JS cross-origin** unless CORS exposes it
+    (`app.enableCors({ exposedHeaders: ['Retry-After'] })` in the gateway's `main.ts`). Native
+    apps read it. The body is the unified envelope with `code: TooManyRequestsError`.
+20h. **A microservice can answer 429 too:** throw `TooManyRequestsError` (common errors). The
+    gateway maps it to 429 but sets no `Retry-After` for it.
 
 ## Auth / ACL
 21. **`actions` require `auth` on the same path/event.** No `auth` → no identity → fails closed

@@ -386,6 +386,31 @@ environment, but the SAME values must be set on **both** sides or manifests neve
 gateway. The topic names `rlb-acl` / `rlb-gateway-admin` and all action strings are
 decorator-bound and **not** configurable.
 
+## Rate limit (`gateway.rateLimit`)
+
+**Rules are not a `paths[]` field.** They live in `gateway.rateLimit.routes` and match the route
+path **as declared** (`/bookings/:id`, not `/bookings/42`), plus `method` when given, so they apply
+to DB and auto-discovered routes as well. A rule that matches no route is not an error: the gateway
+logs `[RATE-LIMIT] rule '…' matches no route` at every reload.
+
+**The caller is the mapped uid claim, else the IP.** The bucket key is the route provider's
+`${headerPrefix}${uidClaim}` (the claim the ACL uses, `USERID` by default). Without it (no `jwtMap`
+entry, `str-compare`, a failed token on an anonymous route) the client IP is used.
+
+**Behind a proxy, set `ipHeader` before enabling `default`.** Otherwise the IP is the proxy's and
+every anonymous caller shares one bucket per route. Use it only when all traffic comes through
+that proxy: a client reaching the gateway directly can forge the header.
+
+**Buckets are per instance.** With N gateway instances behind a balancer a caller gets up to N×
+the configured rate.
+
+**A malformed block stops the boot**, `enabled: false` included. A route that sets its own
+`requestsPerSecond` does not inherit `default.burst`.
+
+**`Retry-After` is not readable from browser JS** across origins unless the gateway's CORS exposes
+it (`app.enableCors({ exposedHeaders: ['Retry-After'] })`). A client polling on a fixed timer
+still sends its requests: the limiter protects the broker and the microservices, not the gateway.
+
 ---
 
 [← Back to index](./README.md)

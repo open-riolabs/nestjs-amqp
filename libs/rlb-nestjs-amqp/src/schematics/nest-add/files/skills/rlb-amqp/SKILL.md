@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp
-description: Reference, schema and gotchas for the @open-rlb/nestjs-amqp library (NestJS + RabbitMQ/AMQP + HTTP/WebSocket gateway). Use when answering questions about its YAML config (broker incl. routeDiscovery, topics, auth-providers, gateway paths/ws/events), AMQP rpc/handle/broadcast/event semantics, the @BrokerAction/@BrokerParam/@BrokerHTTP/@BrokerAuth decorators, the BrokerService API, route auto-discovery, gateway-admin (routes/auth-providers/metrics/health), the name-keyed ACL, or when debugging wiring/timeout/auth/websocket errors. Shared knowledge base for the rlb-amqp-add-action, rlb-amqp-add-route, rlb-amqp-add-ws-event, rlb-amqp-scaffold, rlb-amqp-acl and rlb-amqp-gateway-admin skills.
+description: Reference, schema and gotchas for the @open-rlb/nestjs-amqp library (NestJS + RabbitMQ/AMQP + HTTP/WebSocket gateway). Use when answering questions about its YAML config (broker incl. routeDiscovery, topics, auth-providers, gateway paths/ws/events), AMQP rpc/handle/broadcast/event semantics, the @BrokerAction/@BrokerParam/@BrokerHTTP/@BrokerAuth decorators, the BrokerService API, route auto-discovery, gateway-admin (routes/auth-providers/metrics/health), the name-keyed ACL, the per-caller rate limit (gateway.rateLimit, 429 + Retry-After, TooManyRequestsError), or when debugging wiring/timeout/auth/websocket/429 errors. Shared knowledge base for the rlb-amqp-add-action, rlb-amqp-add-route, rlb-amqp-add-ws-event, rlb-amqp-scaffold, rlb-amqp-acl and rlb-amqp-gateway-admin skills.
 ---
 
 # @open-rlb/nestjs-amqp — reference
@@ -32,7 +32,7 @@ Load the bundled reference files before editing config, handlers or the gateway:
 
 - **`references/config-schema.md`** — full YAML schema for every section, field by field
   (broker incl. `routeDiscovery`, topics 4 modes, auth-providers name-keyed, gateway
-  paths + ws + events).
+  paths + ws + events + `rateLimit`).
 - **`references/gotchas.md`** — the checklist of bug-prone cases. ALWAYS scan it before
   adding/changing a topic, queue, exchange, action, route, auth provider or WS event.
 
@@ -41,7 +41,7 @@ are the terse, rules-first version for editing tasks:
 
 - `docs/README.md` — index. `docs/getting-started.md` — bootstrap a ms + gateway.
 - `docs/broker.md` — `@BrokerAction`/`@BrokerParam`, topic modes, RPC, `BrokerService`.
-- `docs/gateway.md` — `gateway.paths[]`, `gateway.events[]`, auth gate, status mapping, ws.
+- `docs/gateway.md` — `gateway.paths[]`, `gateway.events[]`, auth gate, rate limit, status mapping, ws.
 - `docs/acl.md` — name-keyed actions/roles, dual grant/revoke, the `acl-check-action` check.
 - `docs/gateway-admin.md` — DB routes, name-keyed auth-providers, metrics, health, route-sync.
 - `docs/gotchas.md` — the canonical source `references/gotchas.md` is ported from.
@@ -85,3 +85,9 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
 11. HTTP-route auth is **per ROUTE** and DECOUPLED from `@BrokerHTTP`: pair `@BrokerHTTP { name }`
     ↔ `@BrokerAuth` `httpName`. A single `@BrokerHTTP` auto-pairs its `@BrokerAuth` (no name needed);
     a route with no `@BrokerAuth` is public.
+12. Per-caller limits (≥ 3.3.0) live in `gateway.rateLimit` — `default` for every route,
+    `routes[]` matched on the route path **as declared** (`/bookings/:id`), never inside
+    `paths[]` — so they cover DB and auto-discovered routes too. Caller = the authenticated
+    `${headerPrefix}${uidClaim}`, else the client IP (set `ipHeader` behind a proxy before
+    enabling `default`). Over the limit → `429` + `Retry-After`, nothing forwarded. Buckets are
+    per instance. A malformed block stops the boot.
