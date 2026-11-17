@@ -131,7 +131,7 @@ auth/ACL resources. `create` rejects a `(method, path)` collision (409).
 | GET    | `/admin/paths`        | `gw-path-list`   | query | `?page=&limit=` |
 | GET    | `/admin/paths/search` | `gw-path-search` | query | free-text → `PaginationModel<StoredHttpPath>`; `?q=&page=&limit=` |
 | GET    | `/admin/paths/export` | `gw-path-export` | query | enabled, ordered; used by `loadConfig.paths` |
-| PUT    | `/admin/paths`        | `gw-path-update` | body  | needs `id`; re-checks collisions; soft fields → `userOverrides` (no lock); `releaseOverrides:[]` resets one |
+| PUT    | `/admin/paths`        | `gw-path-update` | body  | needs `id`; re-checks collisions; soft fields → `userOverrides` (no lock); `releaseOverrides:[]` resets one; `rateLimit` (≥ 3.4.0) validated → 400 |
 | GET    | `/admin/paths/get`    | `gw-path-get`    | query | `?id=` |
 | DELETE | `/admin/paths`        | `gw-path-delete` | body  | `{ id }` |
 | GET    | `/admin/route-log`    | `gw-route-log-list`   | query | route journal (who changed what); `?limit=` |
@@ -302,13 +302,22 @@ audited too — `actor`=`X-GTW-AUTH-USERID` (else `'unknown'`), event
 topic, action, mode, auth, name, parseRaw, binary, headers, forwardHeaders) sets
 `modified:true` → auto-discovery SKIPS the whole route (user wins). A user edit to a
 SOFT field — `enabled`, `actions`, `allowAnonymous`, `timeout`, `redirect`,
-`successStatusCode` — does NOT lock: it is recorded in `userOverrides[]`, and auto-
+`successStatusCode`, `rateLimit` — does NOT lock: it is recorded in `userOverrides[]`, and auto-
 discovery keeps updating every OTHER field while PRESERVING the user's value for the
 overridden ones (user sets `timeout` → MS later renames `action`: action updates,
 timeout stays; user disables → route stays OFF while content keeps updating). Hand a
 field back to the MS via `gw-path-update` `releaseOverrides: ['timeout']` (drops it
 from `userOverrides`). Cross-owner collisions with `yaml`/`manual` are debug-logged
 only (intentional override); cross-service collisions stay `warn` + journaled.
+
+**Per-route rate limit via the API (≥ 3.4.0).** `rateLimit: { enabled?, requestsPerSecond?,
+burst? }` on `gw-path-create` / `gw-path-update` (`null` removes it) is the route's own
+per-caller limit: it wins over `gateway.rateLimit.routes`, inherits a missing value from
+`gateway.rateLimit.default`, needs no `gateway.rateLimit` block and takes effect at the next
+reload. Malformed → `400`, nothing written. Released with `releaseOverrides: ['rateLimit']` →
+the next sync writes `rateLimit: null`. The consumer's Mongo route schema must declare
+`rateLimit: Schema.Types.Mixed` (strict schemas drop unknown fields). Details:
+`docs/gateway-admin.md` → "Per-route rate limit".
 
 ```ts
 GatewayAdminModule.forRootAsync({

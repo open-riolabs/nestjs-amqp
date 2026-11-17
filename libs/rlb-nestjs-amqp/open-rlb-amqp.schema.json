@@ -1092,6 +1092,26 @@
         }
       }
     },
+    "routeRateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "false exempts this route from the default limit."
+        },
+        "requestsPerSecond": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Sustained rate in requests per second (0 = no limit); omit to inherit gateway.rateLimit.default."
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Bucket size; when omitted and the rule sets its own rate, the rate rounded up."
+        }
+      }
+    },
     "rateLimitRouteRule": {
       "type": "object",
       "additionalProperties": false,
@@ -1278,6 +1298,17 @@
           "type": "integer",
           "minimum": 300,
           "maximum": 399
+        },
+        "rateLimit": {
+          "description": "Per-caller limit of this route (token bucket). Wins over a gateway.rateLimit.routes entry for the same route; a missing rate or burst is taken from gateway.rateLimit.default. null = no own rule.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/routeRateLimit"
+            }
+          ]
         }
       },
       "required": [

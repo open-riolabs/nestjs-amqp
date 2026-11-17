@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, ConflictError, PaginationModel } from '../../../common';
 import { BrokerAction, BrokerParam } from '../../broker';
 import { PathDefinition } from '../../proxy/config/path-definition.config';
+import { validateRouteRateLimit } from '../../proxy/config/rate-limit';
 import { GATEWAY_ADMIN_TOPIC, GW_ADMIN_ACTIONS } from '../const';
 import { RouteSyncLogEntry } from '../models';
 import { HttpPathRepository, StoredHttpPath } from '../repository/http-path.repository';
@@ -27,6 +28,7 @@ export class GatewayPathService {
     if (!model?.method) throw new BadRequestError('method is required');
     if (!model?.path) throw new BadRequestError('path is required');
     if (!model?.topic) throw new BadRequestError('topic is required');
+    this.assertRateLimit(model);
     const routeKey = routeKeyOf(model);
     await this.assertNoRouteConflict(routeKey);
     // A user-created route is owned by the user (source='user'); route auto-discovery never manages
@@ -47,6 +49,7 @@ export class GatewayPathService {
     // `releaseOverrides` (a directive to hand soft fields back to the MS, not route data).
     const { id, _id, releaseOverrides, ...rest } = (body || {}) as any;
     if (!id) throw new BadRequestError('id is required');
+    this.assertRateLimit(rest);
     let model: StoredHttpPath = rest;
     const existing = await this.repo.findById(id);
     // If the update changes the route identity (method+path), re-check it does not collide
@@ -83,6 +86,20 @@ export class GatewayPathService {
     await this.journal({ service: updated?.owner ?? existing?.owner ?? 'manual', actor, level: 'info', event: 'updated', routeKey: updated?.routeKey ?? existing?.routeKey, method: updated?.method ?? existing?.method, path: updated?.path ?? existing?.path, changes, message: rendered });
     this.logger.log(`[gw-path] ${actor} updated '${updated?.routeKey ?? existing?.routeKey}'${modified ? ' [locked]' : userOverrides.length ? ` [overrides: ${userOverrides.join(',')}]` : ''}${rendered ? ` → ${rendered}` : ''}`);
     return updated;
+  }
+
+  /**
+   * 400 on a malformed `rateLimit` (omitted = left as is, `null` = removed). Whether a rule without
+   * `requestsPerSecond` can inherit one depends on the gateway's `gateway.rateLimit.default`, which
+   * this service does not see: the gateway checks it at reload, logs it and ignores the rule.
+   */
+  private assertRateLimit(model: StoredHttpPath): void {
+    if (!model || !('rateLimit' in model)) return;
+    try {
+      validateRouteRateLimit(model.rateLimit);
+    } catch (e) {
+      throw new BadRequestError((e as Error).message);
+    }
   }
 
   /**

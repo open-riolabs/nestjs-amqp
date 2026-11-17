@@ -58,7 +58,11 @@ export function diffRoutes(
     // let the MS own every other field. `enabled` is handled here (not a content field): if the user
     // overrode it, keep the stored state (e.g. left OFF); otherwise the MS (re)enables the route.
     const overrides = ex?.userOverrides || [];
-    const merged = applyUserOverrides(r, ex, overrides);
+    let merged = applyUserOverrides(r, ex, overrides);
+    // A stored `rateLimit` the manifest does not carry (no longer a user override: released) must be
+    // cleared with an explicit null: a repository that updates with $set would otherwise keep it, and
+    // the route would be reported as changed at every sync.
+    if (merged.rateLimit === undefined && ex?.rateLimit != null) merged = { ...merged, rateLimit: null };
     const exEnabled = ex ? ex.enabled !== false : true;
     const newEnabled = overrides.includes('enabled') ? exEnabled : true;
     if (ex && newEnabled === exEnabled && routeContent(merged) === routeContent(ex)) continue; // unchanged

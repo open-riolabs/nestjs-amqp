@@ -147,6 +147,32 @@ gateway:
 | `ipHeader` | socket address | Header with the client IP (first entry of a list, e.g. `x-forwarded-for`). Set it only when every request comes through that proxy: a client reaching the gateway directly can forge it. |
 | `maxKeys` | `100000` | Buckets kept in memory; the least recently used is dropped first. |
 
+**A route's own limit — `paths[].rateLimit`** (≥ 3.4.0). Every route (YAML `paths[]`, DB row,
+auto-discovered) can carry its own rule, with the same fields as a `routes[]` entry minus
+`path`/`method`. On DB routes it is managed through the route admin API (`gw-path-create` /
+`gw-path-update`, see [Gateway-Admin → Per-route rate limit](./gateway-admin.md#per-route-rate-limit--the-ratelimit-field))
+and takes effect at the next reload:
+
+```yaml
+gateway:
+  paths:
+    - name: list-available-rides
+      method: GET
+      path: /bookings/rides/list-available
+      # …
+      rateLimit: { requestsPerSecond: 1, burst: 5 }   # or { enabled: false } to exempt it; omit/null ⇒ gateway.rateLimit rules
+```
+
+- The rule of a route is, in order: its own `rateLimit`, else its `rateLimit.routes` entry, else
+  `rateLimit.default`. A missing `requestsPerSecond` / `burst` is inherited from `default` as for a
+  `routes[]` entry.
+- It needs no `gateway.rateLimit` block: without one, only the routes with their own rule are
+  limited (caller IP from the socket, `maxKeys` 100000). `rateLimit.enabled: false` turns it off too.
+- A malformed own rule, or one without a rate on a gateway with no `default`, does **not** stop the
+  boot and does not drop the route: it is logged as an error at every reload and ignored (the
+  route keeps the `rateLimit.routes` / `default` rules). The admin API rejects malformed values with 400.
+- A `routes[]` entry whose routes all carry their own rule is unused: the gateway warns at reload.
+
 - **Caller** = the authenticated user id — the claim the ACL uses (`${headerPrefix}${uidClaim}` of the
   route's auth provider, `USERID` when it sets no `uidClaim`). With no user (anonymous route, no or
   invalid token on an `allowAnonymous` route, a provider that maps no user id) the caller is the
@@ -184,6 +210,7 @@ gateway:
 | `redirect` | `number?` | When set on an `rpc` route, redirect with this status using the reply as the location. |
 | `headers` | `{ [k]: ... }` | Static response headers. |
 | `forwardHeaders` | `{ [dest]: srcHeader }` | Copy named request headers downstream (prefixed by `gateway.headerPrefix`). |
+| `rateLimit` | `{ enabled?, requestsPerSecond?, burst? } \| null` | Per-caller limit of this route; wins over `gateway.rateLimit.routes`. See [Rate limit](#rate-limit--gatewayratelimit). |
 
 **`dataSource`** controls what is forwarded as the message payload. `req.params` are always merged
 in, plus:

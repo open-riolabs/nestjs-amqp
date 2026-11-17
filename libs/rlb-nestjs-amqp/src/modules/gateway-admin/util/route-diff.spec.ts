@@ -123,4 +123,34 @@ describe('diffRoutes', () => {
     const d = diffRoutes('svc', [r], [ex], new Map());
     expect(d.upserts).toHaveLength(0);
   });
+
+  // --- rateLimit: set by the user through the admin API, never by the manifest --------
+  it('keeps a user-set rateLimit (override) while applying the MS change to other fields', () => {
+    const r = route({ action: 'a2' }); // the manifest carries no rateLimit
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), userOverrides: ['rateLimit'], ...route({ action: 'a1', rateLimit: { requestsPerSecond: 1 } }) };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts[0].model).toMatchObject({ action: 'a2', rateLimit: { requestsPerSecond: 1 }, userOverrides: ['rateLimit'] });
+  });
+
+  it('a user-set rateLimit alone does not make the route changed', () => {
+    const r = route();
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), userOverrides: ['rateLimit'], ...route({ rateLimit: { requestsPerSecond: 1 } }) };
+    expect(diffRoutes('svc', [r], [ex], new Map()).changed).toBe(false);
+  });
+
+  it('a released rateLimit is cleared with an explicit null, then the route is stable', () => {
+    const r = route();
+    const ex: any = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), userOverrides: [], ...route({ rateLimit: { requestsPerSecond: 1 } }) };
+    const d = diffRoutes('svc', [r], [ex], new Map());
+    expect(d.upserts[0].model.rateLimit).toBeNull();
+    expect(d.upserts[0].changes).toEqual([{ field: 'rateLimit', added: [], removed: [{ requestsPerSecond: 1 }] }]);
+    // Next sync: the stored null and the manifest's absent field are the same content.
+    expect(diffRoutes('svc', [r], [{ ...ex, rateLimit: null }], new Map()).changed).toBe(false);
+  });
+
+  it('routes stored before rateLimit existed (no field) are not reported as changed', () => {
+    const r = route();
+    const ex = { _id: '1', owner: 'svc', enabled: true, routeKey: routeKeyOf(r), ...r };
+    expect(diffRoutes('svc', [r], [ex], new Map()).changed).toBe(false);
+  });
 });

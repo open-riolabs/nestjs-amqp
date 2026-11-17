@@ -1,4 +1,4 @@
-import { resolveRateLimitConfig } from './rate-limit';
+import { resolveRateLimitConfig, validateRouteRateLimit } from './rate-limit';
 
 describe('resolveRateLimitConfig', () => {
   it('is off when the block is absent or enabled: false', () => {
@@ -98,5 +98,65 @@ describe('resolveRateLimitConfig', () => {
 
   it('a route disabled with enabled: false needs no rate', () => {
     expect(() => resolveRateLimitConfig({ routes: [{ path: '/a', enabled: false }] })).not.toThrow();
+  });
+});
+
+describe('ruleFor — the route\'s own rateLimit field (YAML paths[], admin API, DB)', () => {
+  it('works on an empty block (the gateway resolves an absent block as {}): only routes with their own rule are limited', () => {
+    const rl = resolveRateLimitConfig({});
+    expect(rl.ruleFor('GET', '/a', { requestsPerSecond: 2 })).toEqual({ requestsPerSecond: 2, burst: 2, source: 'path' });
+    expect(rl.ruleFor('GET', '/a')).toBeNull();
+    expect(rl.ruleFor('GET', '/a', null)).toBeNull();
+  });
+
+  it('wins over the rateLimit.routes entry for the same route', () => {
+    const rl = resolveRateLimitConfig({ routes: [{ path: '/a', method: 'GET', requestsPerSecond: 1, burst: 1 }] });
+    expect(rl.ruleFor('GET', '/a', { requestsPerSecond: 10, burst: 20 })).toEqual({ requestsPerSecond: 10, burst: 20, source: 'path' });
+    expect(rl.ruleFor('GET', '/a', null)).toEqual({ requestsPerSecond: 1, burst: 1, source: 'route' });
+  });
+
+  it('inherits from the default like a routes entry: rate and burst, but not the burst when it sets its own rate', () => {
+    const rl = resolveRateLimitConfig({ default: { requestsPerSecond: 4, burst: 40 } });
+    expect(rl.ruleFor('GET', '/a', { burst: 8 })).toEqual({ requestsPerSecond: 4, burst: 8, source: 'path' });
+    expect(rl.ruleFor('GET', '/a', {})).toEqual({ requestsPerSecond: 4, burst: 40, source: 'path' });
+    expect(rl.ruleFor('GET', '/a', { requestsPerSecond: 1.5 })).toEqual({ requestsPerSecond: 1.5, burst: 2, source: 'path' });
+  });
+
+  it('enabled: false or requestsPerSecond: 0 exempts the route from the default and from its routes entry', () => {
+    const rl = resolveRateLimitConfig({ default: { requestsPerSecond: 4 }, routes: [{ path: '/a', requestsPerSecond: 1 }] });
+    expect(rl.ruleFor('GET', '/a', { enabled: false })).toBeNull();
+    expect(rl.ruleFor('GET', '/a', { requestsPerSecond: 0 })).toBeNull();
+  });
+
+  it('throws on a rule without a rate when there is no default, and on a malformed rule', () => {
+    const rl = resolveRateLimitConfig({});
+    expect(() => rl.ruleFor('GET', '/a', { burst: 3 })).toThrow(/no gateway.rateLimit.default/);
+    expect(() => rl.ruleFor('GET', '/a', { requestsPerSecond: -1 })).toThrow(/requestsPerSecond/);
+    expect(rl.ruleFor('GET', '/a', { enabled: false })).toBeNull(); // nothing to inherit: fine
+  });
+});
+
+describe('validateRouteRateLimit', () => {
+  it('null / undefined = no own rule', () => {
+    expect(validateRouteRateLimit(undefined)).toBeNull();
+    expect(validateRouteRateLimit(null)).toBeNull();
+  });
+
+  it('accepts enabled, requestsPerSecond and burst, all optional', () => {
+    const rule = { enabled: true, requestsPerSecond: 0.5, burst: 3 };
+    expect(validateRouteRateLimit(rule)).toBe(rule);
+    expect(validateRouteRateLimit({})).toEqual({});
+  });
+
+  it.each([
+    ['a non-object', 5, /must be an object/],
+    ['a list', [{ requestsPerSecond: 1 }], /must be an object/],
+    ['an unknown key (path belongs to rateLimit.routes only)', { path: '/a', requestsPerSecond: 1 }, /unknown key 'path'/],
+    ['a negative rate', { requestsPerSecond: -1 }, /rateLimit.requestsPerSecond/],
+    ['a string rate', { requestsPerSecond: '5' }, /rateLimit.requestsPerSecond/],
+    ['a fractional burst', { requestsPerSecond: 1, burst: 1.5 }, /rateLimit.burst/],
+    ['a non-boolean enabled', { enabled: 'no' }, /rateLimit.enabled/],
+  ])('rejects %s', (_label, value, message) => {
+    expect(() => validateRouteRateLimit(value)).toThrow(message as RegExp);
   });
 });

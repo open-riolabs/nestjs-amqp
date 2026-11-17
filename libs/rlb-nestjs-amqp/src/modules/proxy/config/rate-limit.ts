@@ -1,11 +1,12 @@
-import { RateLimitConfig, RateLimitRouteRule, RateLimitRule } from './path-definition.config';
+import { RateLimitConfig, RateLimitRouteRule, RateLimitRule, RouteRateLimit } from './path-definition.config';
 
 /** A validated token bucket: `burst` back to back, refilled at `requestsPerSecond`. */
 export interface ResolvedRateLimitRule {
   requestsPerSecond: number;
   burst: number;
-  /** Where the rule comes from: the route's own entry in `rateLimit.routes`, or `rateLimit.default`. */
-  source: 'route' | 'default';
+  /** Where the rule comes from: the route's own `rateLimit` field ('path'), its entry in
+   *  `rateLimit.routes` ('route'), or `rateLimit.default`. */
+  source: 'path' | 'route' | 'default';
 }
 
 /** `gateway.rateLimit` after validation. */
@@ -17,15 +18,20 @@ export interface ResolvedRateLimit {
   defaultRule: ResolvedRateLimitRule | null;
   /** The rules declared in `routes`, normalized — to warn about the ones no route matches. */
   routeRules: { method?: string; path: string; }[];
-  /** The bucket for a route, or null when the route is not limited. */
-  ruleFor(method: string, path: string): ResolvedRateLimitRule | null;
+  /**
+   * The bucket for a route, or null when the route is not limited. `own` is the route's own
+   * `rateLimit` field: when set it wins over `routes` (missing values still come from `default`).
+   * @throws Error when `own` is malformed, or sets no rate and there is no default to inherit it from.
+   */
+  ruleFor(method: string, path: string, own?: RouteRateLimit | null): ResolvedRateLimitRule | null;
 }
 
 export const DEFAULT_RATE_LIMIT_MAX_KEYS = 100_000;
 
 const TOP_KEYS = ['enabled', 'default', 'routes', 'ipHeader', 'maxKeys'];
 const RULE_KEYS = ['requestsPerSecond', 'burst'];
-const ROUTE_KEYS = ['path', 'method', 'enabled', ...RULE_KEYS];
+const OWN_KEYS = ['enabled', ...RULE_KEYS];
+const ROUTE_KEYS = ['path', 'method', ...OWN_KEYS];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -52,6 +58,28 @@ function checkBurst(where: string, value: unknown): number {
     throw new Error(`${where}.burst must be an integer ≥ 1, got ${JSON.stringify(value)}`);
   }
   return value;
+}
+
+/** Checks the fields a route rule shares with a route's own `rateLimit`: enabled, rate, burst. */
+function checkRuleFields(where: string, r: Record<string, unknown>) {
+  if (r.enabled !== undefined && typeof r.enabled !== 'boolean') throw new Error(`${where}.enabled must be true or false`);
+  if (r.requestsPerSecond !== undefined) checkRate(where, r.requestsPerSecond);
+  if (r.burst !== undefined) checkBurst(where, r.burst);
+}
+
+/**
+ * Validates a route's own `rateLimit` field (YAML `paths[]`, admin API, DB row): an object with
+ * `enabled`, `requestsPerSecond` and `burst`, all optional. Returns null when it is absent
+ * (`undefined` / `null`). Whether a rule without a rate can inherit one is only known to the
+ * gateway (it depends on `gateway.rateLimit.default`): see {@link ResolvedRateLimit.ruleFor}.
+ * @throws Error naming the offending field (`where` prefixes it).
+ */
+export function validateRouteRateLimit(value: unknown, where = 'rateLimit'): RouteRateLimit | null {
+  if (value === undefined || value === null) return null;
+  if (!isObject(value)) throw new Error(`${where} must be an object (or null to remove it)`);
+  checkKeys(where, value, OWN_KEYS);
+  checkRuleFields(where, value);
+  return value as RouteRateLimit;
 }
 
 /**
@@ -102,9 +130,7 @@ export function resolveRateLimitConfig(config: unknown): ResolvedRateLimit | nul
     if (r.method !== undefined && (typeof r.method !== 'string' || !r.method.trim())) {
       throw new Error(`${where}.method must be an HTTP method (omit it to match every method)`);
     }
-    if (r.enabled !== undefined && typeof r.enabled !== 'boolean') throw new Error(`${where}.enabled must be true or false`);
-    if (r.requestsPerSecond !== undefined) checkRate(where, r.requestsPerSecond);
-    if (r.burst !== undefined) checkBurst(where, r.burst);
+    checkRuleFields(where, r);
     if (r.enabled !== false && r.requestsPerSecond === undefined && !def) {
       throw new Error(`${where} ('${r.path}') has no requestsPerSecond and there is no rateLimit.default to inherit it from`);
     }
@@ -122,23 +148,30 @@ export function resolveRateLimitConfig(config: unknown): ResolvedRateLimit | nul
     ? { requestsPerSecond: def.requestsPerSecond, burst: def.burst ?? defaultBurst(def.requestsPerSecond), source: 'default' }
     : null;
 
+  /** A route rule (own field or `routes` entry) on top of the default; null when it exempts the route. */
+  const resolveRule = (rule: RouteRateLimit, source: 'path' | 'route'): ResolvedRateLimitRule | null => {
+    if (rule.enabled === false) return null;
+    const requestsPerSecond = rule.requestsPerSecond ?? def?.requestsPerSecond;
+    if (requestsPerSecond === undefined) {
+      throw new Error('rateLimit has no requestsPerSecond and there is no gateway.rateLimit.default to inherit it from');
+    }
+    if (!requestsPerSecond) return null;
+    // A route that sets its own rate does not inherit the default's burst (it was sized for another rate).
+    const burst = rule.burst ?? (rule.requestsPerSecond === undefined ? def?.burst : undefined) ?? defaultBurst(requestsPerSecond);
+    return { requestsPerSecond, burst, source };
+  };
+
   return {
     ipHeader: cfg.ipHeader?.trim().toLowerCase(),
     maxKeys: cfg.maxKeys ?? DEFAULT_RATE_LIMIT_MAX_KEYS,
     defaultRule,
     routeRules,
-    ruleFor(method: string, path: string): ResolvedRateLimitRule | null {
+    ruleFor(method: string, path: string, own?: RouteRateLimit | null): ResolvedRateLimitRule | null {
+      const ownRule = validateRouteRateLimit(own);
+      if (ownRule) return resolveRule(ownRule, 'path');
       const p = normalizeRoutePath(path);
-      const own = routes.get(`${method.toUpperCase()} ${p}`) ?? routes.get(`* ${p}`);
-      if (own) {
-        if (own.enabled === false) return null;
-        const requestsPerSecond = own.requestsPerSecond ?? def.requestsPerSecond;
-        if (!requestsPerSecond) return null;
-        // A route that sets its own rate does not inherit the default's burst (it was sized for another rate).
-        const burst = own.burst ?? (own.requestsPerSecond === undefined ? def.burst : undefined) ?? defaultBurst(requestsPerSecond);
-        return { requestsPerSecond, burst, source: 'route' };
-      }
-      return defaultRule;
+      const entry = routes.get(`${method.toUpperCase()} ${p}`) ?? routes.get(`* ${p}`);
+      return entry ? resolveRule(entry, 'route') : defaultRule;
     },
   };
 }

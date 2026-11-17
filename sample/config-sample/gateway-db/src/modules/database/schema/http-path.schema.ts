@@ -23,6 +23,9 @@ const HttpPathSchema = new mongoose.Schema({
   redirect: Number,
   headers: Schema.Types.Mixed,
   forwardHeaders: Schema.Types.Mixed,
+  // Per-caller limit of this route ({ enabled?, requestsPerSecond?, burst? }, null = none). Mixed:
+  // a strict schema without it would drop the field on save.
+  rateLimit: Schema.Types.Mixed,
   enabled: { type: Boolean, default: true },
   // Route auto-discovery: owning service id (null/absent for manually-managed rows) and the
   // stable identity `METHOD path` used by the route-sync for upsert/diff/collision detection.
@@ -33,7 +36,7 @@ const HttpPathSchema = new mongoose.Schema({
   source: String,
   modified: Boolean,
   // Soft per-field user overrides (subset of enabled/actions/allowAnonymous/timeout/redirect/
-  // successStatusCode): route auto-discovery preserves these fields' user values while still
+  // successStatusCode/rateLimit): route auto-discovery preserves these fields' user values while still
   // updating every other field. Released per-field via gw-path-update `releaseOverrides`.
   userOverrides: [String],
 });

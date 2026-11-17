@@ -14,6 +14,7 @@ function canonicalRoute(r: any) {
     successStatusCode: r.successStatusCode ?? null, timeout: r.timeout ?? null,
     parseRaw: r.parseRaw ?? null, binary: r.binary ?? null, redirect: r.redirect ?? null,
     headers: r.headers ?? {}, forwardHeaders: r.forwardHeaders ?? {},
+    rateLimit: r.rateLimit ?? null,
   };
 }
 
@@ -26,7 +27,7 @@ const ROUTE_FIELDS = Object.keys(canonicalRoute({}));
  *  user's value for these (tracked per-route in `userOverrides`). Any other field the user changes
  *  marks the route `modified` (full lock). `enabled` is included even though it is a persistence
  *  field (not in ROUTE_FIELDS) — the diff handles it explicitly. */
-export const USER_OVERRIDABLE_FIELDS = ['enabled', 'actions', 'allowAnonymous', 'timeout', 'redirect', 'successStatusCode'];
+export const USER_OVERRIDABLE_FIELDS = ['enabled', 'actions', 'allowAnonymous', 'timeout', 'redirect', 'successStatusCode', 'rateLimit'];
 
 /** Take an incoming (MS) route but KEEP the stored route's value for every CONTENT field the user
  *  has overridden (`userOverrides`). `enabled` is skipped here (handled by the diff — it is not a

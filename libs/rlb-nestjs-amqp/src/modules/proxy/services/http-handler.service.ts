@@ -76,9 +76,13 @@ export class HttpHandlerService implements OnModuleInit {
       this.logger.log(`[gateway] ACL context fields: companyId ← '${this.aclContextFields.companyId}', resourceId ← '${this.aclContextFields.resourceId}'`);
     }
     // Throws on a malformed gateway.rateLimit, for the same reason: a typo must not leave a route unprotected.
-    this.rateLimit = resolveRateLimitConfig(this.gatewayConfig.rateLimit);
+    // Without the block the limiter still runs for the routes that carry their own `rateLimit`
+    // (YAML, admin API, DB); only `enabled: false` turns it off.
+    this.rateLimit = resolveRateLimitConfig(this.gatewayConfig.rateLimit ?? {});
     this.rateLimiter = this.rateLimit ? new TokenBucketLimiter(this.rateLimit.maxKeys) : null;
-    if (this.rateLimit) {
+    if (!this.rateLimit) {
+      this.logger.log(`[RATE-LIMIT] off (gateway.rateLimit.enabled: false): no route is limited, their own rateLimit included`);
+    } else if (this.gatewayConfig.rateLimit) {
       const def = this.rateLimit.defaultRule;
       this.logger.log(`[RATE-LIMIT] enabled: default ${def ? `${def.requestsPerSecond} req/s, burst ${def.burst}` : 'none'}, ${this.rateLimit.routeRules.length} route rule(s), caller IP from ${this.rateLimit.ipHeader ? `header '${this.rateLimit.ipHeader}'` : 'the socket'}`);
     }
@@ -221,23 +225,46 @@ export class HttpHandlerService implements OnModuleInit {
     }
     this.dynamicRouter = router;
     this.logger.log(`[RELOAD] routes ready: ${ok}/${paths.length} (yaml=${this.gatewayConfig?.paths?.length || 0}, db=${extPath.length})`);
-    this.warnUnmatchedRateLimitRules(paths);
+    this.checkRateLimitRules(paths);
     return ok;
   }
 
-  /** A `rateLimit.routes` entry no route matches is most likely a typo in its path: say so at every reload. */
-  private warnUnmatchedRateLimitRules(paths: PathDefinition[]) {
+  /**
+   * At every reload: a `rateLimit.routes` entry no route matches is most likely a typo in its path,
+   * and one whose routes all carry their own `rateLimit` is dead (the route's field wins). Say so.
+   */
+  private checkRateLimitRules(paths: PathDefinition[]) {
     if (!this.rateLimit?.routeRules.length) return;
-    const declared = new Set<string>();
+    // 'METHOD path' / '* path' → whether EVERY route under that key has its own rateLimit.
+    const declared = new Map<string, boolean>();
     for (const p of paths) {
       if (!p?.path || !p?.method) continue;
       const path = normalizeRoutePath(p.path);
-      declared.add(`${p.method.toUpperCase()} ${path}`);
-      declared.add(`* ${path}`);
+      const own = p.rateLimit !== undefined && p.rateLimit !== null;
+      for (const key of [`${p.method.toUpperCase()} ${path}`, `* ${path}`]) {
+        declared.set(key, (declared.get(key) ?? true) && own);
+      }
     }
     for (const rule of this.rateLimit.routeRules) {
       const key = `${rule.method ?? '*'} ${rule.path}`;
       if (!declared.has(key)) this.logger.warn(`[RATE-LIMIT] rule '${key}' matches no route: check its path/method`);
+      else if (declared.get(key)) this.logger.warn(`[RATE-LIMIT] rule '${key}' is not used: the route's own rateLimit wins over it`);
+    }
+  }
+
+  /**
+   * The route's bucket: its own `rateLimit` field, else its `gateway.rateLimit.routes` entry, else
+   * the default. A malformed own field (a DB row edited by hand, a rule without a rate on a gateway
+   * with no default) is logged and ignored, and the route keeps the gateway.rateLimit rules: a bad
+   * value must not take the route down.
+   */
+  private rateLimitRuleFor(path: PathDefinition): ResolvedRateLimitRule | null {
+    if (!this.rateLimit) return null;
+    try {
+      return this.rateLimit.ruleFor(path.method, path.path, path.rateLimit);
+    } catch (error) {
+      this.logger.error(`[RATE-LIMIT] [${path.method.toUpperCase()}] '${path.path}' its rateLimit is ignored: ${error?.message}`);
+      return this.rateLimit.ruleFor(path.method, path.path);
     }
   }
 
@@ -264,10 +291,12 @@ export class HttpHandlerService implements OnModuleInit {
       this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}'; requests will be denied (401). Check 'auth-providers'.`);
     }
 
-    // Resolved once per registration (the config is static); the buckets outlive reloads.
-    const rateLimitRule = this.rateLimit?.ruleFor(path.method, path.path) ?? null;
-    if (rateLimitRule?.source === 'route') {
-      this.logger.log(`[RATE-LIMIT] [${path.method.toUpperCase()}] '${path.path}' limited to ${rateLimitRule.requestsPerSecond} req/s, burst ${rateLimitRule.burst}, per caller`);
+    // Resolved once per registration: a route edited through the admin API takes its new limit at
+    // the next reload. The buckets outlive reloads.
+    const rateLimitRule = this.rateLimitRuleFor(path);
+    if (rateLimitRule && rateLimitRule.source !== 'default') {
+      const from = rateLimitRule.source === 'path' ? 'its own rateLimit' : 'gateway.rateLimit.routes';
+      this.logger.log(`[RATE-LIMIT] [${path.method.toUpperCase()}] '${path.path}' limited to ${rateLimitRule.requestsPerSecond} req/s, burst ${rateLimitRule.burst}, per caller (${from})`);
     }
 
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));

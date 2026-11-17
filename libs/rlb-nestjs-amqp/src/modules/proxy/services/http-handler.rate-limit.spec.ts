@@ -226,6 +226,61 @@ describe('HttpHandlerService — gateway.rateLimit', () => {
     expect(messages.some((m) => m.includes('list-available') && m.includes('matches no route'))).toBe(false);
   });
 
+  describe("the route's own rateLimit (YAML paths[], admin API, DB)", () => {
+    const own = (rateLimit: any, over: Partial<PathDefinition> = {}) => route({ rateLimit, ...over });
+
+    it('limits the route without any gateway.rateLimit block', async () => {
+      const { svc, auth, broker } = mkService(undefined);
+      asUser(auth, 'u1');
+      expect(await fire(handlerFor(svc, own({ requestsPerSecond: 1, burst: 2 })), 3)).toEqual([200, 200, 429]);
+      expect(broker.requestData).toHaveBeenCalledTimes(2);
+    });
+
+    it('wins over the gateway.rateLimit.routes entry for the same route', async () => {
+      const { svc, auth } = mkService(LIMIT); // the entry allows a burst of 3
+      asUser(auth, 'u1');
+      expect(await fire(handlerFor(svc, own({ requestsPerSecond: 1, burst: 1 })), 2)).toEqual([200, 429]);
+    });
+
+    it('enabled: false exempts the route from the default', async () => {
+      const { svc, auth } = mkService({ default: { requestsPerSecond: 1, burst: 1 } });
+      asUser(auth, 'u1');
+      expect((await fire(handlerFor(svc, own({ enabled: false })), 10)).every((c) => c === 200)).toBe(true);
+    });
+
+    it('gateway.rateLimit.enabled: false turns the own rules off too', async () => {
+      const { svc, auth } = mkService({ enabled: false });
+      asUser(auth, 'u1');
+      expect((await fire(handlerFor(svc, own({ requestsPerSecond: 1, burst: 1 })), 10)).every((c) => c === 200)).toBe(true);
+    });
+
+    it('a malformed rule is logged and ignored: the route stays up under the gateway.rateLimit rules', async () => {
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const { svc, auth } = mkService(LIMIT);
+      asUser(auth, 'u1');
+      const h = handlerFor(svc, own({ requestsPerSecond: 1, burst: 1.5 }));
+      expect(await fire(h, 4)).toEqual([200, 200, 200, 429]); // the routes entry: burst 3
+      expect(error.mock.calls.some(([m]) => String(m).includes('its rateLimit is ignored') && String(m).includes('burst'))).toBe(true);
+    });
+
+    it('a rule without a rate on a gateway with no default is logged and ignored', async () => {
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const { svc, auth } = mkService(undefined);
+      asUser(auth, 'u1');
+      expect((await fire(handlerFor(svc, own({ burst: 2 })), 5)).every((c) => c === 200)).toBe(true);
+      expect(error.mock.calls.some(([m]) => String(m).includes('no gateway.rateLimit.default'))).toBe(true);
+    });
+
+    it("warns at reload about a routes entry the route's own rule makes unused", async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { svc } = mkService(LIMIT, [own({ requestsPerSecond: 5 })]);
+      (svc as any).server = { use: jest.fn() };
+      await svc.reload();
+      const messages = warn.mock.calls.map(([m]) => String(m));
+      expect(messages.some((m) => m.includes("'GET /bookings/rides/list-available' is not used"))).toBe(true);
+    });
+  });
+
   it('a malformed gateway.rateLimit stops the gateway at construction', () => {
     expect(() => mkService({ default: { requestsPerSecond: -5 } })).toThrow(/requestsPerSecond/);
   });

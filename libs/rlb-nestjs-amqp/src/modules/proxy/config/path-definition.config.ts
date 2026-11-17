@@ -25,6 +25,15 @@ export interface PathDefinition {
     [k: string]: string;
   };
   redirect: number;
+  /**
+   * Per-caller limit for THIS route (token bucket, see {@link RateLimitConfig}). Set it in YAML
+   * `paths[]`, through the route admin API (`gw-path-create` / `gw-path-update`) or in the DB row.
+   * It wins over a `gateway.rateLimit.routes` entry for the same route, inherits a missing rate or
+   * burst from `gateway.rateLimit.default`, and works without a `gateway.rateLimit` block (only
+   * `gateway.rateLimit.enabled: false` turns it off). Omit or `null` ⇒ the `gateway.rateLimit`
+   * rules apply.
+   */
+  rateLimit?: RouteRateLimit | null;
 }
 
 export interface WebSocketEvent {
@@ -125,16 +134,24 @@ export interface RateLimitRule {
   burst?: number;
 }
 
+/**
+ * The limit of ONE route: the route's own `rateLimit` field ({@link PathDefinition.rateLimit}) or a
+ * `gateway.rateLimit.routes` entry. A missing `requestsPerSecond` / `burst` is taken from
+ * `gateway.rateLimit.default`; a rule that sets its own rate does not inherit the default's burst.
+ */
+export interface RouteRateLimit extends Partial<RateLimitRule> {
+  /** `false` ⇒ this route is not limited, even when `rateLimit.default` is set. */
+  enabled?: boolean;
+}
+
 /** Override for ONE route, matched on the route's declared path (and method, when given). */
-export interface RateLimitRouteRule extends Partial<RateLimitRule> {
+export interface RateLimitRouteRule extends RouteRateLimit {
   /** The route's path exactly as declared (YAML `paths[].path`, DB or `@BrokerHTTP`), parameters
    *  included: e.g. `/bookings/rides/list-available` or `/bookings/:id`. */
   path: string;
   /** HTTP method (any case). Omit to match every method on `path`. A rule with a method wins over
    *  one without for the same path. */
   method?: string;
-  /** `false` ⇒ this route is not limited, even when `rateLimit.default` is set. */
-  enabled?: boolean;
 }
 
 /**
@@ -149,7 +166,8 @@ export interface RateLimitConfig {
   enabled?: boolean;
   /** Limit applied to EVERY route that has no own rule. Omit ⇒ only the routes in `routes` are limited. */
   default?: RateLimitRule;
-  /** Per-route overrides. A missing `requestsPerSecond`/`burst` is taken from `default`. */
+  /** Per-route overrides. A missing `requestsPerSecond`/`burst` is taken from `default`. A route's
+   *  own `rateLimit` field (YAML `paths[]`, admin API, DB) wins over the entry for that route. */
   routes?: RateLimitRouteRule[];
   /** Header carrying the real client IP when the gateway sits behind a proxy (e.g.
    *  `cf-connecting-ip`, `x-real-ip`, `x-forwarded-for` → first entry). Omit ⇒ the socket address
@@ -212,7 +230,8 @@ export interface GatewayConfig {
   maxConcurrentRequests?: number;
   /**
    * Per-caller, per-route request limit (token bucket): over the limit the gateway answers 429 with
-   * `Retry-After` instead of forwarding. Omit ⇒ no limit (default). See {@link RateLimitConfig}.
+   * `Retry-After` instead of forwarding. Omit ⇒ only the routes with their own `rateLimit` field are
+   * limited (none by default). See {@link RateLimitConfig}.
    */
   rateLimit?: RateLimitConfig;
   /**

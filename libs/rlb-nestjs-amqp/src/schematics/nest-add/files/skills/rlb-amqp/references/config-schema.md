@@ -221,6 +221,7 @@ gateway:
       - { path: /health, enabled: false }           # exempt from the default
     # caller = authenticated user id (provider uidClaim, default USERID), else client IP.
     # Runs after 401, before upload/ACL/RPC. Malformed block stops the boot. Buckets are per instance.
+    # A route's own paths[].rateLimit (≥ 3.4.0, also via gw-path-create/update) wins over routes[].
 
   paths:   [ ... ]                   # PathDefinition[] (HTTP routes) — see below
   events:  [ ... ]                   # WebSocketEvent[] (WS / webhook) — see below
@@ -249,6 +250,8 @@ control-topic subscriber ignores every other message. Concurrent `reload()`s are
   parseRaw: false         # true → forward raw body as $raw (needs rawBody:true at bootstrap)
   headers: { Cache-Control: no-store }    # static response headers
   forwardHeaders: { X-Trace-Id: X-Request-Id }   # request header → forwarded (dest prefixed by headerPrefix)
+  rateLimit: { requestsPerSecond: 1, burst: 5 }  # ≥ 3.4.0: per-caller limit of THIS route, wins over gateway.rateLimit.routes;
+                                                 # { enabled: false } exempts it; a missing rate/burst comes from rateLimit.default
 ```
 
 dataSource payload composition (`req.params` always merged in, re-applied last so they win):

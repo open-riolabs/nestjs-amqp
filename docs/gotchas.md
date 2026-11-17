@@ -388,10 +388,23 @@ decorator-bound and **not** configurable.
 
 ## Rate limit (`gateway.rateLimit`)
 
-**Rules are not a `paths[]` field.** They live in `gateway.rateLimit.routes` and match the route
-path **as declared** (`/bookings/:id`, not `/bookings/42`), plus `method` when given, so they apply
-to DB and auto-discovered routes as well. A rule that matches no route is not an error: the gateway
-logs `[RATE-LIMIT] rule '…' matches no route` at every reload.
+**Two places for a route's rule, the route's own field wins.** Since 3.4.0 a route carries its own
+`rateLimit` (YAML `paths[]`, or a DB route through `gw-path-create` / `gw-path-update`). It beats the
+`gateway.rateLimit.routes` entry for the same route, which the gateway then reports as unused at
+every reload. Entries in `gateway.rateLimit.routes` match the route path **as declared**
+(`/bookings/:id`, not `/bookings/42`), plus `method` when given, so they apply to DB and
+auto-discovered routes as well. An entry that matches no route is not an error: the gateway logs
+`[RATE-LIMIT] rule '…' matches no route` at every reload.
+
+**A route's own `rateLimit` needs no `gateway.rateLimit` block**, but `enabled: false` in that block
+turns it off too. A broken own rule (written in the DB by hand, or without `requestsPerSecond` on a
+gateway with no `default`) does not stop the boot: it is logged as an error at every reload and
+ignored. The admin API answers 400 to malformed values. A strict Mongoose schema needs a
+`rateLimit: Schema.Types.Mixed` field, or the value is dropped on save.
+
+**Editing it does not lock an auto-discovered route.** `rateLimit` is a soft override field: the
+route keeps following its microservice for every other field. `releaseOverrides: ["rateLimit"]`
+removes the user's limit at the next sync.
 
 **The caller is the mapped uid claim, else the IP.** The bucket key is the route provider's
 `${headerPrefix}${uidClaim}` (the claim the ACL uses, `USERID` by default). Without it (no `jwtMap`

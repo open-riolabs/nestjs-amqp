@@ -147,6 +147,41 @@ Wire them as HTTP routes (matches `config.yaml`):
 
 > Note `gw-path-create` is a **POST** (paths *do* have an `id`). This is different from the ACL and auth-provider resources, which are name-keyed PUT-upserts.
 
+### Per-route rate limit — the `rateLimit` field
+
+A stored route carries its own per-caller limit in `rateLimit`, set through `gw-path-create` /
+`gw-path-update` like any other field (≥ 3.4.0). The gateway reads it at the next reload, so the
+change needs no restart and no YAML edit:
+
+```jsonc
+// PUT /admin/paths
+{ "id": "665f…", "rateLimit": { "requestsPerSecond": 1, "burst": 5 } }   // limit this route
+{ "id": "665f…", "rateLimit": { "enabled": false } }                    // exempt it from gateway.rateLimit.default
+{ "id": "665f…", "rateLimit": null }                                    // remove it: gateway.rateLimit rules apply again
+```
+
+| Field | Meaning |
+| --- | --- |
+| `requestsPerSecond` | Sustained rate (fractions allowed, `0` = no limit). Omit it to inherit `gateway.rateLimit.default`. |
+| `burst` | Bucket size (integer ≥ 1). Omit it: the default's burst when the rate is inherited, else the rate rounded up. |
+| `enabled` | `false` exempts the route. |
+
+- **Validation**: a malformed value (unknown key, negative rate, fractional burst, not an object)
+  is answered **400** and nothing is written. Whether a rule without `requestsPerSecond` can inherit
+  one depends on the gateway's `gateway.rateLimit.default`: when there is none, the gateway logs an
+  error at reload and ignores the rule (the route stays up under the YAML rules).
+- **Precedence**: the route's `rateLimit` wins over a `gateway.rateLimit.routes` entry for the same
+  route (the gateway warns at reload that the entry is unused), and works without any
+  `gateway.rateLimit` block. `gateway.rateLimit.enabled: false` turns it off with everything else.
+  `ipHeader`, `maxKeys` and `default` stay in YAML. Semantics: [Gateway → Rate limit](./gateway.md#rate-limit--gatewayratelimit).
+- **Auto-discovered routes**: `rateLimit` is a *soft* field, like `enabled`, `actions`,
+  `allowAnonymous`, `timeout`, `redirect` and `successStatusCode`. Setting it does **not** lock the
+  route (`modified` stays `false`): route auto-discovery keeps updating the other fields and
+  preserves the user's limit (`userOverrides` contains `rateLimit`). `releaseOverrides: ["rateLimit"]`
+  hands it back: the next sync writes `rateLimit: null`.
+- **DB schema**: the consumer's route schema must store the field (Mongoose: `rateLimit:
+  Schema.Types.Mixed`), or a strict schema drops it on save.
+
 ---
 
 ## Auth-provider management — `gw-auth-*` (name-keyed PUT-upsert)

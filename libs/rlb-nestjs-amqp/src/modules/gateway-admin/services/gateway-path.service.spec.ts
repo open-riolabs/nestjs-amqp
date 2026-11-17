@@ -54,6 +54,42 @@ describe('GatewayPathService — user CRUD audit (actor + changes)', () => {
     expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ userOverrides: ['redirect'] }));
   });
 
+  it('create: stores a valid rateLimit as sent', async () => {
+    const repo = mkRepo();
+    const rateLimit = { requestsPerSecond: 2, burst: 10 };
+    await new GatewayPathService(repo, mkLogs()).create({ name: 'n', method: 'GET', path: '/x', topic: 't', rateLimit } as any, 'user-1');
+    expect(repo.insert).toHaveBeenCalledWith(expect.objectContaining({ rateLimit }));
+  });
+
+  it.each([
+    ['create', (svc: GatewayPathService) => svc.create({ name: 'n', method: 'GET', path: '/x', topic: 't', rateLimit: { requestsPerSecond: -1 } } as any, 'u')],
+    ['update', (svc: GatewayPathService) => svc.update({ id: 'g1', rateLimit: { requestsPerSecond: 1, burst: 0.5 } } as any, 'u')],
+    ['update (unknown key)', (svc: GatewayPathService) => svc.update({ id: 'g1', rateLimit: { rps: 1 } } as any, 'u')],
+  ])('%s: a malformed rateLimit is a 400 and nothing is written', async (_label, call) => {
+    const repo = mkRepo();
+    await expect(call(new GatewayPathService(repo, mkLogs()))).rejects.toMatchObject({ name: 'BadRequestError' });
+    expect(repo.insert).not.toHaveBeenCalled();
+    expect(repo.updateById).not.toHaveBeenCalled();
+  });
+
+  it('update: rateLimit is a SOFT field — an auto-discovered route is not locked, and the change is journaled', async () => {
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', owner: 'svc', routeKey: 'GET /x', source: 'microservice' };
+    const repo = mkRepo({ findById: jest.fn(async () => existing) });
+    const logs = mkLogs();
+    await new GatewayPathService(repo, logs).update({ id: 'g1', rateLimit: { requestsPerSecond: 1, burst: 5 } } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ modified: false, userOverrides: ['rateLimit'], rateLimit: { requestsPerSecond: 1, burst: 5 } }));
+    expect(logs.insert.mock.calls[0][0].changes).toEqual([{ field: 'rateLimit', added: [{ requestsPerSecond: 1, burst: 5 }], removed: [] }]);
+  });
+
+  it('update: rateLimit null removes the own rule', async () => {
+    const existing = { _id: 'g1', method: 'GET', path: '/x', topic: 't', action: 'a', mode: 'rpc', dataSource: 'query', rateLimit: { requestsPerSecond: 1 }, routeKey: 'GET /x', source: 'user' };
+    const repo = mkRepo({ findById: jest.fn(async () => existing) });
+    const logs = mkLogs();
+    await new GatewayPathService(repo, logs).update({ id: 'g1', rateLimit: null } as any, 'user-2');
+    expect(repo.updateById).toHaveBeenCalledWith('g1', expect.objectContaining({ rateLimit: null }));
+    expect(logs.insert.mock.calls[0][0].changes).toEqual([{ field: 'rateLimit', added: [], removed: [{ requestsPerSecond: 1 }] }]);
+  });
+
   it('delete: journals event=deleted; a missing X-GTW-AUTH-USERID header → actor=unknown', async () => {
     const repo = mkRepo();
     const logs = mkLogs();

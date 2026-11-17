@@ -16,7 +16,7 @@ export type StoredHttpPath = Partial<PathDefinition> & {
    *  'microservice' routes. */
   modified?: boolean;
   /** Soft per-field user overrides: the subset of USER_OVERRIDABLE_FIELDS (enabled, actions,
-   *  allowAnonymous, timeout, redirect, successStatusCode) the user changed via the admin WITHOUT
+   *  allowAnonymous, timeout, redirect, successStatusCode, rateLimit) the user changed via the admin WITHOUT
    *  locking the route. Route auto-discovery preserves these fields' values while still updating
    *  every other field. Released per-field by passing `releaseOverrides` to gw-path-update. */
   userOverrides?: string[];

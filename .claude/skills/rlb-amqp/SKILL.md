@@ -86,8 +86,9 @@ configs). The retired `apps/gateway-2` is gone — do not cite it.
     ↔ `@BrokerAuth` `httpName`. A single `@BrokerHTTP` auto-pairs its `@BrokerAuth` (no name needed);
     a route with no `@BrokerAuth` is public.
 12. Per-caller limits (≥ 3.3.0) live in `gateway.rateLimit` — `default` for every route,
-    `routes[]` matched on the route path **as declared** (`/bookings/:id`), never inside
-    `paths[]` — so they cover DB and auto-discovered routes too. Caller = the authenticated
+    `routes[]` matched on the route path **as declared** (`/bookings/:id`) — and, since 3.4.0, in
+    the route's own `rateLimit` field (YAML `paths[]`, or `gw-path-create`/`gw-path-update` for DB
+    routes), which wins over its `routes[]` entry. Caller = the authenticated
     `${headerPrefix}${uidClaim}`, else the client IP (set `ipHeader` behind a proxy before
     enabling `default`). Over the limit → `429` + `Retry-After`, nothing forwarded. Buckets are
     per instance. A malformed block stops the boot.

@@ -1,6 +1,6 @@
 ---
 name: rlb-amqp-add-route
-description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload, raw body or a per-caller rate limit (429). Generates the YAML path fragment (plus the gateway.rateLimit rule when the route needs one) and flags required bootstrap/ACL wiring.
+description: Expose a broker action over HTTP through the @open-rlb/nestjs-amqp gateway by adding a gateway.paths[] entry. Use when the user wants a new HTTP endpoint/REST route that forwards to a topic/action, choosing rpc (wait reply) vs event (fire-and-forget with confirm), with auth, actions (ACL gate), dataSource, timeout, file upload, raw body or a per-caller rate limit (429). Generates the YAML path fragment (with its rateLimit when the route needs one) and flags required bootstrap/ACL wiring.
 ---
 
 # Add an HTTP gateway route (gateway.paths[])
@@ -27,8 +27,7 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 - Extras: `timeout` (rpc), `successStatusCode`, `binary`, `redirect`, `parseRaw`, static
   `headers`, `forwardHeaders`.
 - **rate limit**: will clients poll or retry this route (lists, counters, search-as-you-type)?
-  Then give it a rule in `gateway.rateLimit.routes` — see [Rate limit](#rate-limit-optional).
-  NOT a `PathDefinition` field.
+  Then give it a `rateLimit` — see [Rate limit](#rate-limit-optional).
 
 ## PathDefinition fields (all of them)
 
@@ -50,6 +49,7 @@ Canonical example: `sample/config-sample/gateway-in-memory/config/config.yaml`.
 | `redirect` | On an `rpc` route, redirect with this status using the reply as the location. |
 | `headers` | Static response headers `{ k: v }`. |
 | `forwardHeaders` | `{ dest: srcHeader }` — copy request headers downstream (prefixed by `gateway.headerPrefix`). |
+| `rateLimit` | ≥ 3.4.0: `{ enabled?, requestsPerSecond?, burst? }` per-caller limit of this route; wins over `gateway.rateLimit.routes`. |
 
 Uploaded multipart files (any field) are attached as `$files` (buffers → binary strings).
 
@@ -73,9 +73,25 @@ gateway:
 
 ## Rate limit (optional)
 
-Requires `@open-rlb/nestjs-amqp` ≥ 3.3.0. Limits live in `gateway.rateLimit`, keyed on the
-route's **declared** path, so the same rule works for YAML, DB and `@BrokerHTTP` auto-discovered
-routes:
+With `@open-rlb/nestjs-amqp` ≥ 3.4.0 put the rule on the route itself — the YAML path, or for a
+DB route the `rateLimit` field of `gw-path-create` / `gw-path-update` (effective at the next
+reload, no YAML edit). It needs no `gateway.rateLimit` block:
+
+```yaml
+gateway:
+  paths:
+    - name: <unique-name>
+      path: /resource/:id?
+      # …
+      rateLimit:
+        requestsPerSecond: 1          # sustained rate per caller (fractions ok: 0.5 = one every 2 s)
+        burst: 5                      # back-to-back requests after idling (default: rate rounded up)
+        # enabled: false              # instead: exempt this route from gateway.rateLimit.default
+```
+
+On 3.3.x (or to keep all limits in one place) use `gateway.rateLimit.routes`, keyed on the
+route's **declared** path, so the same rule works for YAML, DB and `@BrokerHTTP` routes. The
+route's own `rateLimit` wins over it:
 
 ```yaml
 gateway:
@@ -83,8 +99,8 @@ gateway:
     routes:
       - path: /resource/:id?          # EXACTLY the declared path (params as declared, not a real URL)
         method: GET                   # optional; omit = every method on that path
-        requestsPerSecond: 1          # sustained rate per caller (fractions ok: 0.5 = one every 2 s)
-        burst: 5                      # back-to-back requests after idling (default: rate rounded up)
+        requestsPerSecond: 1
+        burst: 5
 ```
 
 - **Caller** = the authenticated user (`${headerPrefix}${uidClaim}` of the route's provider,
@@ -93,8 +109,10 @@ gateway:
 - Order: auth (`401`, no token spent) → **limit (`429` + `Retry-After`)** → upload → ACL → RPC.
 - Sizing: what a human or a sane poller needs on this route, e.g. `1`/`5` for a polled list.
   Buckets are per gateway instance: with N instances behind a balancer divide by N.
-- A typo in a rule's `path` does not fail: the gateway logs `[RATE-LIMIT] rule '…' matches no
-  route` at every reload — check it after adding the rule. A malformed block stops the boot.
+- A typo in a `routes[]` entry's `path` does not fail: the gateway logs `[RATE-LIMIT] rule '…'
+  matches no route` at every reload — check it after adding the rule. A malformed
+  `gateway.rateLimit` block stops the boot; a malformed route `rateLimit` is logged
+  (`its rateLimit is ignored`) and the route keeps the block's rules.
 
 ## The 3-case auth gate
 
