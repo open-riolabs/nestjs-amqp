@@ -112,6 +112,54 @@ export interface AclContextConfig {
   resourceId?: string;
 }
 
+/**
+ * A token bucket: a caller may send `burst` requests back to back, then one every
+ * 1/`requestsPerSecond` seconds. The bucket refills continuously at `requestsPerSecond`.
+ */
+export interface RateLimitRule {
+  /** Sustained rate: requests per second the bucket refills (fractions allowed, e.g. 0.5 = one every
+   *  2 s). 0 ⇒ no limit. */
+  requestsPerSecond: number;
+  /** Bucket size: requests a caller may send back to back after being idle (integer ≥ 1). Default:
+   *  `requestsPerSecond` rounded up, at least 1. */
+  burst?: number;
+}
+
+/** Override for ONE route, matched on the route's declared path (and method, when given). */
+export interface RateLimitRouteRule extends Partial<RateLimitRule> {
+  /** The route's path exactly as declared (YAML `paths[].path`, DB or `@BrokerHTTP`), parameters
+   *  included: e.g. `/bookings/rides/list-available` or `/bookings/:id`. */
+  path: string;
+  /** HTTP method (any case). Omit to match every method on `path`. A rule with a method wins over
+   *  one without for the same path. */
+  method?: string;
+  /** `false` ⇒ this route is not limited, even when `rateLimit.default` is set. */
+  enabled?: boolean;
+}
+
+/**
+ * Per-caller request limit (`gateway.rateLimit`). Every limited route keeps one bucket per caller:
+ * the authenticated user id (the auth provider's `uidClaim`, default `USERID`) or, when the request
+ * carries no user (anonymous route, no/invalid token, `str-compare` without an id), the client IP.
+ * Over the limit the gateway answers 429 with `Retry-After` and forwards nothing. Buckets live in
+ * this instance's memory: with N instances behind a balancer a caller gets up to N× the limit.
+ */
+export interface RateLimitConfig {
+  /** `false` turns the whole limiter off without removing the block. Default `true`. */
+  enabled?: boolean;
+  /** Limit applied to EVERY route that has no own rule. Omit ⇒ only the routes in `routes` are limited. */
+  default?: RateLimitRule;
+  /** Per-route overrides. A missing `requestsPerSecond`/`burst` is taken from `default`. */
+  routes?: RateLimitRouteRule[];
+  /** Header carrying the real client IP when the gateway sits behind a proxy (e.g.
+   *  `cf-connecting-ip`, `x-real-ip`, `x-forwarded-for` → first entry). Omit ⇒ the socket address
+   *  (`req.ip`). Only set it when every request comes through that proxy: a client reaching the
+   *  gateway directly could forge it. */
+  ipHeader?: string;
+  /** Max buckets kept in memory; the least recently used are dropped first. Default 100000. */
+  maxKeys?: number;
+}
+
 export interface GatewayConfig {
   headerPrefix?: string;
   /**
@@ -162,6 +210,11 @@ export interface GatewayConfig {
    * RPC correlation cost). Omit/0 ⇒ no cap (default). Size it to the instance's real capacity.
    */
   maxConcurrentRequests?: number;
+  /**
+   * Per-caller, per-route request limit (token bucket): over the limit the gateway answers 429 with
+   * `Retry-After` instead of forwarding. Omit ⇒ no limit (default). See {@link RateLimitConfig}.
+   */
+  rateLimit?: RateLimitConfig;
   /**
    * Max size of a NON-multipart request body (JSON/urlencoded/text/raw), e.g. '5mb' or a number of
    * bytes. Multipart uploads are bounded separately by `upload`. Enforcement is applied by the app's

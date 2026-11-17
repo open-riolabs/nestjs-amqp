@@ -212,6 +212,16 @@ gateway:
     allowedOrigins: [https://app.example.com]       # omit → all Origins accepted (logged)
     # auth/roles/scope are declared PER-EVENT on events[], not here
 
+  rateLimit:                         # optional per-caller, per-route token bucket → 429 + Retry-After
+    # enabled: false                 # kill switch (block still validated)
+    ipHeader: cf-connecting-ip       # client IP behind a proxy (omit → socket address; forgeable if the gateway is reachable directly)
+    default: { requestsPerSecond: 20, burst: 40 }   # every route without its own rule (omit → only routes[] limited)
+    routes:
+      - { path: /bookings/rides/list-available, method: GET, requestsPerSecond: 1, burst: 5 }  # path as declared
+      - { path: /health, enabled: false }           # exempt from the default
+    # caller = authenticated user id (provider uidClaim, default USERID), else client IP.
+    # Runs after 401, before upload/ACL/RPC. Malformed block stops the boot. Buckets are per instance.
+
   paths:   [ ... ]                   # PathDefinition[] (HTTP routes) — see below
   events:  [ ... ]                   # WebSocketEvent[] (WS / webhook) — see below
 ```

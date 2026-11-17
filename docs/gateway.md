@@ -88,6 +88,7 @@ await app.listen(port, host);
 | `loadConfig.events` | `{ topic, action }?` | RPC called on boot to pull DB-stored WS events, merged with the YAML `events`. |
 | `reloadTopic` | `string?` | Broadcast control topic. A message with `action: 'gw-reload'` on this topic rebuilds the route table at runtime. |
 | `metrics` | `{ topic, action }?` | Broker sink for per-call metrics (e.g. `{ topic: 'rlb-gateway-admin', action: 'gw-metrics-track' }`). Omit to disable. |
+| `rateLimit` | `RateLimitConfig?` | Per-caller, per-route request limit (token bucket) → `429` + `Retry-After`. Omit to disable. See [Rate limit](#rate-limit--gatewayratelimit). |
 
 ```yaml
 gateway:
@@ -109,6 +110,57 @@ gateway:
 > ignores any other message on that topic (e.g. route-discovery traffic) — only `gw-reload` rebuilds
 > routes. Calling `reload()` concurrently is safe: overlapping signals are **coalesced** into exactly
 > one extra pass.
+
+### Rate limit — `gateway.rateLimit`
+
+A token bucket per **caller** and per **route**: a caller may send `burst` requests back to back,
+then one every `1 / requestsPerSecond` seconds (the bucket refills continuously). Over the limit the
+gateway answers **`429`** with `Retry-After` (whole seconds until the next request passes) in the
+[unified error envelope](#unified-error-envelope) (`code: TooManyRequestsError`), and forwards nothing.
+
+```yaml
+gateway:
+  rateLimit:
+    # enabled: false            # kill switch: keeps the block, turns the limiter off
+    ipHeader: cf-connecting-ip  # real client IP behind a proxy (omit ⇒ socket address)
+    default:                    # every route without its own rule (omit ⇒ only `routes` are limited)
+      requestsPerSecond: 20
+      burst: 40
+    routes:
+      - path: /bookings/rides/list-available   # the route path exactly as declared
+        method: GET                            # optional: omit ⇒ every method on that path
+        requestsPerSecond: 1
+        burst: 5
+      - path: /health
+        enabled: false                         # exempt from the default
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | `false` turns the limiter off (the block is still validated). |
+| `default.requestsPerSecond` | — | Sustained rate for every route without its own rule. Fractions allowed (`0.5` = one every 2 s); `0` = no limit. |
+| `default.burst` | rate rounded up, ≥ 1 | Bucket size (integer ≥ 1). |
+| `routes[].path` | — | The route's declared path, parameters included (`/bookings/:id`); a trailing `/` is ignored. YAML, DB and `@BrokerHTTP` routes alike. |
+| `routes[].method` | every method | A rule with a method wins over one without for the same path. |
+| `routes[].requestsPerSecond` / `burst` | from `default` | A missing rate is inherited; so is the burst, unless the rule sets its own rate (then the burst is that rate rounded up). `requestsPerSecond: 0` exempts the route. |
+| `routes[].enabled` | `true` | `false` exempts the route from the default. |
+| `ipHeader` | socket address | Header with the client IP (first entry of a list, e.g. `x-forwarded-for`). Set it only when every request comes through that proxy: a client reaching the gateway directly can forge it. |
+| `maxKeys` | `100000` | Buckets kept in memory; the least recently used is dropped first. |
+
+- **Caller** = the authenticated user id — the claim the ACL uses (`${headerPrefix}${uidClaim}` of the
+  route's auth provider, `USERID` when it sets no `uidClaim`). With no user (anonymous route, no or
+  invalid token on an `allowAnonymous` route, a provider that maps no user id) the caller is the
+  client IP.
+- **Where it runs**: after authentication (a `401` spends no token) and **before** the upload parsing,
+  the ACL check and the RPC, so a rejected request costs nothing downstream.
+- **Validation**: a malformed block (unknown key, negative rate, fractional burst, a route without a
+  rate and no `default`, the same route twice) **stops the gateway at boot**. A rule whose path matches
+  no route is logged as a warning at every reload (typo detector).
+- **Logs**: one `[RATE-LIMIT] … 429 xN` warning per caller and route per minute, not one per request.
+- **Memory, per instance**: the buckets live in this process. With N gateway instances behind a
+  round-robin balancer a caller gets up to N× the configured rate: divide the values by N, or put the
+  buckets in a shared store (e.g. Redis) — not implemented.
+- Microservices can answer `429` too: throw `TooManyRequestsError` (see the status table below).
 
 ## HTTP configuration (paths & auth)
 
@@ -286,6 +338,7 @@ When `mode: rpc` and the broker reply rejects, the error `name` maps to a status
 | `ForbiddenError` | `403` |
 | `NotFoundError` | `404` |
 | `ConflictError` | `409` |
+| `TooManyRequestsError` | `429` |
 | (any other) | `500` |
 
 For **`event`** routes: a successful publish returns `successStatusCode || 202`; a publish failure

@@ -1024,6 +1024,37 @@
         "loadConfig": {
           "$ref": "#/definitions/gatewayConfigLoader"
         },
+        "rateLimit": {
+          "type": "object",
+          "additionalProperties": false,
+          "markdownDescription": "Per-caller, per-route request limit (token bucket). Over the limit the gateway answers `429` with `Retry-After` and forwards nothing. The caller is the authenticated user id (the auth provider's `uidClaim`), else the client IP. Buckets live in this instance's memory. A malformed block stops the gateway at boot. Omit to disable.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "false turns the limiter off without removing the block (default true)."
+            },
+            "default": {
+              "$ref": "#/definitions/rateLimitRule",
+              "description": "Limit for every route without its own rule. Omit: only the routes in 'routes' are limited."
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/rateLimitRouteRule"
+              }
+            },
+            "ipHeader": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Header with the real client IP behind a proxy (e.g. cf-connecting-ip; x-forwarded-for: first entry). Omit: socket address. Forgeable by clients that reach the gateway directly."
+            },
+            "maxKeys": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Max buckets kept in memory, least recently used dropped first (default 100000)."
+            }
+          }
+        },
         "paths": {
           "type": "array",
           "items": {
@@ -1041,6 +1072,58 @@
         "paths",
         "events"
       ]
+    },
+    "rateLimitRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestsPerSecond"
+      ],
+      "properties": {
+        "requestsPerSecond": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Sustained rate the bucket refills, in requests per second (fractions allowed; 0 = no limit)."
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Requests a caller may send back to back after being idle (default: the rate rounded up, at least 1)."
+        }
+      }
+    },
+    "rateLimitRouteRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The route path exactly as declared, parameters included (e.g. /bookings/:id)."
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "description": "HTTP method; omit to match every method on the path."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false exempts this route from the default limit."
+        },
+        "requestsPerSecond": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Overrides the default rate (0 = no limit)."
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Overrides the burst; when omitted and the rule sets its own rate, the rate rounded up."
+        }
+      }
     },
     "gatewayConfigLoader": {
       "type": "object",

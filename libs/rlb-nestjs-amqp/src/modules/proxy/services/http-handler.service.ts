@@ -7,9 +7,11 @@ import { GW_AUTH_RELOAD_ACTION, GW_RELOAD_ACTION, RLB_AMQP_APP_OPTIONS, RLB_AMQP
 import { AppConfig, UtilsService } from "../../broker/services/utils.service";
 import { AclContextFields, resolveAclContextFields } from "../config/acl-context";
 import { GatewayConfig, PathDefinition } from "../config/path-definition.config";
+import { normalizeRoutePath, resolveRateLimitConfig, ResolvedRateLimit, ResolvedRateLimitRule } from "../config/rate-limit";
 import { AuthProviderRegistry } from "./auth-provider-registry.service";
 import { HttpAuthHandlerService } from "./http-auth-handler.service";
 import { GatewayMetricPoint, GatewayMetricsHook, RLB_GTW_METRICS_HOOK } from "./metrics-hook";
+import { TokenBucketLimiter } from "./token-bucket-limiter";
 import multer = require('multer');
 
 /** Maps a thrown BrokerHttpError name → HTTP status (unmapped → 500). Used by the single error envelope. */
@@ -20,6 +22,7 @@ const ERROR_STATUS: Record<string, number> = {
   ForbiddenError: 403,
   NotFoundError: 404,
   ConflictError: 409,
+  TooManyRequestsError: 429,
   // Upstream microservice didn't reply within the RPC timeout: a load/availability condition,
   // not a gateway bug — 504 lets callers and load balancers tell the two apart (it was 500).
   ServerError: 500,
@@ -51,6 +54,9 @@ export class HttpHandlerService implements OnModuleInit {
   private readonly multipartParser: ReturnType<multer.Multer['any']>;
   /** Payload fields the ACL reads (companyId, resourceId) from — canonical unless gateway.aclContext renames them. */
   private readonly aclContextFields: AclContextFields;
+  /** `gateway.rateLimit` resolved, and its buckets; both null when the limiter is off. */
+  private readonly rateLimit: ResolvedRateLimit | null;
+  private readonly rateLimiter: TokenBucketLimiter | null;
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
@@ -68,6 +74,13 @@ export class HttpHandlerService implements OnModuleInit {
     this.aclContextFields = resolveAclContextFields(this.gatewayConfig.aclContext);
     if (this.gatewayConfig.aclContext) {
       this.logger.log(`[gateway] ACL context fields: companyId ← '${this.aclContextFields.companyId}', resourceId ← '${this.aclContextFields.resourceId}'`);
+    }
+    // Throws on a malformed gateway.rateLimit, for the same reason: a typo must not leave a route unprotected.
+    this.rateLimit = resolveRateLimitConfig(this.gatewayConfig.rateLimit);
+    this.rateLimiter = this.rateLimit ? new TokenBucketLimiter(this.rateLimit.maxKeys) : null;
+    if (this.rateLimit) {
+      const def = this.rateLimit.defaultRule;
+      this.logger.log(`[RATE-LIMIT] enabled: default ${def ? `${def.requestsPerSecond} req/s, burst ${def.burst}` : 'none'}, ${this.rateLimit.routeRules.length} route rule(s), caller IP from ${this.rateLimit.ipHeader ? `header '${this.rateLimit.ipHeader}'` : 'the socket'}`);
     }
     // memoryStorage buffers whole files in gateway RAM (they must be re-encoded into the AMQP
     // message anyway), so unbounded uploads are an OOM vector: the limits below are mandatory.
@@ -208,7 +221,24 @@ export class HttpHandlerService implements OnModuleInit {
     }
     this.dynamicRouter = router;
     this.logger.log(`[RELOAD] routes ready: ${ok}/${paths.length} (yaml=${this.gatewayConfig?.paths?.length || 0}, db=${extPath.length})`);
+    this.warnUnmatchedRateLimitRules(paths);
     return ok;
+  }
+
+  /** A `rateLimit.routes` entry no route matches is most likely a typo in its path: say so at every reload. */
+  private warnUnmatchedRateLimitRules(paths: PathDefinition[]) {
+    if (!this.rateLimit?.routeRules.length) return;
+    const declared = new Set<string>();
+    for (const p of paths) {
+      if (!p?.path || !p?.method) continue;
+      const path = normalizeRoutePath(p.path);
+      declared.add(`${p.method.toUpperCase()} ${path}`);
+      declared.add(`* ${path}`);
+    }
+    for (const rule of this.rateLimit.routeRules) {
+      const key = `${rule.method ?? '*'} ${rule.path}`;
+      if (!declared.has(key)) this.logger.warn(`[RATE-LIMIT] rule '${key}' matches no route: check its path/method`);
+    }
   }
 
   /**
@@ -234,6 +264,12 @@ export class HttpHandlerService implements OnModuleInit {
       this.logger.error(`Path '${path.name || path.path}' references unknown auth provider '${path.auth}'; requests will be denied (401). Check 'auth-providers'.`);
     }
 
+    // Resolved once per registration (the config is static); the buckets outlive reloads.
+    const rateLimitRule = this.rateLimit?.ruleFor(path.method, path.path) ?? null;
+    if (rateLimitRule?.source === 'route') {
+      this.logger.log(`[RATE-LIMIT] [${path.method.toUpperCase()}] '${path.path}' limited to ${rateLimitRule.requestsPerSecond} req/s, burst ${rateLimitRule.burst}, per caller`);
+    }
+
     const target = router ?? (this.dynamicRouter ?? (this.dynamicRouter = Router()));
     target[path.method.toLowerCase()](path.path, async (req: Request, res: Response) => {
       // Auto per-call metrics: when a metrics sink is configured, emit one fire-and-forget
@@ -254,6 +290,10 @@ export class HttpHandlerService implements OnModuleInit {
         this.logger.warn(`[${path.mode.toUpperCase()}] [${path.method.toUpperCase()}] '${path.path}' => ${path.topic} | UNAUTHORIZED '401'`);
         return;
       }
+
+      // Per-caller limit: after authentication (the bucket is the user's, not the IP's, whenever
+      // there is a user) and before anything costly (upload buffering, ACL lookups, the RPC).
+      if (rateLimitRule && !this.admitRequest(req, res, path, rateLimitRule, authData)) return;
 
       // Multipart parsing runs only for requests that passed authentication (an anonymous
       // client must not be able to make the gateway buffer arbitrary uploads in RAM), and
@@ -376,6 +416,50 @@ export class HttpHandlerService implements OnModuleInit {
         this.sendError(res, error);
       }
     });
+  }
+
+  /**
+   * Takes a token from the caller's bucket for this route. Over the limit it answers 429 with
+   * `Retry-After` (whole seconds until the next request passes) and returns false; the request is
+   * not forwarded. Rejections are logged at most once a minute per caller and route, with their count.
+   */
+  private admitRequest(req: Request, res: Response, path: PathDefinition, rule: ResolvedRateLimitRule, authData: { [key: string]: any; }): boolean {
+    const caller = this.rateLimitCaller(req, path, authData);
+    const decision = this.rateLimiter.take(`${path.method.toUpperCase()} ${path.path}\u0000${caller}`, rule);
+    if (decision.allowed) return true;
+    res.setHeader('Retry-After', String(decision.retryAfterSec));
+    this.sendError(res, { name: 'TooManyRequestsError', message: 'Too many requests' }, 429);
+    if (decision.rejectionsToReport) {
+      this.logger.warn(`[RATE-LIMIT] [${path.method.toUpperCase()}] '${path.path}' ${caller} | TOO MANY REQUESTS '429' x${decision.rejectionsToReport} since the last report (limit ${rule.requestsPerSecond} req/s, burst ${rule.burst})`);
+    }
+    return false;
+  }
+
+  /**
+   * Who the bucket belongs to: the authenticated user id — the claim the ACL identifies the caller
+   * by (`${headerPrefix}${uidClaim}`, `USERID` when the provider sets no uidClaim) — else the client
+   * IP. An invalid token on an anonymous route therefore counts against the IP, like no token.
+   */
+  private rateLimitCaller(req: Request, path: PathDefinition, authData: { [key: string]: any; }): string {
+    if (authData?.success && path.auth) {
+      const provider = this.httpAuthHandlerService.findProvider(path.auth);
+      // Same key as HttpAuthHandlerService.mapClaims/checkActionsForClaims build.
+      const uid = provider ? authData[`${provider.headerPrefix}${provider.uidClaim || 'USERID'}`] : undefined;
+      if (uid !== undefined && uid !== null && uid !== '') return `user:${uid}`;
+    }
+    return `ip:${this.clientIp(req)}`;
+  }
+
+  /** The client IP: the configured `rateLimit.ipHeader` (first entry of a list), else the socket address. */
+  private clientIp(req: Request): string {
+    const header = this.rateLimit?.ipHeader;
+    if (header) {
+      const raw = req.headers?.[header];
+      const value = Array.isArray(raw) ? raw[0] : raw;
+      const first = typeof value === 'string' ? value.split(',')[0].trim() : '';
+      if (first) return first;
+    }
+    return req.ip || req.socket?.remoteAddress || 'unknown';
   }
 
   /**
